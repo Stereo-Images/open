@@ -1,8 +1,10 @@
 :root {
-  --bg: #0a0c10;
-  --panel: #161b22;
-  --text: #8b949e;
-  --accent: #58a6ff;
+  --bg: #ffffff;
+  --panel: #fcfcfc;
+  --text: #1f2937;
+  --subtext: #6b7280;
+  --accent: #2563eb;
+  --border: #e5e7eb;
 }
 
 body {
@@ -15,21 +17,22 @@ body {
   align-items: center;
   justify-content: center;
   min-height: 100vh;
-  transition: background 3s ease;
 }
 
 header h1 {
-  font-weight: 200;
+  font-weight: 300;
   letter-spacing: 0.8rem;
   text-transform: uppercase;
-  opacity: 0.6;
+  color: var(--text);
+  margin-bottom: 0.5rem;
 }
 
 header p {
   text-align: center;
-  font-size: 0.8rem;
-  opacity: 0.4;
+  font-size: 0.85rem;
+  color: var(--subtext);
   letter-spacing: 0.1rem;
+  margin: 0;
 }
 
 main {
@@ -40,42 +43,58 @@ main {
 
 #controls {
   background: var(--panel);
-  padding: 1.5rem;
-  border-radius: 8px;
-  border: 1px solid rgba(255,255,255,0.05);
+  padding: 2rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
-.form-group { margin-bottom: 1.2rem; }
-label { display: block; font-size: 0.75rem; margin-bottom: 0.5rem; }
+.form-group { margin-bottom: 1.5rem; }
+label { display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--subtext); }
 
-input, select {
+input[type="number"], select {
   width: 100%;
-  background: #0d1117;
-  border: 1px solid #30363d;
+  background: #ffffff;
+  border: 1px solid var(--border);
   color: var(--text);
-  padding: 0.5rem;
-  border-radius: 4px;
+  padding: 0.6rem;
+  border-radius: 6px;
+  font-size: 1rem;
 }
 
-.form-actions { display: flex; gap: 10px; margin-top: 1rem; }
+.form-actions { display: flex; gap: 12px; margin-top: 1.5rem; }
 button {
   flex: 1;
-  padding: 0.6rem;
-  background: transparent;
-  border: 1px solid var(--accent);
-  color: var(--accent);
+  padding: 0.75rem;
+  background: #ffffff;
+  border: 1px solid var(--border);
+  color: var(--text);
   cursor: pointer;
-  border-radius: 4px;
-  transition: all 0.2s;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
 }
 
-button:hover { background: rgba(88, 166, 255, 0.1); }
+button:hover {
+  background: #f9fafb;
+  border-color: var(--subtext);
+}
+
+#playNow {
+  background: var(--text);
+  color: #ffffff;
+  border: none;
+}
+
+#playNow:hover {
+  background: #000000;
+}
 
 #statusMessage {
   text-align: center;
-  font-size: 0.7rem;
-  margin-top: 2rem;
-  opacity: 0.3;
+  font-size: 0.75rem;
+  margin-top: 2.5rem;
+  color: var(--subtext);
   text-transform: uppercase;
-  letter-spacing: 0.1rem;
+  letter-spacing: 0.15rem;
 }
