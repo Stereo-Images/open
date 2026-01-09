@@ -27,7 +27,7 @@ header h1 {
 
 main {
   width: 90%;
-  max-width: 800px; /* Doubled width */
+  max-width: 800px;
   padding: 2rem;
 }
 
@@ -38,24 +38,14 @@ main {
   border: 1px solid var(--border);
 }
 
-.form-group {
-  margin-bottom: 2rem;
-}
+.form-group { margin-bottom: 2.5rem; }
+label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 1rem; color: var(--subtext); }
 
-label { 
-  display: block; 
-  font-size: 0.85rem; 
-  font-weight: 500; 
-  margin-bottom: 1rem; 
-  color: var(--subtext); 
-}
-
-/* Extended Sliders */
 .extended-slider {
   width: 100%;
-  height: 8px;
+  height: 6px;
   cursor: pointer;
-  accent-color: var(--text);
+  accent-color: #000;
 }
 
 input[type="number"], select {
@@ -63,26 +53,22 @@ input[type="number"], select {
   box-sizing: border-box;
   background: #ffffff;
   border: 1px solid var(--border);
-  color: var(--text);
   padding: 0.8rem;
   border-radius: 6px;
-  font-size: 1rem;
 }
 
-.form-actions { display: flex; gap: 15px; margin-top: 2rem; }
-
+.form-actions { display: flex; gap: 15px; }
 button {
   flex: 1;
   padding: 1rem;
   background: #ffffff;
   border: 1px solid var(--border);
-  color: var(--text);
   cursor: pointer;
   border-radius: 6px;
   font-size: 0.9rem;
 }
 
-#playNow { background: var(--text); color: #ffffff; border: none; }
+#playNow { background: #000; color: #fff; border: none; }
 
 #statusMessage {
   text-align: center;
