@@ -24,15 +24,7 @@ header h1 {
   letter-spacing: 0.8rem;
   text-transform: uppercase;
   color: var(--text);
-  margin-bottom: 0.5rem;
-}
-
-header p {
-  text-align: center;
-  font-size: 0.85rem;
-  color: var(--subtext);
-  letter-spacing: 0.1rem;
-  margin: 0;
+  margin-bottom: 2rem; /* Added space since subtitle is gone */
 }
 
 main {
@@ -49,11 +41,29 @@ main {
   box-shadow: 0 1px 3px rgba(0,0,0,0.05);
 }
 
-.form-group { margin-bottom: 1.5rem; }
-label { display: block; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.5rem; color: var(--subtext); }
+.form-group {
+  margin-bottom: 1.5rem;
+  width: 100%; /* Ensure container is full width */
+}
+
+label { 
+  display: block; 
+  font-size: 0.8rem; 
+  font-weight: 500; 
+  margin-bottom: 0.8rem; 
+  color: var(--subtext); 
+}
+
+/* Extend the density slider across the width */
+input[type="range"].full-width-slider {
+  width: 100%;
+  margin: 0;
+  cursor: pointer;
+}
 
 input[type="number"], select {
   width: 100%;
+  box-sizing: border-box; /* Ensures padding doesn't push width over 100% */
   background: #ffffff;
   border: 1px solid var(--border);
   color: var(--text);
@@ -63,6 +73,7 @@ input[type="number"], select {
 }
 
 .form-actions { display: flex; gap: 12px; margin-top: 1.5rem; }
+
 button {
   flex: 1;
   padding: 0.75rem;
@@ -71,23 +82,14 @@ button {
   color: var(--text);
   cursor: pointer;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   transition: all 0.2s ease;
-}
-
-button:hover {
-  background: #f9fafb;
-  border-color: var(--subtext);
 }
 
 #playNow {
   background: var(--text);
   color: #ffffff;
   border: none;
-}
-
-#playNow:hover {
-  background: #000000;
 }
 
 #statusMessage {
@@ -97,4 +99,5 @@ button:hover {
   color: var(--subtext);
   text-transform: uppercase;
   letter-spacing: 0.15rem;
+  min-height: 1em; /* Prevents layout jump when text appears */
 }
