@@ -1,5 +1,5 @@
 /*
- * Resonator – Generative bell songs using the Web Audio API
+ * Open – Generative bell songs using the Web Audio API
  *
  * This script handles user input, schedules hourly playback, and creates
  * bell-like sounds from scratch. It leverages oscillators and gain
