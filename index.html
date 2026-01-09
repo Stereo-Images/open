@@ -2,42 +2,60 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Open</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <header>
-    <h1>Open</h1>
+    <h1>Resonator</h1>
   </header>
 
-  <main id="ambient-layer">
+  <main>
+    <!-- Controls for user to set parameters -->
     <section id="controls">
+      <h2>Song Parameters</h2>
       <form id="songForm">
-        <div class="form-group">
-          <label for="tone">Base Tone (30-200Hz):</label>
-          <input type="number" id="tone" name="tone" min="30" max="200" value="110" />
-        </div>
-        
-        <div class="form-group">
-          <label for="density">Note Density:</label>
-          <input type="range" id="density" name="density" min="1" max="5" value="1" class="extended-slider" />
-        </div>
-
-        <div class="form-group">
-          <label for="volume">Volume:</label>
-          <input type="range" id="volume" name="volume" min="0" max="1" step="0.01" value="0.5" class="extended-slider" />
-        </div>
-
+        <!-- Song duration selector -->
         <div class="form-group">
           <label for="songDuration">Song Duration:</label>
           <select id="songDuration" name="songDuration">
             <option value="60">1 minute</option>
-            <option value="300" selected>5 minutes</option>
+            <option value="300">5 minutes</option>
             <option value="600">10 minutes</option>
           </select>
         </div>
-
+        <div class="form-group">
+          <label for="tone">Base Tone (Hz):</label>
+          <input type="number" id="tone" name="tone" min="100" max="1200" step="10" value="440" required />
+        </div>
+        <div class="form-group">
+          <label for="mood">Mood / Scale:</label>
+          <select id="mood" name="mood">
+            <option value="major">Major</option>
+            <option value="minor">Minor</option>
+            <option value="pentatonic">Pentatonic</option>
+            <option value="random">Random</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="melody">Melody Complexity:</label>
+          <select id="melody" name="melody">
+            <option value="simple">Simple</option>
+            <option value="medium">Medium</option>
+            <option value="complex">Complex</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="density">Note Density:</label>
+          <input type="range" id="density" name="density" min="1" max="10" value="3" />
+        </div>
+        <div class="form-group">
+          <label for="volume">Volume:</label>
+          <input type="range" id="volume" name="volume" min="0" max="1" step="0.01" value="0.5" />
+        </div>
+        <!-- Schedule frequency selector -->
         <div class="form-group">
           <label for="frequency">Playback Frequency:</label>
           <select id="frequency" name="frequency">
@@ -48,18 +66,33 @@
         </div>
 
         <div class="form-actions">
-          <button type="button" id="playNow">Start Now</button>
-          <button type="button" id="schedule">Schedule</button>
-          <button type="button" id="stop">Silence</button>
+          <button type="button" id="playNow">Play Now</button>
+          <button type="button" id="schedule">Schedule Play</button>
+          <button type="button" id="stop">Stop</button>
         </div>
       </form>
     </section>
 
+    <!-- Status display -->
     <section id="status">
-      <p id="statusMessage"></p>
+      <h2>Status</h2>
+      <p id="statusMessage">No song playing.</p>
     </section>
+
+    <!-- Feedback section for like/dislike -->
+    <section id="feedback" style="display: none;">
+      <h2>Your Feedback</h2>
+      <div class="feedback-buttons">
+        <button type="button" id="likeBtn" class="feedback-like">👍 Like</button>
+        <button type="button" id="dislikeBtn" class="feedback-dislike">👎 Dislike</button>
+      </div>
+    </section>
+
   </main>
 
+  <footer>
+
+  </footer>
   <script src="script.js"></script>
 </body>
 </html>
