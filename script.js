@@ -97,7 +97,7 @@
   function stopAll() {
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
-    document.getElementById('statusMessage').textContent = "ready.";
+    document.getElementById('statusMessage').textContent = "Ready.";
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -116,7 +116,7 @@
       });
       const now = audioContext.currentTime;
       melody.forEach(n => playFmBell(n.freq, n.dur, 0.4, now + n.start));
-      document.getElementById('statusMessage').textContent = "playing...";
+      document.getElementById('statusMessage').textContent = "Playing...";
     });
     document.getElementById('stop').addEventListener('click', stopAll);
   });
