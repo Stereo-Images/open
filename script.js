@@ -9,20 +9,10 @@
     random: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   };
 
-  // Restoring the Original Noise Exciter Buffer
-  function createNoiseBuffer() {
-    const duration = 0.1;
-    const rate = audioContext.sampleRate;
-    const buffer = audioContext.createBuffer(1, Math.floor(duration * rate), rate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
-    return buffer;
-  }
-  const noiseBuffer = createNoiseBuffer();
-
+  // Reverb setup
   const reverbNode = audioContext.createConvolver();
   const reverbGain = audioContext.createGain();
-  reverbGain.gain.value = 1.2; // Original "Spacious" setting
+  reverbGain.gain.value = 1.2;
 
   function createReverb() {
     const duration = 5.0, rate = audioContext.sampleRate, length = rate * duration;
@@ -39,27 +29,47 @@
   }
   createReverb();
 
-  // The Full Original FM/Modal Hybrid logic
-  function playFmBell(freq, duration, volume, startTime) {
-    // Restored Original Mode Ratios for authentic bell dissonance
-    const modeRatios = [1.0, 2.706, 3.563, 4.152]; 
-    const modeAmps = [1.0, 0.6, 0.4, 0.2];
+  /** * RESTORED: Multi-Voice Timbre Generation
+   * Creates 2-3 voices and normalizes their volume so they sum to 1.
+   **/
+  function generateRandomFmVoices() {
+    const numVoices = 2 + Math.floor(Math.random() * 2); 
+    const voices = [];
+    let totalAmp = 0;
+    for (let i = 0; i < numVoices; i++) {
+      const amp = Math.random();
+      voices.push({
+        modRatio: 1.5 + Math.random() * 2.5,
+        modIndex: 1 + Math.random() * 4,
+        amp: amp
+      });
+      totalAmp += amp;
+    }
+    voices.forEach(v => v.amp /= totalAmp); // Normalization logic
+    return voices;
+  }
 
-    modeRatios.forEach((ratio, index) => {
+  function playFmBell(freq, duration, volume, startTime) {
+    // Generate the multi-voice array for this specific note
+    const voices = generateRandomFmVoices();
+
+    voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
       const modulator = audioContext.createOscillator();
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      const modeFreq = freq * ratio;
-      carrier.frequency.value = modeFreq;
-      modulator.frequency.value = modeFreq * (1.5 + Math.random() * 2.0); // Per-note walk
+      carrier.frequency.value = freq;
+      modulator.frequency.value = freq * voice.modRatio;
 
-      modGain.gain.setValueAtTime(modeFreq * 2, startTime);
-      modGain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+      // FM Deviation logic
+      const maxDeviation = freq * voice.modIndex;
+      modGain.gain.setValueAtTime(maxDeviation, startTime);
+      modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
+      // Volume envelope with normalized voice amplitude
       ampGain.gain.setValueAtTime(0.0001, startTime);
-      ampGain.gain.exponentialRampToValueAtTime(volume * modeAmps[index], startTime + 0.005);
+      ampGain.gain.exponentialRampToValueAtTime(volume * voice.amp, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       modulator.connect(modGain);
@@ -74,17 +84,6 @@
       carrier.stop(startTime + duration);
       activeNodes.push(carrier, modulator, ampGain);
     });
-
-    // Restored Noise Burst for the "strike" impact
-    const noiseSource = audioContext.createBufferSource();
-    const noiseGain = audioContext.createGain();
-    noiseSource.buffer = noiseBuffer;
-    noiseGain.gain.setValueAtTime(0.1 * volume, startTime);
-    noiseGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.02);
-    noiseSource.connect(noiseGain);
-    noiseGain.connect(reverbNode);
-    noiseSource.start(startTime);
-    noiseSource.stop(startTime + 0.02);
   }
 
   function generateMelody(params) {
@@ -98,7 +97,7 @@
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
       const drift = 0.95 + (Math.random() * 0.1);
-      melody.push({ freq, start: currentTime, dur: (1 / density) * 2 });
+      melody.push({ freq, start: currentTime, dur: (1 / density) * 2.5 });
       currentTime += (1 / density) * drift;
     }
     return melody;
