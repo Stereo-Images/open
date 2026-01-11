@@ -6,10 +6,8 @@
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
-    random: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   };
 
-  // Reverb setup
   const reverbNode = audioContext.createConvolver();
   const reverbGain = audioContext.createGain();
   reverbGain.gain.value = 1.2;
@@ -29,9 +27,6 @@
   }
   createReverb();
 
-  /** * RESTORED: Multi-Voice Timbre Generation
-   * Creates 2-3 voices and normalizes their volume so they sum to 1.
-   **/
   function generateRandomFmVoices() {
     const numVoices = 2 + Math.floor(Math.random() * 2); 
     const voices = [];
@@ -45,14 +40,12 @@
       });
       totalAmp += amp;
     }
-    voices.forEach(v => v.amp /= totalAmp); // Normalization logic
+    voices.forEach(v => v.amp /= totalAmp);
     return voices;
   }
 
   function playFmBell(freq, duration, volume, startTime) {
-    // Generate the multi-voice array for this specific note
     const voices = generateRandomFmVoices();
-
     voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
       const modulator = audioContext.createOscillator();
@@ -62,12 +55,10 @@
       carrier.frequency.value = freq;
       modulator.frequency.value = freq * voice.modRatio;
 
-      // FM Deviation logic
       const maxDeviation = freq * voice.modIndex;
       modGain.gain.setValueAtTime(maxDeviation, startTime);
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
-      // Volume envelope with normalized voice amplitude
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime(volume * voice.amp, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
