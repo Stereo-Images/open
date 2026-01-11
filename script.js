@@ -1,10 +1,6 @@
 (() => {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   let activeNodes = [];
-  let isPlaying = false;
-  let nextNoteTime = 0;
-  let scheduleAheadTime = 0.2; 
-  let timerId;
 
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -32,16 +28,25 @@
   }
   createReverb();
 
-  function playFmBell(freq, duration, volume, startTime) {
+  function generateRandomFmVoices() {
     const numVoices = 2 + Math.floor(Math.random() * 2); 
     const voices = [];
     let totalAmp = 0;
     for (let i = 0; i < numVoices; i++) {
       const amp = Math.random();
-      voices.push({ modRatio: 1.5 + Math.random() * 2.5, modIndex: 1 + Math.random() * 4, amp });
+      voices.push({
+        modRatio: 1.5 + Math.random() * 2.5,
+        modIndex: 1 + Math.random() * 4,
+        amp: amp
+      });
       totalAmp += amp;
     }
+    voices.forEach(v => v.amp /= totalAmp);
+    return voices;
+  }
 
+  function playFmBell(freq, duration, volume, startTime) {
+    const voices = generateRandomFmVoices();
     voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
       const modulator = audioContext.createOscillator();
@@ -56,7 +61,7 @@
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       ampGain.gain.setValueAtTime(0.0001, startTime);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
+      ampGain.gain.exponentialRampToValueAtTime(volume * voice.amp, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       modulator.connect(modGain);
@@ -71,43 +76,29 @@
       carrier.stop(startTime + duration);
       activeNodes.push(carrier, modulator, ampGain);
     });
-    
-    // Periodically clean the reference array to keep memory flat
-    if (activeNodes.length > 150) activeNodes.splice(0, 50);
   }
 
-  function scheduler() {
-    if (!isPlaying) return;
-    const durationInput = document.getElementById('songDuration').value;
-    
-    if (durationInput !== 'infinite' && nextNoteTime > parseFloat(durationInput)) {
-      stopAll();
-      return;
-    }
+  function generateMelody(params) {
+    const length = parseFloat(params.length), baseFreq = parseFloat(params.tone);
+    const density = parseFloat(params.density), scale = scales[params.mood] || scales.major;
+    const totalNotes = Math.max(1, Math.floor(length * density));
+    const melody = [];
+    let currentTime = 0;
 
-    while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
-      const baseFreq = parseFloat(document.getElementById('tone').value);
-      const mood = document.getElementById('mood').value;
-      const density = parseFloat(document.getElementById('density').value);
-      const scale = scales[mood] || scales.major;
-
+    for (let i = 0; i < totalNotes; i++) {
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
-      const dur = (1 / density) * 2.5;
-
-      playFmBell(freq, dur, 0.4, nextNoteTime);
-      
       const drift = 0.95 + (Math.random() * 0.1);
-      nextNoteTime += (1 / density) * drift;
+      melody.push({ freq, start: currentTime, dur: (1 / density) * 2.5 });
+      currentTime += (1 / density) * drift;
     }
-    timerId = requestAnimationFrame(scheduler);
+    return melody;
   }
 
   function stopAll() {
-    isPlaying = false;
-    cancelAnimationFrame(timerId);
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
+    document.getElementById('statusMessage').textContent = "ready.";
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -118,9 +109,15 @@
     document.getElementById('playNow').addEventListener('click', async () => {
       if (audioContext.state === 'suspended') await audioContext.resume();
       stopAll();
-      isPlaying = true;
-      nextNoteTime = audioContext.currentTime;
-      scheduler();
+      const melody = generateMelody({
+        length: document.getElementById('songDuration').value,
+        tone: toneSlider.value,
+        mood: document.getElementById('mood').value,
+        density: document.getElementById('density').value
+      });
+      const now = audioContext.currentTime;
+      melody.forEach(n => playFmBell(n.freq, n.dur, 0.4, now + n.start));
+      document.getElementById('statusMessage').textContent = "playing...";
     });
     document.getElementById('stop').addEventListener('click', stopAll);
   });
