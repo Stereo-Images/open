@@ -59,10 +59,3 @@ button:hover {
   background: #000;
   color: #fff;
 }
-
-#statusMessage {
-  margin-top: 2rem;
-  font-size: 0.8rem;
-  text-transform: lowercase;
-  opacity: 0.6;
-}
