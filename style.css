@@ -52,20 +52,16 @@ input[type="range"] {
   margin-top: 3rem;
 }
 
-/* FORCING THE BUTTON TO STAY WHITE 
-   We reset hover, active (click), and focus (tabbing) states.
-*/
 button {
   flex: 1;
   cursor: pointer;
   text-transform: uppercase;
   background-color: #fff !important; 
-  transition: none !important; /* Removes any fade effects */
+  transition: none !important;
 }
 
-button:hover, 
-button:active, 
-button:focus {
+/* Force buttons to stay white regardless of state */
+button:hover, button:active, button:focus {
   background-color: #fff !important;
   color: #000 !important;
   outline: none;
