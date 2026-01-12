@@ -1,21 +1,21 @@
 (() => {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   
-  // Master Gain for fade-outs
+  // Master Gain (Final Volume & Fade Out)
   const masterGain = audioContext.createGain();
   masterGain.connect(audioContext.destination);
 
-  // FIXED LIMITER: More transparent settings
+  // LIMITER (Revised for Resonance)
   const limiter = audioContext.createDynamicsCompressor();
-  // Threshold: Only kick in at -0.5dB (very loud), leaving quieter sounds alone
-  limiter.threshold.setValueAtTime(-0.5, audioContext.currentTime);
-  // Knee: Softer knee (10) makes the transition smoother, less "crunchy"
-  limiter.knee.setValueAtTime(10, audioContext.currentTime);
-  // Ratio: 12 is sufficient for safety without killing dynamics
-  limiter.ratio.setValueAtTime(12, audioContext.currentTime);
-  // Attack: Slightly slower to let the initial "sparkle" through
-  limiter.attack.setValueAtTime(0.005, audioContext.currentTime);
-  limiter.release.setValueAtTime(0.1, audioContext.currentTime);
+  // Threshold: -10dB. We start compressing earlier but gently.
+  limiter.threshold.setValueAtTime(-10, audioContext.currentTime);
+  // Knee: 40 (Maximum softness). This makes the compression invisible/musical.
+  limiter.knee.setValueAtTime(40, audioContext.currentTime);
+  // Ratio: 4:1. Gentle compression, not hard limiting.
+  limiter.ratio.setValueAtTime(4, audioContext.currentTime);
+  // Attack: 0.01. Slower attack lets the "ping" transient through before clamping.
+  limiter.attack.setValueAtTime(0.01, audioContext.currentTime);
+  limiter.release.setValueAtTime(0.25, audioContext.currentTime);
   
   limiter.connect(masterGain);
 
@@ -34,7 +34,8 @@
 
   const reverbNode = audioContext.createConvolver();
   const reverbGain = audioContext.createGain();
-  reverbGain.gain.value = 0.8;
+  // Boosted Reverb slightly (0.8 -> 1.0) to regain "space"
+  reverbGain.gain.value = 1.0;
 
   (function createReverb() {
     const duration = 4.0, rate = audioContext.sampleRate, length = rate * duration;
@@ -61,8 +62,12 @@
     modGain.gain.setValueAtTime(freq * 2, startTime);
     modGain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
 
+    // LOWERED DRY VOLUME (0.2 -> 0.15)
+    // This gives the limiter more "headroom" so it doesn't squash the reverb
+    const safeVolume = 0.15;
+
     ampGain.gain.setValueAtTime(0.0001, startTime);
-    ampGain.gain.exponentialRampToValueAtTime(volume, startTime + 0.05);
+    ampGain.gain.exponentialRampToValueAtTime(safeVolume, startTime + 0.05);
     ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     modulator.connect(modGain);
@@ -112,7 +117,6 @@
     const now = audioContext.currentTime;
     const fadeDuration = 0.5;
 
-    // FADE OUT
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + fadeDuration);
@@ -126,13 +130,11 @@
   document.getElementById('playNow').addEventListener('click', async () => {
     if (audioContext.state === 'suspended') await audioContext.resume();
     
-    // Hard reset
     isPlaying = false; 
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
     cancelAnimationFrame(timerId);
 
-    // Reset Master Volume
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(1.0, now);
