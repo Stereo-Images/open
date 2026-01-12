@@ -1,21 +1,22 @@
 (() => {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   
-  // Create a Master Gain node. This controls the total output volume.
-  // We use this to fade out audio smoothly when stopping.
+  // Master Gain for fade-outs
   const masterGain = audioContext.createGain();
   masterGain.connect(audioContext.destination);
 
-  // REQUEST 3: LIMITER
-  // Configured as a "Brick Wall" limiter to prevent clipping
+  // FIXED LIMITER: More transparent settings
   const limiter = audioContext.createDynamicsCompressor();
-  limiter.threshold.setValueAtTime(-2, audioContext.currentTime); // Start limiting at -2dB
-  limiter.knee.setValueAtTime(0, audioContext.currentTime);       // Hard knee for strict limiting
-  limiter.ratio.setValueAtTime(20, audioContext.currentTime);     // High ratio (20:1) acts as a limiter
-  limiter.attack.setValueAtTime(0.001, audioContext.currentTime); // Fast attack to catch peaks
-  limiter.release.setValueAtTime(0.25, audioContext.currentTime);
+  // Threshold: Only kick in at -0.5dB (very loud), leaving quieter sounds alone
+  limiter.threshold.setValueAtTime(-0.5, audioContext.currentTime);
+  // Knee: Softer knee (10) makes the transition smoother, less "crunchy"
+  limiter.knee.setValueAtTime(10, audioContext.currentTime);
+  // Ratio: 12 is sufficient for safety without killing dynamics
+  limiter.ratio.setValueAtTime(12, audioContext.currentTime);
+  // Attack: Slightly slower to let the initial "sparkle" through
+  limiter.attack.setValueAtTime(0.005, audioContext.currentTime);
+  limiter.release.setValueAtTime(0.1, audioContext.currentTime);
   
-  // Signal Chain: All Sound -> Limiter -> MasterGain -> Speakers
   limiter.connect(masterGain);
 
   let activeNodes = [];
@@ -68,7 +69,6 @@
     modGain.connect(carrier.frequency);
     carrier.connect(ampGain);
     
-    // Connect to Limiter (which connects to MasterGain -> Destination)
     ampGain.connect(limiter);
     ampGain.connect(reverbNode);
 
@@ -105,23 +105,18 @@
   }
 
   function stopAll() {
-    if (!isPlaying) return; // Prevent double stopping
+    if (!isPlaying) return;
     isPlaying = false;
     cancelAnimationFrame(timerId);
 
-    // REQUEST 2: MASTER FADE OUT
-    // Instead of stopping nodes instantly, we fade the master volume
     const now = audioContext.currentTime;
     const fadeDuration = 0.5;
 
-    // Cancel any future volume changes
+    // FADE OUT
     masterGain.gain.cancelScheduledValues(now);
-    // Set current value explicitly to ensure smooth ramp
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    // Exponential ramp down to silence (0.001 is near silence)
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + fadeDuration);
 
-    // Wait for fade to finish, then disconnect/stop nodes
     setTimeout(() => {
       activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
@@ -131,13 +126,13 @@
   document.getElementById('playNow').addEventListener('click', async () => {
     if (audioContext.state === 'suspended') await audioContext.resume();
     
-    // Reset state before playing
+    // Hard reset
     isPlaying = false; 
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
     cancelAnimationFrame(timerId);
 
-    // Reset Master Volume to full for playback
+    // Reset Master Volume
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(1.0, now);
