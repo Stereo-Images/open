@@ -1,7 +1,6 @@
 (() => {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   
-  // Limiter to prevent distortion
   const limiter = audioContext.createDynamicsCompressor();
   limiter.threshold.setValueAtTime(-3, audioContext.currentTime);
   limiter.knee.setValueAtTime(30, audioContext.currentTime);
@@ -25,7 +24,6 @@
   const reverbGain = audioContext.createGain();
   reverbGain.gain.value = 0.8;
 
-  // Generate Reverb Impulse
   (function createReverb() {
     const duration = 4.0, rate = audioContext.sampleRate, length = rate * duration;
     const impulse = audioContext.createBuffer(2, length, rate);
