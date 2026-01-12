@@ -3,7 +3,6 @@
   let activeNodes = [];
   let isPlaying = false;
   let nextNoteTime = 0;
-  let sessionStartTime = 0;
   let scheduleAheadTime = 0.2; 
   let timerId;
 
@@ -73,23 +72,20 @@
       activeNodes.push(carrier, modulator, ampGain);
     });
     
+    // Periodically clean the reference array to keep memory flat
     if (activeNodes.length > 150) activeNodes.splice(0, 50);
   }
 
   function scheduler() {
     if (!isPlaying) return;
     const durationInput = document.getElementById('songDuration').value;
-    const currentTime = audioContext.currentTime;
     
-    if (durationInput !== 'infinite') {
-      const elapsed = currentTime - sessionStartTime;
-      if (elapsed >= parseFloat(durationInput)) {
-        stopAll();
-        return;
-      }
+    if (durationInput !== 'infinite' && nextNoteTime > parseFloat(durationInput)) {
+      stopAll();
+      return;
     }
 
-    while (nextNoteTime < currentTime + scheduleAheadTime) {
+    while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById('tone').value);
       const mood = document.getElementById('mood').value;
       const density = parseFloat(document.getElementById('density').value);
@@ -112,26 +108,20 @@
     cancelAnimationFrame(timerId);
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
-    document.getElementById('playNow').classList.remove('active');
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     const toneSlider = document.getElementById('tone');
     const hzReadout = document.getElementById('hzReadout');
-    const playBtn = document.getElementById('playNow');
-
     toneSlider.addEventListener('input', () => hzReadout.textContent = toneSlider.value);
 
-    playBtn.addEventListener('click', async () => {
+    document.getElementById('playNow').addEventListener('click', async () => {
       if (audioContext.state === 'suspended') await audioContext.resume();
       stopAll();
       isPlaying = true;
-      playBtn.classList.add('active');
-      sessionStartTime = audioContext.currentTime;
       nextNoteTime = audioContext.currentTime;
       scheduler();
     });
-
     document.getElementById('stop').addEventListener('click', stopAll);
   });
 })();
