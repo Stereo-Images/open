@@ -1,19 +1,27 @@
 (() => {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
   
-  // Master Gain for smooth fade outs
+  // 1. MASTER GAIN (Controls fade out)
   const masterGain = audioContext.createGain();
-  masterGain.connect(audioContext.destination);
-
-  // LIMITER: Soft Knee setup to preserve reverb resonance
-  const limiter = audioContext.createDynamicsCompressor();
-  limiter.threshold.setValueAtTime(-10, audioContext.currentTime); // Start acting early
-  limiter.knee.setValueAtTime(40, audioContext.currentTime);       // Very soft knee
-  limiter.ratio.setValueAtTime(4, audioContext.currentTime);       // Gentle compression
-  limiter.attack.setValueAtTime(0.01, audioContext.currentTime);
-  limiter.release.setValueAtTime(0.25, audioContext.currentTime);
   
-  limiter.connect(masterGain);
+  // 2. SAFETY LIMITER (The final bucket)
+  // This sits at the very end to prevent clipping, but we set it HIGH 
+  // so it doesn't touch the sound unless absolutely necessary.
+  const safetyLimiter = audioContext.createDynamicsCompressor();
+  safetyLimiter.threshold.setValueAtTime(-1, audioContext.currentTime); // High threshold
+  safetyLimiter.ratio.setValueAtTime(20, audioContext.currentTime);     // Hard limit
+  safetyLimiter.connect(audioContext.destination);
+  
+  masterGain.connect(safetyLimiter);
+
+  // 3. BELL LIMITER (The "Pre-Limiter")
+  // This limits ONLY the dry bells. It tames the sharp attacks immediately
+  // so they don't trigger the Master Safety Limiter later.
+  const bellLimiter = audioContext.createDynamicsCompressor();
+  bellLimiter.threshold.setValueAtTime(-10, audioContext.currentTime);
+  bellLimiter.ratio.setValueAtTime(12, audioContext.currentTime);
+  bellLimiter.attack.setValueAtTime(0.005, audioContext.currentTime);
+  bellLimiter.connect(masterGain);
 
   let activeNodes = [];
   let isPlaying = false;
@@ -32,6 +40,10 @@
   const reverbGain = audioContext.createGain();
   reverbGain.gain.value = 1.0; 
 
+  // Reverb Routing: Reverb bypasses the bellLimiter and goes straight to Master
+  reverbNode.connect(reverbGain);
+  reverbGain.connect(masterGain);
+
   (function createReverb() {
     const duration = 4.0, rate = audioContext.sampleRate, length = rate * duration;
     const impulse = audioContext.createBuffer(2, length, rate);
@@ -42,8 +54,6 @@
       }
     }
     reverbNode.buffer = impulse;
-    reverbNode.connect(reverbGain);
-    reverbGain.connect(limiter);
   })();
 
   function playFmBell(freq, duration, volume, startTime) {
@@ -57,18 +67,23 @@
     modGain.gain.setValueAtTime(freq * 2, startTime);
     modGain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
 
-    // Lower volume slightly (0.15) to give reverb headroom
-    const safeVolume = 0.15;
+    // Initial volume for the node
+    const noteVolume = 0.2; 
 
     ampGain.gain.setValueAtTime(0.0001, startTime);
-    ampGain.gain.exponentialRampToValueAtTime(safeVolume, startTime + 0.05);
+    ampGain.gain.exponentialRampToValueAtTime(noteVolume, startTime + 0.05);
     ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
     modulator.connect(modGain);
     modGain.connect(carrier.frequency);
     carrier.connect(ampGain);
     
-    ampGain.connect(limiter);
+    // SPLIT ROUTING:
+    // 1. Send to Bell Limiter (Dry signal gets squashed if too loud)
+    ampGain.connect(bellLimiter);
+    
+    // 2. Send to Reverb (Reverb gets the full signal, creates tail, and mixes at Master)
+    // This effectively bypasses the heavy compression for the reverb tail.
     ampGain.connect(reverbNode);
 
     modulator.start(startTime);
@@ -108,7 +123,7 @@
     isPlaying = false;
     cancelAnimationFrame(timerId);
 
-    // MASTER FADE OUT logic
+    // MASTER FADE OUT
     const now = audioContext.currentTime;
     const fadeDuration = 0.5;
 
@@ -125,13 +140,12 @@
   document.getElementById('playNow').addEventListener('click', async () => {
     if (audioContext.state === 'suspended') await audioContext.resume();
     
-    // Reset everything
     isPlaying = false; 
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
     cancelAnimationFrame(timerId);
 
-    // Bring volume back up for playback
+    // Reset volume
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(1.0, now);
