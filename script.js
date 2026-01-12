@@ -3,7 +3,7 @@
   let activeNodes = [];
   let isPlaying = false;
   let nextNoteTime = 0;
-  let sessionStartTime = 0; // Tracks when the play button was pressed
+  let sessionStartTime = 0;
   let scheduleAheadTime = 0.2; 
   let timerId;
 
@@ -81,7 +81,6 @@
     const durationInput = document.getElementById('songDuration').value;
     const currentTime = audioContext.currentTime;
     
-    // Logic for ending a timed session
     if (durationInput !== 'infinite') {
       const elapsed = currentTime - sessionStartTime;
       if (elapsed >= parseFloat(durationInput)) {
@@ -113,17 +112,21 @@
     cancelAnimationFrame(timerId);
     activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
     activeNodes = [];
+    document.getElementById('playNow').classList.remove('active');
   }
 
   document.addEventListener('DOMContentLoaded', () => {
     const toneSlider = document.getElementById('tone');
     const hzReadout = document.getElementById('hzReadout');
+    const playBtn = document.getElementById('playNow');
+
     toneSlider.addEventListener('input', () => hzReadout.textContent = toneSlider.value);
 
-    document.getElementById('playNow').addEventListener('click', async () => {
+    playBtn.addEventListener('click', async () => {
       if (audioContext.state === 'suspended') await audioContext.resume();
       stopAll();
       isPlaying = true;
+      playBtn.classList.add('active');
       sessionStartTime = audioContext.currentTime;
       nextNoteTime = audioContext.currentTime;
       scheduler();
