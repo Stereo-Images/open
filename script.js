@@ -1,3 +1,8 @@
+No, the previous response only included the parts that needed changing.
+
+Here is the **complete** updated `script.js` file. You can replace your entire current JS file with this.
+
+```javascript
 (() => {
   let audioContext = null;
   let masterGain = null;
@@ -46,7 +51,7 @@
     limiter.release.setValueAtTime(0.1, audioContext.currentTime);    
     limiter.connect(audioContext.destination);
 
-    // 2. Master Gain for the "Stop" click prevention
+    // 2. Master Gain (Controls the dry signal)
     masterGain = audioContext.createGain();
     masterGain.connect(limiter);
     masterGain.gain.value = 1;
@@ -88,7 +93,9 @@
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
       
+      // Connect to Reverb (Independent path)
       ampGain.connect(reverbNode);
+      // Connect to Master (Dry path that we can fade)
       ampGain.connect(masterGain); 
 
       modulator.start(startTime);
@@ -97,6 +104,8 @@
       carrier.stop(startTime + duration);
       activeNodes.push(carrier, modulator, ampGain);
     });
+    
+    // Cleanup active nodes array to prevent memory leaks
     if (activeNodes.length > 200) activeNodes.splice(0, 50);
   }
 
@@ -126,15 +135,21 @@
     cancelAnimationFrame(timerId);
 
     const now = audioContext.currentTime;
+
+    // 1. Slow Fade of the "Dry" signal (4 seconds)
+    // We leave the reverb path alone so it rings out naturally.
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 4);
 
+    // 2. Delayed Cleanup
+    // We wait 5 seconds before clearing nodes to ensure the fade is done
+    // and the reverb tail has mostly decayed.
     setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
-      activeNodes = [];
-      if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-    }, 60);
+      if (!isPlaying) {
+        activeNodes = [];
+      }
+    }, 5000);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -147,8 +162,12 @@
       
       isPlaying = false;
       cancelAnimationFrame(timerId);
+      
+      // Stop previous sounds immediately if we are hitting Play again
       activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
+      
+      // Reset Master Gain immediately to full volume
       masterGain.gain.cancelScheduledValues(audioContext.currentTime);
       masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
@@ -161,3 +180,5 @@
     document.getElementById("stop").addEventListener("click", stopAll);
   });
 })();
+
+```
