@@ -1,10 +1,9 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta charset="UTF-8">
     <title>Open</title>
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <main>
@@ -13,7 +12,7 @@
             <form id="songForm">
                 <div class="form-group">
                     <label for="songDuration">Duration:</label>
-                    <select id="songDuration" name="songDuration">
+                    <select id="songDuration">
                         <option value="60">1 minute</option>
                         <option value="300">5 minutes</option>
                         <option value="600">10 minutes</option>
@@ -21,12 +20,10 @@
                         <option value="infinite">Infinite</option>
                     </select>
                 </div>
-
                 <div class="form-group">
                     <label for="tone">Root Tone: <span id="hzReadout">110</span> Hz</label>
-                    <input type="range" id="tone" min="30" max="200" step="1" value="110" />
+                    <input type="range" id="tone" min="30" max="200" step="1" value="110">
                 </div>
-
                 <div class="form-group">
                     <label for="mood">Mood:</label>
                     <select id="mood">
@@ -36,25 +33,19 @@
                         <option value="random">Random</option>
                     </select>
                 </div>
-
                 <div class="form-group">
                     <label for="density">Note Density:</label>
-                    <input type="range" id="density" min="0.05" max="0.8" step="0.01" value="0.2" />
+                    <input type="range" id="density" min="0.05" max="0.8" step="0.01" value="0.2">
                 </div>
-
                 <div class="form-actions">
                     <button type="button" id="playNow">Play</button>
                     <button type="button" id="stop">Stop</button>
                 </div>
             </form>
         </section>
-
-        <hr class="separator" />
-        <footer id="credits">
-            Aaron Koppel
-        </footer>
+        <hr class="separator">
+        <footer id="credits">Aaron Koppel</footer>
     </main>
-
     <script src="script.js"></script>
 </body>
 </html>
