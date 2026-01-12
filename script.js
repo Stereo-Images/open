@@ -7,7 +7,7 @@
   limiter.ratio.setValueAtTime(12, audioContext.currentTime);
   limiter.connect(audioContext.destination);
 
-  let activeNodes = [];
+  let activeNodes = []; // Now stores objects: { oscillators, gainNode }
   let isPlaying = false;
   let nextNoteTime = 0;
   let sessionStartTime = 0;
@@ -63,7 +63,12 @@
     carrier.start(startTime);
     modulator.stop(startTime + duration);
     carrier.stop(startTime + duration);
-    activeNodes.push(carrier, modulator, ampGain);
+    
+    // Track the specific nodes that need a fade-out
+    activeNodes.push({
+      oscillators: [carrier, modulator],
+      amp: ampGain
+    });
   }
 
   function scheduler() {
@@ -94,7 +99,22 @@
   function stopAll() {
     isPlaying = false;
     cancelAnimationFrame(timerId);
-    activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
+    
+    const fadeOutTime = 0.05; // 50ms fade to prevent clicking
+    const now = audioContext.currentTime;
+
+    activeNodes.forEach(group => {
+      try {
+        // Ramp volume down to near-zero exponentially
+        group.amp.gain.cancelScheduledValues(now);
+        group.amp.gain.setValueAtTime(group.amp.gain.value, now);
+        group.amp.gain.exponentialRampToValueAtTime(0.0001, now + fadeOutTime);
+        
+        // Stop oscillators after the fade is complete
+        group.oscillators.forEach(osc => osc.stop(now + fadeOutTime));
+      } catch(e) {}
+    });
+    
     activeNodes = [];
   }
 
