@@ -4,11 +4,15 @@ body {
   font-family: "Courier New", Courier, monospace;
   background-color: #fff;
   color: #000;
+  /* Smooth text rendering */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 main {
   max-width: 500px;
-  margin: 10vh auto;
+  /* Vertically center on large screens, margin on small */
+  margin: 15vh auto;
   padding: 0 2rem;
 }
 
@@ -19,6 +23,7 @@ h1 {
   border-bottom: 1px solid #000;
   padding-bottom: 1rem;
   margin-bottom: 3rem;
+  font-size: 1.5rem;
 }
 
 .form-group {
@@ -28,19 +33,57 @@ h1 {
   margin-bottom: 1.5rem;
 }
 
+label {
+  font-size: 0.9rem;
+}
+
+/* Reset default browser styles */
 input, select, button {
   background: #fff;
   color: #000;
   border: 1px solid #000;
   padding: 0.5rem;
   font-family: inherit;
+  font-size: 0.9rem;
   border-radius: 0;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+}
+
+/* Custom select arrow logic would go here, 
+   but standard keeps it raw/brutalist */
+select {
+  text-align: right;
+  cursor: pointer;
+  padding-right: 1rem;
 }
 
 input[type="range"] {
   border: none;
-  accent-color: #000;
+  height: 2px;
+  background: #000;
   width: 50%;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* Range Thumb Styling */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 15px;
+  width: 15px;
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 0; /* Square thumb */
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 15px;
+  width: 15px;
+  background: #fff;
+  border: 1px solid #000;
+  border-radius: 0;
 }
 
 .form-actions {
@@ -53,9 +96,20 @@ button {
   flex: 1;
   cursor: pointer;
   text-transform: uppercase;
+  padding: 0.8rem;
+  transition: all 0.1s ease;
 }
 
 button:hover {
   background: #000;
   color: #fff;
+}
+
+/* Mobile Responsiveness */
+@media (max-width: 600px) {
+  main {
+    margin: 5vh auto;
+    width: 90%;
+    padding: 0;
+  }
 }
