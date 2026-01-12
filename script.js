@@ -1,5 +1,11 @@
 (() => {
   const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+  
+  // Create a Master Gain to prevent clicking on stop
+  const masterGain = audioContext.createGain();
+  masterGain.connect(audioContext.destination);
+  masterGain.gain.value = 1;
+
   let activeNodes = [];
   let isPlaying = false;
   let nextNoteTime = 0;
@@ -29,6 +35,7 @@
     }
     reverbNode.buffer = impulse;
     reverbNode.connect(reverbGain);
+    // Connect reverb directly to destination to keep tail independent
     reverbGain.connect(audioContext.destination);
   }
   createReverb();
@@ -63,8 +70,10 @@
       modulator.connect(modGain);
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
+      
+      // Connect note to reverb and to the Master Gain (instead of destination)
       ampGain.connect(reverbNode);
-      ampGain.connect(audioContext.destination);
+      ampGain.connect(masterGain); 
 
       modulator.start(startTime);
       carrier.start(startTime);
@@ -108,10 +117,22 @@
   }
 
   function stopAll() {
+    if (!isPlaying) return;
     isPlaying = false;
     cancelAnimationFrame(timerId);
-    activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
-    activeNodes = [];
+
+    // Ramp master volume down to 0 over 50ms to prevent the "click"
+    const now = audioContext.currentTime;
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+    // Delay the hard stop until the fade is complete
+    setTimeout(() => {
+      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
+      activeNodes = [];
+      // Reset master gain for the next play session
+      masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+    }, 60);
   }
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -122,6 +143,10 @@
 
     document.getElementById('playNow').addEventListener('click', async () => {
       if (audioContext.state === 'suspended') await audioContext.resume();
+      
+      // Ensure master gain is up if it was left at 0
+      masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+      
       stopAll();
       isPlaying = true;
       sessionStartTime = audioContext.currentTime;
