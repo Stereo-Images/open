@@ -1,6 +1,7 @@
 (() => {
   let audioContext = null;
   let masterGain = null;
+  let limiter = null;
   let reverbNode = null;
   let reverbGain = null;
   let activeNodes = [];
@@ -18,9 +19,7 @@
   };
 
   function createReverb() {
-    const duration = 5.0,
-      rate = audioContext.sampleRate,
-      length = rate * duration;
+    const duration = 5.0, rate = audioContext.sampleRate, length = rate * duration;
     const impulse = audioContext.createBuffer(2, length, rate);
     for (let j = 0; j < 2; j++) {
       const data = impulse.getChannelData(j);
@@ -30,15 +29,29 @@
     }
     reverbNode.buffer = impulse;
     reverbNode.connect(reverbGain);
-    reverbGain.connect(audioContext.destination);
+    // Route reverb through limiter for safety
+    reverbGain.connect(limiter);
   }
 
   function ensureAudio() {
     if (audioContext) return;
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    
+    // 1. Initialize Limiter (DynamicsCompressor)
+    limiter = audioContext.createDynamicsCompressor();
+    limiter.threshold.setValueAtTime(-1.0, audioContext.currentTime); 
+    limiter.knee.setValueAtTime(0, audioContext.currentTime);          
+    limiter.ratio.setValueAtTime(20, audioContext.currentTime);       
+    limiter.attack.setValueAtTime(0.003, audioContext.currentTime);   
+    limiter.release.setValueAtTime(0.1, audioContext.currentTime);    
+    limiter.connect(audioContext.destination);
+
+    // 2. Master Gain for the "Stop" click prevention
     masterGain = audioContext.createGain();
-    masterGain.connect(audioContext.destination);
+    masterGain.connect(limiter);
     masterGain.gain.value = 1;
+
+    // 3. Setup Reverb
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.2;
@@ -51,31 +64,33 @@
     let totalAmp = 0;
     for (let i = 0; i < numVoices; i++) {
       const amp = Math.random();
-      voices.push({
-        modRatio: 1.5 + Math.random() * 2.5,
-        modIndex: 1 + Math.random() * 4,
-        amp,
-      });
+      voices.push({ modRatio: 1.5 + Math.random() * 2.5, modIndex: 1 + Math.random() * 4, amp });
       totalAmp += amp;
     }
+
     voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
       const modulator = audioContext.createOscillator();
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
+
       carrier.frequency.value = freq;
       modulator.frequency.value = freq * voice.modRatio;
-      const maxDeviation = freq * voice.modIndex;
-      modGain.gain.setValueAtTime(maxDeviation, startTime);
+
+      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
       modulator.connect(modGain);
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
+      
       ampGain.connect(reverbNode);
-      ampGain.connect(masterGain);
+      ampGain.connect(masterGain); 
+
       modulator.start(startTime);
       carrier.start(startTime);
       modulator.stop(startTime + duration);
@@ -89,24 +104,18 @@
     if (!isPlaying) return;
     const durationInput = document.getElementById("songDuration").value;
     const currentTime = audioContext.currentTime;
-    if (durationInput !== "infinite") {
-      const elapsed = currentTime - sessionStartTime;
-      if (elapsed >= parseFloat(durationInput)) {
-        stopAll();
-        return;
-      }
+
+    if (durationInput !== "infinite" && (currentTime - sessionStartTime) >= parseFloat(durationInput)) {
+      stopAll();
+      return;
     }
+
     while (nextNoteTime < currentTime + scheduleAheadTime) {
-      const baseFreq = parseFloat(document.getElementById("tone").value);
-      const mood = document.getElementById("mood").value;
+      const scale = scales[document.getElementById("mood").value] || scales.major;
+      const freq = parseFloat(document.getElementById("tone").value) * Math.pow(2, scale[Math.floor(Math.random() * scale.length)] / 12);
       const density = parseFloat(document.getElementById("density").value);
-      const scale = scales[mood] || scales.major;
-      const interval = scale[Math.floor(Math.random() * scale.length)];
-      const freq = baseFreq * Math.pow(2, interval / 12);
-      const dur = (1 / density) * 2.5;
-      playFmBell(freq, dur, 0.4, nextNoteTime);
-      const drift = 0.95 + Math.random() * 0.1;
-      nextNoteTime += (1 / density) * drift;
+      playFmBell(freq, (1 / density) * 2.5, 0.4, nextNoteTime);
+      nextNoteTime += (1 / density) * (0.95 + Math.random() * 0.1);
     }
     timerId = requestAnimationFrame(scheduler);
   }
@@ -115,36 +124,31 @@
     if (!isPlaying || !audioContext) return;
     isPlaying = false;
     cancelAnimationFrame(timerId);
-    
-    // Ramp down to prevent click
+
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
     setTimeout(() => {
-      activeNodes.forEach((n) => { try { n.stop(); } catch (e) {} });
+      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
-      // Reset gain for next play
       if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
     }, 60);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     const toneSlider = document.getElementById("tone");
-    const hzReadout = document.getElementById("hzReadout");
-    toneSlider.addEventListener("input", () => (hzReadout.textContent = toneSlider.value));
+    toneSlider.addEventListener("input", () => document.getElementById("hzReadout").textContent = toneSlider.value);
 
     document.getElementById("playNow").addEventListener("click", async () => {
       ensureAudio();
       if (audioContext.state === "suspended") await audioContext.resume();
-
-      // Quick reset of any existing sequence
+      
       isPlaying = false;
       cancelAnimationFrame(timerId);
-      activeNodes.forEach((n) => { try { n.stop(); } catch (e) {} });
+      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
-      
       masterGain.gain.cancelScheduledValues(audioContext.currentTime);
       masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
