@@ -3,6 +3,7 @@
   let activeNodes = [];
   let isPlaying = false;
   let nextNoteTime = 0;
+  let sessionStartTime = 0; // Tracks when the play button was pressed
   let scheduleAheadTime = 0.2; 
   let timerId;
 
@@ -72,20 +73,24 @@
       activeNodes.push(carrier, modulator, ampGain);
     });
     
-    // Periodically clean the reference array to keep memory flat
     if (activeNodes.length > 150) activeNodes.splice(0, 50);
   }
 
   function scheduler() {
     if (!isPlaying) return;
     const durationInput = document.getElementById('songDuration').value;
+    const currentTime = audioContext.currentTime;
     
-    if (durationInput !== 'infinite' && nextNoteTime > parseFloat(durationInput)) {
-      stopAll();
-      return;
+    // Logic for ending a timed session
+    if (durationInput !== 'infinite') {
+      const elapsed = currentTime - sessionStartTime;
+      if (elapsed >= parseFloat(durationInput)) {
+        stopAll();
+        return;
+      }
     }
 
-    while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
+    while (nextNoteTime < currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById('tone').value);
       const mood = document.getElementById('mood').value;
       const density = parseFloat(document.getElementById('density').value);
@@ -119,9 +124,11 @@
       if (audioContext.state === 'suspended') await audioContext.resume();
       stopAll();
       isPlaying = true;
+      sessionStartTime = audioContext.currentTime;
       nextNoteTime = audioContext.currentTime;
       scheduler();
     });
+
     document.getElementById('stop').addEventListener('click', stopAll);
   });
 })();
