@@ -1,9 +1,12 @@
+/* RESET & BASE STYLES */
 body {
   margin: 0;
   padding: 0;
-  font-family: "Courier New", Courier, monospace;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   background-color: #fff;
   color: #000;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 main {
@@ -12,65 +15,98 @@ main {
   padding: 0 2rem;
 }
 
+/* TYPOGRAPHY */
 h1 {
-  font-weight: normal;
+  font-size: 1.5rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.5rem;
+  letter-spacing: 0.6rem;
   border-bottom: 1px solid #000;
-  padding-bottom: 1rem;
+  padding-bottom: 1.5rem;
   margin-bottom: 3rem;
 }
 
+label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05rem;
+}
+
+/* FORM ELEMENTS */
 .form-group {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 input, select, button {
   background-color: #fff !important;
   color: #000 !important;
   border: 1px solid #000;
-  padding: 0.5rem;
-  font-family: inherit;
+  padding: 0.6rem;
+  font-family: inherit; /* Ensures Helvetica is used inside inputs */
+  font-size: 0.9rem;
   border-radius: 0;
   outline: none;
 }
 
+/* RANGE INPUT STYLING */
 input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
   border: none;
-  background: #000;
-  height: 2px;
+  background: transparent;
   width: 50%;
   cursor: pointer;
 }
 
+/* Range Track */
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 1px;
+  background: #000;
+}
+
+/* Range Thumb */
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  background: #000;
+  margin-top: -8px; /* Centers thumb on track */
+  border-radius: 0;
+}
+
+/* BUTTONS */
 .form-actions {
   display: flex;
   gap: 1rem;
-  margin-top: 3rem;
+  margin-top: 4rem;
 }
 
-/* FORCING THE BUTTON TO STAY WHITE 
-   We reset hover, active (click), and focus (tabbing) states.
-*/
 button {
   flex: 1;
   cursor: pointer;
   text-transform: uppercase;
+  font-weight: 700;
+  letter-spacing: 0.1rem;
   background-color: #fff !important; 
-  transition: none !important; /* Removes any fade effects */
+  transition: background-color 0.1s ease;
 }
 
-button:hover, 
-button:active, 
-button:focus {
-  background-color: #fff !important;
-  color: #000 !important;
-  outline: none;
+/* Minimal feedback - subtle border thickening or invert on active */
+button:hover {
+  background-color: #f0f0f0 !important;
 }
 
+button:active {
+  background-color: #000 !important;
+  color: #fff !important;
+}
+
+/* LAYOUT HELPERS */
 .separator {
   margin-top: 6rem;
   border: 0;
@@ -78,7 +114,14 @@ button:focus {
 }
 
 #credits {
-  margin-top: 1.5rem;
-  font-size: 0.8rem;
+  margin-top: 2rem;
+  font-size: 0.7rem;
+  font-weight: 500;
   text-transform: uppercase;
+  letter-spacing: 0.1rem;
+  opacity: 0.6;
+}
+
+#hzReadout {
+  font-weight: 700;
 }
