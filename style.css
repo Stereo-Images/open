@@ -121,9 +121,8 @@ body.popout h1 {
   margin-bottom: 1.5rem;
 }
 
-/* Hide separator + credits in popout */
-body.popout .separator,
-body.popout #credits {
+/* Hide ONLY separator in popout; keep footer visible */
+body.popout .separator {
   display: none;
 }
 
