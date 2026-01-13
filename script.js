@@ -1,11 +1,8 @@
 (() => {
-  // ============================================================
-  //  POP-OUT ONLY PLAYER MODE (B)
-  //  - Main window: controls + opens popout
-  //  - Popout window: the only place audio plays
-  // ============================================================
-
-  const STATE_KEY = "open_popout_state_v2";
+  // =========================
+  // Shared state for settings sync
+  // =========================
+  const STATE_KEY = "open_shared_settings_v3";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -26,8 +23,6 @@
       tone: document.getElementById("tone")?.value ?? "110",
       mood: document.getElementById("mood")?.value ?? "major",
       density: document.getElementById("density")?.value ?? "0.2",
-      // play flag is a "command" for popout (main never plays)
-      play: false,
       updatedAt: Date.now()
     };
   }
@@ -53,33 +48,29 @@
     if (density && state.density != null) density.value = state.density;
   }
 
-  function saveState(overrides = {}) {
-    const next = { ...readUIState(), ...overrides, updatedAt: Date.now() };
+  function saveState() {
+    const next = { ...readUIState(), updatedAt: Date.now() };
     try { localStorage.setItem(STATE_KEY, JSON.stringify(next)); } catch {}
     return next;
   }
 
   function openPopout() {
-    // Save settings only; DO NOT trigger playback
-    saveState({ play: false });
+    // Save settings ONLY. No autoplay.
+    saveState();
 
     const url = `${window.location.pathname}#popout`;
-
-    // Re-use same named window if already open
     const w = window.open(
       url,
       "open_popout_player",
       "width=480,height=620,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes"
     );
 
-    // Best effort focus
     try { w && w.focus && w.focus(); } catch {}
   }
 
-  // ============================================================
-  //  AUDIO ENGINE (only runs in popout mode)
-  // ============================================================
-
+  // =========================
+  // Audio engine (runs in whichever window hits Play)
+  // =========================
   let audioContext = null;
   let masterGain = null;
   let limiter = null;
@@ -201,7 +192,7 @@
     if (durationInput !== "infinite") {
       const elapsed = currentTime - sessionStartTime;
       if (elapsed >= parseFloat(durationInput)) {
-        stopAll(true);
+        stopAll();
         return;
       }
     }
@@ -227,45 +218,30 @@
   }
 
   async function startFromUI() {
-    if (!isPopoutMode()) return; // IMPORTANT: only popout plays
-
     ensureAudio();
+    if (audioContext.state === "suspended") await audioContext.resume();
 
-    if (audioContext.state === "suspended") {
-      await audioContext.resume();
-    }
-
-    // Reset any previous fade
+    // Ensure master gain is up (in case it was faded)
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
-    stopAll(false);
-
+    stopAll(); // stop current session in this SAME window only
     isPlaying = true;
+
     sessionStartTime = audioContext.currentTime;
     nextNoteTime = audioContext.currentTime;
 
     scheduler();
-
-    // Broadcast: playing
-    saveState({ play: true });
   }
 
-  function stopAll(broadcast = true) {
-    if (!audioContext) {
-      if (broadcast) saveState({ play: false });
-      return;
-    }
-    if (!isPlaying) {
-      if (broadcast) saveState({ play: false });
-      return;
-    }
+  function stopAll() {
+    if (!audioContext || !isPlaying) return;
 
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
     const now = audioContext.currentTime;
 
-    // Fade to avoid click
+    // small fade to prevent click
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
@@ -274,19 +250,15 @@
       activeNodes = [];
       masterGain.gain.setValueAtTime(1, audioContext.currentTime);
     }, 60);
-
-    if (broadcast) saveState({ play: false });
   }
 
-  // ============================================================
-  //  UI wiring
-  // ============================================================
-
+  // =========================
+  // UI wiring + cross-window setting sync
+  // =========================
   document.addEventListener("DOMContentLoaded", () => {
-    // Optional: mark popout for CSS layout tweaks
     if (isPopoutMode()) document.body.classList.add("popout");
 
-    // Load and apply any saved settings
+    // Load saved settings
     const saved = loadState();
     applyUIState(saved);
 
@@ -297,70 +269,36 @@
       hzReadout.textContent = toneSlider.value;
       toneSlider.addEventListener("input", () => {
         hzReadout.textContent = toneSlider.value;
-        saveState({ play: loadState()?.play ?? false });
+        saveState();
       });
     }
 
-    // Persist settings changes (both windows)
+    // Persist changes
     ["songDuration", "mood", "density"].forEach(id => {
       const el = document.getElementById(id);
       if (!el) return;
-      el.addEventListener("input", () => saveState({ play: loadState()?.play ?? false }));
-      el.addEventListener("change", () => saveState({ play: loadState()?.play ?? false }));
+      el.addEventListener("input", saveState);
+      el.addEventListener("change", saveState);
     });
 
     // Buttons
-    const playBtn = document.getElementById("playNow");
-    const stopBtn = document.getElementById("stop");
-    const popBtn = document.getElementById("popOut");
+    document.getElementById("playNow")?.addEventListener("click", async () => {
+      await startFromUI(); // PLAY really plays (in this window)
+    });
 
-    // MAIN WINDOW:
-    // - Play: open/focus popout (does NOT start audio)
-    // - Stop: sends stop command to popout
-    if (!isPopoutMode()) {
-      playBtn?.addEventListener("click", () => {
-        openPopout();
-        // Do not auto-play. User presses Play inside the popout.
-      });
+    document.getElementById("stop")?.addEventListener("click", () => {
+      stopAll();
+    });
 
-      stopBtn?.addEventListener("click", () => {
-        // Tell popout to stop
-        saveState({ play: false });
-      });
+    document.getElementById("popOut")?.addEventListener("click", () => {
+      openPopout(); // Open Player just opens the popout
+    });
 
-      popBtn?.addEventListener("click", () => openPopout());
-    }
-
-    // POPOUT WINDOW:
-    // - Play: starts audio
-    // - Stop: stops audio
-    if (isPopoutMode()) {
-      playBtn?.addEventListener("click", async () => {
-        await startFromUI();
-      });
-
-      stopBtn?.addEventListener("click", () => stopAll(true));
-
-      popBtn?.addEventListener("click", () => {
-        // In popout, the "Pop Out" button is redundant. You can hide it with CSS if desired.
-        // We'll just focus this window.
-        try { window.focus(); } catch {}
-      });
-    }
-
-    // Cross-window syncing (settings + stop command)
+    // Cross-window: apply settings when the other window changes them
     window.addEventListener("storage", (e) => {
       if (e.key !== STATE_KEY) return;
-
       const st = loadState();
       applyUIState(st);
-
-      // Only popout responds to play/stop flags.
-      if (isPopoutMode()) {
-        if (st?.play === false && isPlaying) stopAll(false);
-        // IMPORTANT: do NOT auto-start from storage (gesture restriction).
-        // User must click Play in the popout.
-      }
     });
   });
 })();
