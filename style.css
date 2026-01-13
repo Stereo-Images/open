@@ -58,6 +58,12 @@ input[type="range"] {
   margin-top: 3rem;
 }
 
+/* NEW: Styles for the popout button container */
+.popout-container {
+  margin-top: 1rem;
+  display: flex;
+}
+
 button {
   flex: 1;
   cursor: pointer;
@@ -65,11 +71,17 @@ button {
   transition: none !important;
 }
 
+/* NEW: Style for the secondary popout button */
+.secondary-btn {
+  border: 1px dashed #000; /* Distinct style */
+  font-size: 0.9rem;
+}
+
 button:hover, 
 button:active, 
 button:focus {
-  background-color: #fff !important;
-  color: #000 !important;
+  background-color: #000 !important; /* Invert on hover */
+  color: #fff !important;
   outline: none;
 }
 
