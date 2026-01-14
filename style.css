@@ -18,6 +18,17 @@ main {
   padding: 0 2rem;
 }
 
+/* Popout-only title (hidden by default) */
+#popoutTitle {
+  display: none; /* shown in popout mode */
+  font-weight: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.5rem;
+  border-bottom: 1px solid #000;
+  padding-bottom: 1rem;
+  margin: 0 0 2rem 0;
+}
+
 /* =========================
    MAIN TAB: launch-only
    ========================= */
@@ -102,12 +113,18 @@ button:focus {
    Mode switching
    ========================= */
 
-/* Default (main tab): hide player controls */
+/* Default (main tab): hide player UI and your name */
 #controls { display: none; }
+#credits { display: none; }        /* <-- removes name from launch page */
+.separator { display: none; }      /* optional: keep launch page ultra-minimal */
+#popoutTitle { display: none; }    /* no title on launch */
 
-/* Popout mode: show controls, hide launch-only */
+/* Popout mode: show player UI, title, footer */
 body.popout #controls { display: block; }
 body.popout #launchOnly { display: none; }
+body.popout #popoutTitle { display: block; }
+body.popout #credits { display: block; }
+body.popout .separator { display: block; }
 
 /* Popout layout tweaks */
 body.popout main {
