@@ -10,6 +10,14 @@
   <main>
     <h1>Open</h1>
 
+    <!-- MAIN TAB: launch-only UI (button only) -->
+    <section id="launchOnly">
+      <div class="launch-actions">
+        <button type="button" id="launchPlayer" class="secondary-btn">Open</button>
+      </div>
+    </section>
+
+    <!-- POPOUT: full controls -->
     <section id="controls">
       <form id="songForm">
         <div class="form-group">
@@ -46,10 +54,6 @@
         <div class="form-actions">
           <button type="button" id="playNow">Play</button>
           <button type="button" id="stop">Stop</button>
-        </div>
-
-        <div class="popout-container" id="popOutContainer">
-          <button type="button" id="popOut" class="secondary-btn">Open Player ↗</button>
         </div>
       </form>
     </section>
