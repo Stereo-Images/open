@@ -15,7 +15,7 @@ body {
 }
 
 main {
-  max-width: 500px;
+  max-width: 520px;
   margin: 15vh auto;
   padding: 0 2rem;
 }
@@ -26,8 +26,21 @@ h1 {
   letter-spacing: 0.5rem;
   border-bottom: 1px solid #000;
   padding-bottom: 1rem;
-  margin-bottom: 3rem;
+  margin-bottom: 2rem;
 }
+
+/* =========================
+   MAIN TAB: launch-only
+   ========================= */
+
+.launch-actions {
+  display: flex;
+  margin-top: 1rem;
+}
+
+/* =========================
+   CONTROLS (popout)
+   ========================= */
 
 .form-group {
   display: flex;
@@ -61,7 +74,7 @@ input[type="range"] {
 .form-actions {
   display: flex;
   gap: 1rem;
-  margin-top: 3rem;
+  margin-top: 2rem;
 }
 
 button {
@@ -71,7 +84,6 @@ button {
   transition: none !important;
 }
 
-/* Hover/focus styling */
 button:hover,
 button:active,
 button:focus {
@@ -80,9 +92,15 @@ button:focus {
   outline: none;
 }
 
+/* Secondary style for Open button */
+.secondary-btn {
+  border: 1px dashed #000;
+  font-size: 0.95rem;
+}
+
 /* Separator and footer */
 .separator {
-  margin-top: 6rem;
+  margin-top: 4rem;
   border: 0;
   border-top: 1px solid #000;
 }
@@ -94,39 +112,25 @@ button:focus {
 }
 
 /* =========================
-   Open Player button
+   Mode switching
    ========================= */
 
-.popout-container {
-  margin-top: 1rem;
-  display: flex;
+/* Default (main tab): hide controls */
+#controls {
+  display: none;
 }
 
-/* Secondary style for Open Player button */
-.secondary-btn {
-  border: 1px dashed #000;
-  font-size: 0.9rem;
+/* Popout mode: show controls, hide launch-only */
+body.popout #controls {
+  display: block;
 }
 
-/* =========================
-   Popout Mode Layout + UI
-   ========================= */
+body.popout #launchOnly {
+  display: none;
+}
 
+/* Popout layout tweaks */
 body.popout main {
   margin: 2rem auto;
-  max-width: 420px;
-}
-
-body.popout h1 {
-  margin-bottom: 1.5rem;
-}
-
-/* Hide ONLY separator in popout; keep footer visible */
-body.popout .separator {
-  display: none;
-}
-
-/* Hide Open Player button in popout (already in the player) */
-body.popout #popOutContainer {
-  display: none;
+  max-width: 460px;
 }
