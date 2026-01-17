@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v6";
+  const STATE_KEY = "open_player_settings_v7";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -41,7 +41,6 @@
     }
   }
 
-  // IMPORTANT: window.open must happen directly in a click handler
   function openPopout() {
     const base = window.location.href.split("#")[0];
     const url = `${base}#popout`;
@@ -53,11 +52,9 @@
     );
 
     if (!w) {
-      // Popup blocked—give a blunt fallback
       alert("Pop-up blocked. Please allow pop-ups for this site, then try again.");
       return;
     }
-
     try { w.focus(); } catch {}
   }
 
@@ -65,8 +62,10 @@
   // Audio engine (popout only)
   // =========================
   let audioContext = null;
+
+  // Reference-style master gain (no limiter/compressor)
   let masterGain = null;
-  let limiter = null;
+
   let reverbNode = null;
   let reverbGain = null;
 
@@ -76,22 +75,24 @@
   let sessionStartTime = 0;
   let rafId = null;
 
-  const scheduleAheadTime = 0.5;
+  // Match your reference
+  const scheduleAheadTime = 0.2;
 
-  // Mood choices (NO "random" option)
-  const MOOD_CHOICES = ["major", "minor", "pentatonic"];
+  // Moods: no "random" option exposed; we random-pick internally
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
   };
+  const MOOD_CHOICES = ["major", "minor", "pentatonic"];
 
-  // lower half of old [0.05, 0.8] => [0.05, 0.425]
+  // Lower half of original density range [0.05, 0.8] => [0.05, 0.425]
   const DENSITY_MIN = 0.05;
   const DENSITY_MAX = 0.425;
 
-  let sessionMood = "major";
-  let sessionDensity = 0.2;
+  // Re-rolled every Play
+  let runMood = "major";
+  let runDensity = 0.2;
 
   function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
@@ -99,9 +100,9 @@
   function randFloat(min, max) {
     return min + Math.random() * (max - min);
   }
-  function initSessionGenerativeParams() {
-    sessionMood = pick(MOOD_CHOICES);
-    sessionDensity = randFloat(DENSITY_MIN, DENSITY_MAX);
+  function rerollHiddenParamsForThisPlay() {
+    runMood = pick(MOOD_CHOICES);
+    runDensity = randFloat(DENSITY_MIN, DENSITY_MAX);
   }
 
   function ensureAudio() {
@@ -109,16 +110,12 @@
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    limiter = audioContext.createDynamicsCompressor();
-    limiter.threshold.setValueAtTime(-1.0, audioContext.currentTime);
-    limiter.knee.setValueAtTime(0, audioContext.currentTime);
-    limiter.ratio.setValueAtTime(20, audioContext.currentTime);
-    limiter.connect(audioContext.destination);
-
+    // Reference-style Master Gain (to destination)
     masterGain = audioContext.createGain();
-    masterGain.connect(limiter);
+    masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
 
+    // Reference-style reverb
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.2;
@@ -126,6 +123,7 @@
     createReverb();
   }
 
+  // Reference-style impulse
   function createReverb() {
     const duration = 5.0;
     const rate = audioContext.sampleRate;
@@ -138,12 +136,16 @@
         data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 1.5);
       }
     }
-
     reverbNode.buffer = impulse;
+
+    // Reference routing: convolver -> reverbGain -> destination
     reverbNode.connect(reverbGain);
-    reverbGain.connect(limiter);
+    reverbGain.connect(audioContext.destination);
   }
 
+  // =========================
+  // FM Bell (MATCHES your reference)
+  // =========================
   function playFmBell(freq, duration, volume, startTime) {
     const numVoices = 2 + Math.floor(Math.random() * 2);
     const voices = [];
@@ -168,9 +170,12 @@
       carrier.frequency.value = freq;
       modulator.frequency.value = freq * voice.modRatio;
 
-      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
+      // Reference: maxDeviation + exp ramp down
+      const maxDeviation = freq * voice.modIndex;
+      modGain.gain.setValueAtTime(maxDeviation, startTime);
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
+      // Reference: amp envelope
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -179,6 +184,7 @@
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
 
+      // Reference: send to reverb + dry to master
       ampGain.connect(reverbNode);
       ampGain.connect(masterGain);
 
@@ -190,7 +196,7 @@
       activeNodes.push(carrier, modulator, ampGain);
     });
 
-    if (activeNodes.length > 250) activeNodes.splice(0, 120);
+    if (activeNodes.length > 150) activeNodes.splice(0, 50);
   }
 
   function scheduler() {
@@ -207,14 +213,15 @@
       }
     }
 
-    const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    const scale = scales[sessionMood] || scales.major;
-    const density = sessionDensity;
-
     while (nextNoteTime < currentTime + scheduleAheadTime) {
+      const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+
+      const scale = scales[runMood] || scales.major;
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
-      const dur = (1 / density) * 2.5;
+
+      const density = runDensity;               // hidden, re-rolled each Play
+      const dur = (1 / density) * 2.5;          // reference formula
 
       playFmBell(freq, dur, 0.4, nextNoteTime);
 
@@ -229,9 +236,10 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Fresh mood + density every Play
-    initSessionGenerativeParams();
+    // Fresh every Play (your requirement)
+    rerollHiddenParamsForThisPlay();
 
+    // Ensure master gain is up if it was left low
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
     stopAll();
@@ -243,18 +251,20 @@
   }
 
   function stopAll() {
-    if (!audioContext || !isPlaying) return;
+    if (!isPlaying) return;
 
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
+    // Reference: ramp down master to prevent click
     const now = audioContext.currentTime;
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
     setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch {} });
+      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
+      // Reset master gain for next play
       masterGain.gain.setValueAtTime(1, audioContext.currentTime);
     }, 60);
   }
@@ -262,19 +272,17 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (isPopoutMode()) document.body.classList.add("popout");
 
-    // Attach launch handler safely. If this fails, nothing else should break.
-    const launchBtn = document.getElementById("launchPlayer");
-    if (launchBtn) {
-      launchBtn.addEventListener("click", openPopout);
-    }
+    // Launch button
+    document.getElementById("launchPlayer")?.addEventListener("click", openPopout);
 
-    // Popout-only wiring
+    // Popout wiring only
     if (isPopoutMode()) {
       const saved = loadState();
       applyControls(saved);
 
       const toneSlider = document.getElementById("tone");
       const hzReadout = document.getElementById("hzReadout");
+
       if (toneSlider && hzReadout) {
         hzReadout.textContent = toneSlider.value;
         toneSlider.addEventListener("input", () => {
