@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v5";
+  const STATE_KEY = "open_player_settings_v6";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -18,12 +18,11 @@
     try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {}
   }
 
+  // Only persist the controls you still expose.
   function readControls() {
     return {
       songDuration: document.getElementById("songDuration")?.value ?? "60",
       tone: document.getElementById("tone")?.value ?? "110",
-      mood: document.getElementById("mood")?.value ?? "major",
-      density: document.getElementById("density")?.value ?? "0.2",
       updatedAt: Date.now()
     };
   }
@@ -33,8 +32,6 @@
 
     const sd = document.getElementById("songDuration");
     const tone = document.getElementById("tone");
-    const mood = document.getElementById("mood");
-    const density = document.getElementById("density");
     const hzReadout = document.getElementById("hzReadout");
 
     if (sd && state.songDuration != null) sd.value = state.songDuration;
@@ -43,14 +40,9 @@
       tone.value = state.tone;
       if (hzReadout) hzReadout.textContent = state.tone;
     }
-
-    if (mood && state.mood != null) mood.value = state.mood;
-
-    if (density && state.density != null) density.value = state.density;
   }
 
   function openPopout() {
-    // Works reliably on GitHub Pages: keep current URL, strip existing hash, add #popout
     const base = window.location.href.split("#")[0];
     const url = `${base}#popout`;
 
@@ -80,12 +72,37 @@
 
   const scheduleAheadTime = 0.5;
 
+  // Mood options (NO "random" mode)
+  const MOOD_CHOICES = ["major", "minor", "pentatonic"];
+
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
-    random: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
   };
+
+  // Reduced density range: lower half of old [0.05, 0.8] => [0.05, 0.425]
+  const DENSITY_MIN = 0.05;
+  const DENSITY_MAX = 0.425;
+
+  // Chosen once per popout session
+  let sessionMood = "major";
+  let sessionDensity = 0.2;
+
+  function randFloat(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function pick(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  function initSessionGenerativeParams() {
+    sessionMood = pick(MOOD_CHOICES);
+    sessionDensity = randFloat(DENSITY_MIN, DENSITY_MAX);
+    // If you ever want a tiny nudge slower on average, bias by squaring:
+    // sessionDensity = DENSITY_MIN + (DENSITY_MAX - DENSITY_MIN) * Math.pow(Math.random(), 1.25);
+  }
 
   function ensureAudio() {
     if (audioContext) return;
@@ -143,136 +160,4 @@
     }
 
     voices.forEach((voice) => {
-      const carrier = audioContext.createOscillator();
-      const modulator = audioContext.createOscillator();
-      const modGain = audioContext.createGain();
-      const ampGain = audioContext.createGain();
-
-      carrier.frequency.value = freq;
-      modulator.frequency.value = freq * voice.modRatio;
-
-      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
-      modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      ampGain.gain.setValueAtTime(0.0001, startTime);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-
-      modulator.connect(modGain);
-      modGain.connect(carrier.frequency);
-      carrier.connect(ampGain);
-
-      ampGain.connect(reverbNode);
-      ampGain.connect(masterGain);
-
-      modulator.start(startTime);
-      carrier.start(startTime);
-      modulator.stop(startTime + duration);
-      carrier.stop(startTime + duration);
-
-      activeNodes.push(carrier, modulator, ampGain);
-    });
-
-    if (activeNodes.length > 250) activeNodes.splice(0, 120);
-  }
-
-  function scheduler() {
-    if (!isPlaying) return;
-
-    const durationInput = document.getElementById("songDuration").value;
-    const currentTime = audioContext.currentTime;
-
-    if (durationInput !== "infinite") {
-      const elapsed = currentTime - sessionStartTime;
-      if (elapsed >= parseFloat(durationInput)) {
-        stopAll();
-        return;
-      }
-    }
-
-    while (nextNoteTime < currentTime + scheduleAheadTime) {
-      const baseFreq = parseFloat(document.getElementById("tone").value);
-      const mood = document.getElementById("mood").value;
-      const density = parseFloat(document.getElementById("density").value);
-      const scale = scales[mood] || scales.major;
-
-      const interval = scale[Math.floor(Math.random() * scale.length)];
-      const freq = baseFreq * Math.pow(2, interval / 12);
-      const dur = (1 / density) * 2.5;
-
-      playFmBell(freq, dur, 0.4, nextNoteTime);
-
-      const drift = 0.95 + (Math.random() * 0.1);
-      nextNoteTime += (1 / density) * drift;
-    }
-
-    rafId = requestAnimationFrame(scheduler);
-  }
-
-  async function startFromUI() {
-    ensureAudio();
-    if (audioContext.state === "suspended") await audioContext.resume();
-
-    masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-
-    stopAll();
-    isPlaying = true;
-    sessionStartTime = audioContext.currentTime;
-    nextNoteTime = audioContext.currentTime;
-
-    scheduler();
-  }
-
-  function stopAll() {
-    if (!audioContext || !isPlaying) return;
-
-    isPlaying = false;
-    if (rafId) cancelAnimationFrame(rafId);
-
-    const now = audioContext.currentTime;
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-
-    setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch {} });
-      activeNodes = [];
-      masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-    }, 60);
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    if (isPopoutMode()) document.body.classList.add("popout");
-
-    // Launch button exists in both modes, but popout hides launchOnly via CSS anyway.
-    document.getElementById("launchPlayer")?.addEventListener("click", openPopout);
-
-    if (isPopoutMode()) {
-      const saved = loadState();
-      applyControls(saved);
-
-      const toneSlider = document.getElementById("tone");
-      const hzReadout = document.getElementById("hzReadout");
-      if (toneSlider && hzReadout) {
-        hzReadout.textContent = toneSlider.value;
-        toneSlider.addEventListener("input", () => {
-          hzReadout.textContent = toneSlider.value;
-          saveState(readControls());
-        });
-      }
-
-      ["songDuration", "mood", "density"].forEach(id => {
-        const el = document.getElementById(id);
-        if (!el) return;
-        el.addEventListener("input", () => saveState(readControls()));
-        el.addEventListener("change", () => saveState(readControls()));
-      });
-
-      document.getElementById("playNow")?.addEventListener("click", async () => {
-        saveState(readControls());
-        await startFromUI();
-      });
-
-      document.getElementById("stop")?.addEventListener("click", stopAll);
-    }
-  });
-})();
+      const carrier
