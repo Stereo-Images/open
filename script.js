@@ -18,7 +18,6 @@
     try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {}
   }
 
-  // Only persist the controls you still expose.
   function readControls() {
     return {
       songDuration: document.getElementById("songDuration")?.value ?? "60",
@@ -42,6 +41,7 @@
     }
   }
 
+  // IMPORTANT: window.open must happen directly in a click handler
   function openPopout() {
     const base = window.location.href.split("#")[0];
     const url = `${base}#popout`;
@@ -52,7 +52,13 @@
       "width=480,height=620,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes"
     );
 
-    try { w && w.focus && w.focus(); } catch {}
+    if (!w) {
+      // Popup blocked—give a blunt fallback
+      alert("Pop-up blocked. Please allow pop-ups for this site, then try again.");
+      return;
+    }
+
+    try { w.focus(); } catch {}
   }
 
   // =========================
@@ -72,36 +78,30 @@
 
   const scheduleAheadTime = 0.5;
 
-  // Mood options (NO "random" mode)
+  // Mood choices (NO "random" option)
   const MOOD_CHOICES = ["major", "minor", "pentatonic"];
-
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
   };
 
-  // Reduced density range: lower half of old [0.05, 0.8] => [0.05, 0.425]
+  // lower half of old [0.05, 0.8] => [0.05, 0.425]
   const DENSITY_MIN = 0.05;
   const DENSITY_MAX = 0.425;
 
-  // Chosen once per popout session
   let sessionMood = "major";
   let sessionDensity = 0.2;
-
-  function randFloat(min, max) {
-    return min + Math.random() * (max - min);
-  }
 
   function pick(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
-
+  function randFloat(min, max) {
+    return min + Math.random() * (max - min);
+  }
   function initSessionGenerativeParams() {
     sessionMood = pick(MOOD_CHOICES);
     sessionDensity = randFloat(DENSITY_MIN, DENSITY_MAX);
-    // If you ever want a tiny nudge slower on average, bias by squaring:
-    // sessionDensity = DENSITY_MIN + (DENSITY_MAX - DENSITY_MIN) * Math.pow(Math.random(), 1.25);
   }
 
   function ensureAudio() {
@@ -160,4 +160,141 @@
     }
 
     voices.forEach((voice) => {
-      const carrier
+      const carrier = audioContext.createOscillator();
+      const modulator = audioContext.createOscillator();
+      const modGain = audioContext.createGain();
+      const ampGain = audioContext.createGain();
+
+      carrier.frequency.value = freq;
+      modulator.frequency.value = freq * voice.modRatio;
+
+      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
+      modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      ampGain.gain.setValueAtTime(0.0001, startTime);
+      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+      modulator.connect(modGain);
+      modGain.connect(carrier.frequency);
+      carrier.connect(ampGain);
+
+      ampGain.connect(reverbNode);
+      ampGain.connect(masterGain);
+
+      modulator.start(startTime);
+      carrier.start(startTime);
+      modulator.stop(startTime + duration);
+      carrier.stop(startTime + duration);
+
+      activeNodes.push(carrier, modulator, ampGain);
+    });
+
+    if (activeNodes.length > 250) activeNodes.splice(0, 120);
+  }
+
+  function scheduler() {
+    if (!isPlaying) return;
+
+    const durationInput = document.getElementById("songDuration")?.value ?? "60";
+    const currentTime = audioContext.currentTime;
+
+    if (durationInput !== "infinite") {
+      const elapsed = currentTime - sessionStartTime;
+      if (elapsed >= parseFloat(durationInput)) {
+        stopAll();
+        return;
+      }
+    }
+
+    const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+    const scale = scales[sessionMood] || scales.major;
+    const density = sessionDensity;
+
+    while (nextNoteTime < currentTime + scheduleAheadTime) {
+      const interval = scale[Math.floor(Math.random() * scale.length)];
+      const freq = baseFreq * Math.pow(2, interval / 12);
+      const dur = (1 / density) * 2.5;
+
+      playFmBell(freq, dur, 0.4, nextNoteTime);
+
+      const drift = 0.95 + (Math.random() * 0.1);
+      nextNoteTime += (1 / density) * drift;
+    }
+
+    rafId = requestAnimationFrame(scheduler);
+  }
+
+  async function startFromUI() {
+    ensureAudio();
+    if (audioContext.state === "suspended") await audioContext.resume();
+
+    // Fresh mood + density every Play
+    initSessionGenerativeParams();
+
+    masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+
+    stopAll();
+    isPlaying = true;
+    sessionStartTime = audioContext.currentTime;
+    nextNoteTime = audioContext.currentTime;
+
+    scheduler();
+  }
+
+  function stopAll() {
+    if (!audioContext || !isPlaying) return;
+
+    isPlaying = false;
+    if (rafId) cancelAnimationFrame(rafId);
+
+    const now = audioContext.currentTime;
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+
+    setTimeout(() => {
+      activeNodes.forEach(n => { try { n.stop(); } catch {} });
+      activeNodes = [];
+      masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+    }, 60);
+  }
+
+  document.addEventListener("DOMContentLoaded", () => {
+    if (isPopoutMode()) document.body.classList.add("popout");
+
+    // Attach launch handler safely. If this fails, nothing else should break.
+    const launchBtn = document.getElementById("launchPlayer");
+    if (launchBtn) {
+      launchBtn.addEventListener("click", openPopout);
+    }
+
+    // Popout-only wiring
+    if (isPopoutMode()) {
+      const saved = loadState();
+      applyControls(saved);
+
+      const toneSlider = document.getElementById("tone");
+      const hzReadout = document.getElementById("hzReadout");
+      if (toneSlider && hzReadout) {
+        hzReadout.textContent = toneSlider.value;
+        toneSlider.addEventListener("input", () => {
+          hzReadout.textContent = toneSlider.value;
+          saveState(readControls());
+        });
+      }
+
+      const sd = document.getElementById("songDuration");
+      if (sd) {
+        sd.addEventListener("input", () => saveState(readControls()));
+        sd.addEventListener("change", () => saveState(readControls()));
+      }
+
+      document.getElementById("playNow")?.addEventListener("click", async () => {
+        saveState(readControls());
+        await startFromUI();
+      });
+
+      document.getElementById("stop")?.addEventListener("click", stopAll);
+    }
+  });
+})();
