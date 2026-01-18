@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v7";
+  const STATE_KEY = "open_player_settings_v6";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -18,6 +18,7 @@
     try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {}
   }
 
+  // Only save the controls that still exist
   function readControls() {
     return {
       songDuration: document.getElementById("songDuration")?.value ?? "60",
@@ -55,19 +56,21 @@
       alert("Pop-up blocked. Please allow pop-ups for this site, then try again.");
       return;
     }
-    try { w.focus(); } catch {}
+
+    try { w && w.focus && w.focus(); } catch {}
   }
 
   // =========================
   // Audio engine (popout only)
   // =========================
   let audioContext = null;
-
-  // Reference-style master gain (no limiter/compressor)
   let masterGain = null;
 
   let reverbNode = null;
   let reverbGain = null;
+
+  // NEW (lightweight): gentle lowpass to tame “pure sine” edges
+  let dryFilter = null;
 
   let activeNodes = [];
   let isPlaying = false;
@@ -75,10 +78,10 @@
   let sessionStartTime = 0;
   let rafId = null;
 
-  // Match your reference
+  // Keep your timing feel (your earlier “good” script used 0.2)
   const scheduleAheadTime = 0.2;
 
-  // Moods: no "random" option exposed; we random-pick internally
+  // Mood + density are now hidden session params (re-rolled each Play)
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
@@ -86,11 +89,10 @@
   };
   const MOOD_CHOICES = ["major", "minor", "pentatonic"];
 
-  // Lower half of original density range [0.05, 0.8] => [0.05, 0.425]
+  // Lower half of old [0.05, 0.8] => [0.05, 0.425]
   const DENSITY_MIN = 0.05;
   const DENSITY_MAX = 0.425;
 
-  // Re-rolled every Play
   let runMood = "major";
   let runDensity = 0.2;
 
@@ -100,7 +102,9 @@
   function randFloat(min, max) {
     return min + Math.random() * (max - min);
   }
-  function rerollHiddenParamsForThisPlay() {
+
+  // Fresh every Play
+  function rerollHiddenParams() {
     runMood = pick(MOOD_CHOICES);
     runDensity = randFloat(DENSITY_MIN, DENSITY_MAX);
   }
@@ -110,20 +114,28 @@
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Reference-style Master Gain (to destination)
     masterGain = audioContext.createGain();
     masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
 
-    // Reference-style reverb
+    // Reverb (same approach, but lower wet)
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
-    reverbGain.gain.value = 1.2;
+
+    // ↓↓↓ less reverb than your current 1.2
+    reverbGain.gain.value = 0.65;
 
     createReverb();
+
+    // Gentle dry lowpass (cheap, reduces “needle” sine)
+    dryFilter = audioContext.createBiquadFilter();
+    dryFilter.type = "lowpass";
+    dryFilter.frequency.value = 4500; // mild rolloff
+    dryFilter.Q.value = 0.7;
+
+    dryFilter.connect(masterGain);
   }
 
-  // Reference-style impulse
   function createReverb() {
     const duration = 5.0;
     const rate = audioContext.sampleRate;
@@ -136,16 +148,12 @@
         data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, 1.5);
       }
     }
-    reverbNode.buffer = impulse;
 
-    // Reference routing: convolver -> reverbGain -> destination
+    reverbNode.buffer = impulse;
     reverbNode.connect(reverbGain);
     reverbGain.connect(audioContext.destination);
   }
 
-  // =========================
-  // FM Bell (MATCHES your reference)
-  // =========================
   function playFmBell(freq, duration, volume, startTime) {
     const numVoices = 2 + Math.floor(Math.random() * 2);
     const voices = [];
@@ -153,11 +161,15 @@
 
     for (let i = 0; i < numVoices; i++) {
       const amp = Math.random();
+
+      // Small change: slightly higher minimum modIndex to avoid “too pure” tones
+      // (kept close to your original range)
       voices.push({
         modRatio: 1.5 + Math.random() * 2.5,
-        modIndex: 1 + Math.random() * 4,
+        modIndex: 1.6 + Math.random() * 3.6, // was 1 + Math.random()*4
         amp
       });
+
       totalAmp += amp;
     }
 
@@ -170,12 +182,10 @@
       carrier.frequency.value = freq;
       modulator.frequency.value = freq * voice.modRatio;
 
-      // Reference: maxDeviation + exp ramp down
-      const maxDeviation = freq * voice.modIndex;
-      modGain.gain.setValueAtTime(maxDeviation, startTime);
+      // Keep your envelope behavior
+      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
-      // Reference: amp envelope
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -184,9 +194,9 @@
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
 
-      // Reference: send to reverb + dry to master
+      // Wet + dry (but dry goes through gentle lowpass now)
       ampGain.connect(reverbNode);
-      ampGain.connect(masterGain);
+      ampGain.connect(dryFilter);
 
       modulator.start(startTime);
       carrier.start(startTime);
@@ -196,7 +206,7 @@
       activeNodes.push(carrier, modulator, ampGain);
     });
 
-    if (activeNodes.length > 150) activeNodes.splice(0, 50);
+    if (activeNodes.length > 250) activeNodes.splice(0, 120);
   }
 
   function scheduler() {
@@ -213,15 +223,16 @@
       }
     }
 
-    while (nextNoteTime < currentTime + scheduleAheadTime) {
-      const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+    const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+    const scale = scales[runMood] || scales.major;
+    const density = runDensity;
 
-      const scale = scales[runMood] || scales.major;
+    while (nextNoteTime < currentTime + scheduleAheadTime) {
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
 
-      const density = runDensity;               // hidden, re-rolled each Play
-      const dur = (1 / density) * 2.5;          // reference formula
+      // keep your pacing formula
+      const dur = (1 / density) * 2.5;
 
       playFmBell(freq, dur, 0.4, nextNoteTime);
 
@@ -236,10 +247,10 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Fresh every Play (your requirement)
-    rerollHiddenParamsForThisPlay();
+    // Fresh mood + density each Play (your requirement)
+    rerollHiddenParams();
 
-    // Ensure master gain is up if it was left low
+    // prevent click on stop/start
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
     stopAll();
@@ -251,20 +262,18 @@
   }
 
   function stopAll() {
-    if (!isPlaying) return;
+    if (!audioContext || !isPlaying) return;
 
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
-    // Reference: ramp down master to prevent click
     const now = audioContext.currentTime;
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
     setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
+      activeNodes.forEach(n => { try { n.stop(); } catch {} });
       activeNodes = [];
-      // Reset master gain for next play
       masterGain.gain.setValueAtTime(1, audioContext.currentTime);
     }, 60);
   }
@@ -272,17 +281,14 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (isPopoutMode()) document.body.classList.add("popout");
 
-    // Launch button
     document.getElementById("launchPlayer")?.addEventListener("click", openPopout);
 
-    // Popout wiring only
     if (isPopoutMode()) {
       const saved = loadState();
       applyControls(saved);
 
       const toneSlider = document.getElementById("tone");
       const hzReadout = document.getElementById("hzReadout");
-
       if (toneSlider && hzReadout) {
         hzReadout.textContent = toneSlider.value;
         toneSlider.addEventListener("input", () => {
