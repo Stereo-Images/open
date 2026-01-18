@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v7";
+  const STATE_KEY = "open_player_settings_v8";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -63,7 +63,7 @@
   // =========================
   let audioContext = null;
   let masterGain = null;
-  let limiter = null; // Re-added to match Earlier script
+  let limiter = null;
   let reverbNode = null;
   let reverbGain = null;
 
@@ -73,9 +73,8 @@
   let sessionStartTime = 0;
   let rafId = null;
 
-  const scheduleAheadTime = 0.5; // Reverted to 0.5 to match Earlier script (was 0.2 in Later)
+  const scheduleAheadTime = 0.5;
 
-  // Moods: no "random" option exposed; we random-pick internally
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
@@ -83,11 +82,9 @@
   };
   const MOOD_CHOICES = ["major", "minor", "pentatonic"];
 
-  // Lower half of original density range [0.05, 0.8] => [0.05, 0.425]
   const DENSITY_MIN = 0.05;
   const DENSITY_MAX = 0.425;
 
-  // Re-rolled every Play
   let runMood = "major";
   let runDensity = 0.2;
 
@@ -107,19 +104,16 @@
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // 1. Create Limiter (Matches Earlier Script)
     limiter = audioContext.createDynamicsCompressor();
     limiter.threshold.setValueAtTime(-1.0, audioContext.currentTime);
     limiter.knee.setValueAtTime(0, audioContext.currentTime);
     limiter.ratio.setValueAtTime(20, audioContext.currentTime);
     limiter.connect(audioContext.destination);
 
-    // 2. Master Gain -> Limiter
     masterGain = audioContext.createGain();
     masterGain.connect(limiter);
     masterGain.gain.value = 1;
 
-    // 3. Reverb Setup
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.2;
@@ -141,7 +135,6 @@
     }
 
     reverbNode.buffer = impulse;
-    // Routing from Earlier script: Reverb -> Gain -> Limiter
     reverbNode.connect(reverbGain);
     reverbGain.connect(limiter);
   }
@@ -161,6 +154,11 @@
       totalAmp += amp;
     }
 
+    // FIX: We shorten the amplitude envelope slightly relative to the modulation.
+    // This ensures the sound fades to silence *before* the modulation dies out,
+    // eliminating the "pure sine wave" tail.
+    const ampDuration = duration * 0.8; 
+
     voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
       const modulator = audioContext.createOscillator();
@@ -170,12 +168,14 @@
       carrier.frequency.value = freq;
       modulator.frequency.value = freq * voice.modRatio;
 
+      // Modulator maintains complexity over the full 'duration'
       modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
+      // Amplitude fades out quicker (at ampDuration)
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + ampDuration);
 
       modulator.connect(modGain);
       modGain.connect(carrier.frequency);
@@ -186,13 +186,14 @@
 
       modulator.start(startTime);
       carrier.start(startTime);
+      
+      // Stop oscillators at the full duration (even though silent after 0.8)
       modulator.stop(startTime + duration);
       carrier.stop(startTime + duration);
 
       activeNodes.push(carrier, modulator, ampGain);
     });
 
-    // Node cleanup logic from Earlier script (250/120)
     if (activeNodes.length > 250) activeNodes.splice(0, 120);
   }
 
@@ -233,7 +234,6 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Fresh every Play
     rerollHiddenParamsForThisPlay();
 
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
