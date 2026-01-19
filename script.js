@@ -1,9 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v20";
-
-  function isPopoutMode() {
-    return window.location.hash === "#popout";
-  }
+  const STATE_KEY = "open_player_settings_v22";
 
   function safeParse(raw) {
     try { return JSON.parse(raw); } catch { return null; }
@@ -28,34 +24,14 @@
 
   function applyControls(state) {
     if (!state) return;
-
     const sd = document.getElementById("songDuration");
     const tone = document.getElementById("tone");
     const hzReadout = document.getElementById("hzReadout");
-
     if (sd && state.songDuration != null) sd.value = state.songDuration;
-
     if (tone && state.tone != null) {
       tone.value = state.tone;
       if (hzReadout) hzReadout.textContent = state.tone;
     }
-  }
-
-  function openPopout() {
-    const base = window.location.href.split("#")[0];
-    const url = `${base}#popout`;
-
-    const w = window.open(
-      url,
-      "open_popout_player",
-      "width=480,height=620,menubar=no,toolbar=no,location=no,status=no,resizable=yes,scrollbars=yes"
-    );
-
-    if (!w) {
-      alert("Pop-up blocked. Please allow pop-ups for this site, then try again.");
-      return;
-    }
-    try { w.focus(); } catch {}
   }
 
   // =========================
@@ -67,34 +43,37 @@
 
     if (playBtn && stopBtn) {
       if (isPlaying) {
-        // PLAYING: Play is filled (Black), Stop is empty (White)
+        // PLAYING: Play is Black (Filled), Stop is White
         playBtn.classList.add("filled");
         stopBtn.classList.remove("filled");
       } else {
-        // STOPPED: Play is empty (White), Stop is filled (Black)
+        // STOPPED: Play is White, Stop is Black (Filled)
         playBtn.classList.remove("filled");
         stopBtn.classList.add("filled");
       }
     }
   }
 
+  function showPlayerUI() {
+    document.body.classList.add("active-mode");
+  }
+
   // =========================
-  // Audio engine (popout only)
+  // AUDIO ENGINE (Soft Start Version)
   // =========================
   let audioContext = null;
   let masterGain = null;
   let reverbNode = null;
   let reverbGain = null;
-  let dcBlocker = null;
 
   let activeNodes = [];
   let isPlaying = false;
   let nextNoteTime = 0;
   let sessionStartTime = 0;
   let rafId = null;
+  let cleanupTimer = null;
 
   const scheduleAheadTime = 0.5;
-
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
     minor: [0, 2, 3, 5, 7, 8, 10],
@@ -123,30 +102,22 @@
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // DC Block
-    dcBlocker = audioContext.createBiquadFilter();
-    dcBlocker.type = "highpass";
-    dcBlocker.frequency.value = 12;
-    dcBlocker.Q.value = 0.707;
-    dcBlocker.connect(audioContext.destination);
-
     masterGain = audioContext.createGain();
+    masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
-    masterGain.connect(dcBlocker);
 
-    // Reverb
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
-    reverbGain.gain.value = 1.5;
+    reverbGain.gain.value = 1.5; 
 
     createReverb();
   }
 
   function createReverb() {
-    const duration = 5.0;
+    const duration = 5.0; 
     const decay = 1.5;
     const rate = audioContext.sampleRate;
-    const length = Math.floor(rate * duration);
+    const length = Math.floor(rate * duration); 
     const impulse = audioContext.createBuffer(2, length, rate);
 
     for (let ch = 0; ch < 2; ch++) {
@@ -156,14 +127,13 @@
         data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
       }
     }
-
     reverbNode.buffer = impulse;
     reverbNode.connect(reverbGain);
-    reverbGain.connect(dcBlocker);
+    reverbGain.connect(audioContext.destination);
   }
 
   function playFmBell(freq, duration, volume, startTime) {
-    const numVoices = 2 + Math.floor(Math.random() * 2);
+    const numVoices = 2 + Math.floor(Math.random() * 2); 
     const voices = [];
     let totalAmp = 0;
 
@@ -181,9 +151,8 @@
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      const detune = (Math.random() - 0.5) * 2.0;
+      const detune = (Math.random() - 0.5) * 2.0; 
       carrier.frequency.value = freq + detune;
-
       modulator.frequency.value = freq * voice.modRatio;
 
       const maxDeviation = freq * voice.modIndex;
@@ -199,13 +168,11 @@
       modulator.connect(modGain);
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
-
       ampGain.connect(reverbNode);
-      ampGain.connect(masterGain);
+      ampGain.connect(masterGain); 
 
       modulator.start(startTime);
       carrier.start(startTime);
-
       modulator.stop(startTime + duration);
       carrier.stop(startTime + duration);
 
@@ -227,7 +194,7 @@
       const elapsed = currentTime - sessionStartTime;
       const limit = parseFloat(durationInput);
       if (!isNaN(limit) && elapsed >= limit) {
-        stopAll(); // Natural end
+        stopAll();
         return;
       }
     }
@@ -237,15 +204,13 @@
       const scale = scales[runMood] || scales.major;
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
-      const density = runDensity;
+      const density = runDensity;               
       const dur = (1 / density) * 2.5;
 
       playFmBell(freq, dur, 0.4, nextNoteTime);
-
       const drift = 0.95 + (Math.random() * 0.1);
       nextNoteTime += (1 / density) * drift;
     }
-
     rafId = requestAnimationFrame(scheduler);
   }
 
@@ -253,83 +218,88 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    rerollHiddenParamsForThisPlay();
-
-    // Reset UI to Playing State immediately
-    updateButtons(true);
-
-    masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-
-    if (isPlaying) {
-      // If we were already playing, quick cleanup
-      if (rafId) cancelAnimationFrame(rafId);
-      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
-      activeNodes = [];
+    if (cleanupTimer) {
+      clearTimeout(cleanupTimer);
+      cleanupTimer = null;
     }
 
+    rerollHiddenParamsForThisPlay();
+    
+    // UI: Set Play to Filled
+    updateButtons(true);
+
+    // AUDIO: Soft Start (Fade In 0->1) to prevent pop
+    masterGain.gain.cancelScheduledValues(audioContext.currentTime);
+    masterGain.gain.setValueAtTime(0, audioContext.currentTime);
+    masterGain.gain.linearRampToValueAtTime(1, audioContext.currentTime + 0.1);
+
+    stopAll(true); // Internal reset only
     isPlaying = true;
     sessionStartTime = audioContext.currentTime;
-    nextNoteTime = audioContext.currentTime;
+    nextNoteTime = audioContext.currentTime + 0.1;
 
     scheduler();
   }
 
-  function stopAll() {
-    // Reset UI to Stopped State
-    updateButtons(false);
+  function stopAll(isRestarting = false) {
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    }
 
-    if (!audioContext) return;
-    isPlaying = false;
-    if (rafId) cancelAnimationFrame(rafId);
+    if (!isRestarting) {
+      isPlaying = false;
+      // UI: Set Stop to Filled
+      updateButtons(false);
+    }
 
-    const now = audioContext.currentTime;
+    const now = audioContext?.currentTime || 0;
     if (masterGain) {
+      masterGain.gain.cancelScheduledValues(now);
       masterGain.gain.setValueAtTime(masterGain.gain.value, now);
       masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
     }
 
-    setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+    cleanupTimer = setTimeout(() => {
+      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
-      if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
     }, 60);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    if (isPopoutMode()) document.body.classList.add("popout");
+    // 1. Load Settings
+    const saved = loadState();
+    applyControls(saved);
+    
+    // 2. Initial Button State (Stopped)
+    updateButtons(false);
 
-    document.getElementById("launchPlayer")?.addEventListener("click", openPopout);
-
-    if (isPopoutMode()) {
-      const saved = loadState();
-      applyControls(saved);
-
-      // Initialize UI: Default is Stopped (Stop button filled)
-      updateButtons(false);
-
-      const toneSlider = document.getElementById("tone");
-      const hzReadout = document.getElementById("hzReadout");
-
-      if (toneSlider && hzReadout) {
+    // 3. Setup Controls
+    const toneSlider = document.getElementById("tone");
+    const hzReadout = document.getElementById("hzReadout");
+    if (toneSlider && hzReadout) {
+      hzReadout.textContent = toneSlider.value;
+      toneSlider.addEventListener("input", () => {
         hzReadout.textContent = toneSlider.value;
-        toneSlider.addEventListener("input", () => {
-          hzReadout.textContent = toneSlider.value;
-          saveState(readControls());
-        });
-      }
-
-      const sd = document.getElementById("songDuration");
-      if (sd) {
-        sd.addEventListener("input", () => saveState(readControls()));
-        sd.addEventListener("change", () => saveState(readControls()));
-      }
-
-      document.getElementById("playNow")?.addEventListener("click", async () => {
         saveState(readControls());
-        await startFromUI();
       });
-
-      document.getElementById("stop")?.addEventListener("click", () => stopAll());
     }
+
+    const sd = document.getElementById("songDuration");
+    if (sd) {
+      sd.addEventListener("input", () => saveState(readControls()));
+    }
+
+    // 4. Setup Play/Stop
+    document.getElementById("playNow")?.addEventListener("click", async () => {
+      saveState(readControls());
+      await startFromUI();
+    });
+    document.getElementById("stop")?.addEventListener("click", () => stopAll(false));
+
+    // 5. Mobile One-Page Launch
+    document.getElementById("launchPlayer")?.addEventListener("click", () => {
+      showPlayerUI();
+    });
   });
 })();
