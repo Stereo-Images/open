@@ -1,10 +1,5 @@
-/* script.js — Open (v16) with:
-   1) Stop button darkens + disables ONLY when playback ends naturally
-   2) DC OFFSET mitigation via a DC-blocking high-pass filter (very low cutoff)
-*/
-
 (() => {
-  const STATE_KEY = "open_player_settings_v16";
+  const STATE_KEY = "open_player_settings_v20";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -64,13 +59,23 @@
   }
 
   // =========================
-  // UI helpers
+  // UI HELPERS (Black/White Toggle)
   // =========================
-  function setStopButtonEnded(isEnded) {
+  function updateButtons(isPlaying) {
+    const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
-    if (!stopBtn) return;
-    stopBtn.classList.toggle("ended", isEnded);
-    stopBtn.disabled = isEnded; // disable only when the piece ends naturally
+
+    if (playBtn && stopBtn) {
+      if (isPlaying) {
+        // PLAYING: Play is filled (Black), Stop is empty (White)
+        playBtn.classList.add("filled");
+        stopBtn.classList.remove("filled");
+      } else {
+        // STOPPED: Play is empty (White), Stop is filled (Black)
+        playBtn.classList.remove("filled");
+        stopBtn.classList.add("filled");
+      }
+    }
   }
 
   // =========================
@@ -80,8 +85,6 @@
   let masterGain = null;
   let reverbNode = null;
   let reverbGain = null;
-
-  // DC OFFSET mitigation
   let dcBlocker = null;
 
   let activeNodes = [];
@@ -120,26 +123,23 @@
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // --- DC OFFSET / DC BLOCKER ---
-    // A gentle high-pass filter removes any DC bias (offset) without changing the tone.
+    // DC Block
     dcBlocker = audioContext.createBiquadFilter();
     dcBlocker.type = "highpass";
-    dcBlocker.frequency.value = 12; // low cutoff; keeps your 30–200 Hz range intact
+    dcBlocker.frequency.value = 12;
     dcBlocker.Q.value = 0.707;
     dcBlocker.connect(audioContext.destination);
 
     masterGain = audioContext.createGain();
     masterGain.gain.value = 1;
-    masterGain.connect(dcBlocker); // (was destination)
+    masterGain.connect(dcBlocker);
 
-    // ===============================================
-    // REVERB (Matches Original Script)
-    // ===============================================
+    // Reverb
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.5;
 
-    createReverb(); // connects reverbGain -> dcBlocker
+    createReverb();
   }
 
   function createReverb() {
@@ -159,7 +159,7 @@
 
     reverbNode.buffer = impulse;
     reverbNode.connect(reverbGain);
-    reverbGain.connect(dcBlocker); // (was destination)
+    reverbGain.connect(dcBlocker);
   }
 
   function playFmBell(freq, duration, volume, startTime) {
@@ -181,21 +181,17 @@
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      // Micro-detuning (+/- 2 Hz)
       const detune = (Math.random() - 0.5) * 2.0;
       carrier.frequency.value = freq + detune;
 
       modulator.frequency.value = freq * voice.modRatio;
 
       const maxDeviation = freq * voice.modIndex;
-
-      // Non-zero modulation floor (keeps "metal" character)
       const minDeviation = freq * 0.5;
 
       modGain.gain.setValueAtTime(maxDeviation, startTime);
       modGain.gain.exponentialRampToValueAtTime(minDeviation, startTime + duration);
 
-      // Volume envelope
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -222,24 +218,25 @@
   function scheduler() {
     if (!isPlaying) return;
 
-    const durationInput = document.getElementById("songDuration")?.value ?? "60";
+    let durationInput = document.getElementById("songDuration")?.value;
+    if (!durationInput || durationInput.trim() === "") durationInput = "60";
+
     const currentTime = audioContext.currentTime;
 
     if (durationInput !== "infinite") {
       const elapsed = currentTime - sessionStartTime;
-      if (elapsed >= parseFloat(durationInput)) {
-        stopAll({ ended: true }); // <-- natural end
+      const limit = parseFloat(durationInput);
+      if (!isNaN(limit) && elapsed >= limit) {
+        stopAll(); // Natural end
         return;
       }
     }
 
     while (nextNoteTime < currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-
       const scale = scales[runMood] || scales.major;
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
-
       const density = runDensity;
       const dur = (1 / density) * 2.5;
 
@@ -256,15 +253,19 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Re-arm Stop on (re)play
-    setStopButtonEnded(false);
-
     rerollHiddenParamsForThisPlay();
+
+    // Reset UI to Playing State immediately
+    updateButtons(true);
 
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
-    // If something is currently playing, stop it as a manual stop (no end-dim)
-    if (isPlaying) stopAll({ ended: false });
+    if (isPlaying) {
+      // If we were already playing, quick cleanup
+      if (rafId) cancelAnimationFrame(rafId);
+      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+      activeNodes = [];
+    }
 
     isPlaying = true;
     sessionStartTime = audioContext.currentTime;
@@ -273,19 +274,19 @@
     scheduler();
   }
 
-  function stopAll({ ended = false } = {}) {
-    // Always update UI even if already stopped
-    setStopButtonEnded(ended);
+  function stopAll() {
+    // Reset UI to Stopped State
+    updateButtons(false);
 
     if (!audioContext) return;
-    if (!isPlaying) return;
-
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
     const now = audioContext.currentTime;
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    if (masterGain) {
+      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+      masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    }
 
     setTimeout(() => {
       activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
@@ -303,8 +304,8 @@
       const saved = loadState();
       applyControls(saved);
 
-      // Ensure Stop starts enabled (in popout) until a natural end occurs
-      setStopButtonEnded(false);
+      // Initialize UI: Default is Stopped (Stop button filled)
+      updateButtons(false);
 
       const toneSlider = document.getElementById("tone");
       const hzReadout = document.getElementById("hzReadout");
@@ -328,8 +329,7 @@
         await startFromUI();
       });
 
-      // Manual stop should NOT darken/disable the stop button
-      document.getElementById("stop")?.addEventListener("click", () => stopAll({ ended: false }));
+      document.getElementById("stop")?.addEventListener("click", () => stopAll());
     }
   });
 })();
