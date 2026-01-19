@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v20";
+  const STATE_KEY = "open_player_settings_v18";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -59,23 +59,16 @@
   }
 
   // =========================
-  // UI HELPERS (Black/White Toggle)
+  // UI STATE MANAGEMENT
   // =========================
   function updateButtons(isPlaying) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
 
-    if (playBtn && stopBtn) {
-      if (isPlaying) {
-        // PLAYING: Play is filled (Black), Stop is empty (White)
-        playBtn.classList.add("filled");
-        stopBtn.classList.remove("filled");
-      } else {
-        // STOPPED: Play is empty (White), Stop is filled (Black)
-        playBtn.classList.remove("filled");
-        stopBtn.classList.add("filled");
-      }
-    }
+    // isPlaying = true  -> Play Disabled (Dark), Stop Enabled
+    // isPlaying = false -> Play Enabled (Light), Stop Disabled
+    if (playBtn) playBtn.disabled = isPlaying;
+    if (stopBtn) stopBtn.disabled = !isPlaying;
   }
 
   // =========================
@@ -85,7 +78,6 @@
   let masterGain = null;
   let reverbNode = null;
   let reverbGain = null;
-  let dcBlocker = null;
 
   let activeNodes = [];
   let isPlaying = false;
@@ -123,30 +115,22 @@
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // DC Block
-    dcBlocker = audioContext.createBiquadFilter();
-    dcBlocker.type = "highpass";
-    dcBlocker.frequency.value = 12;
-    dcBlocker.Q.value = 0.707;
-    dcBlocker.connect(audioContext.destination);
-
     masterGain = audioContext.createGain();
+    masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
-    masterGain.connect(dcBlocker);
 
-    // Reverb
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
-    reverbGain.gain.value = 1.5;
+    reverbGain.gain.value = 1.5; 
 
     createReverb();
   }
 
   function createReverb() {
-    const duration = 5.0;
+    const duration = 5.0; 
     const decay = 1.5;
     const rate = audioContext.sampleRate;
-    const length = Math.floor(rate * duration);
+    const length = Math.floor(rate * duration); 
     const impulse = audioContext.createBuffer(2, length, rate);
 
     for (let ch = 0; ch < 2; ch++) {
@@ -159,11 +143,11 @@
 
     reverbNode.buffer = impulse;
     reverbNode.connect(reverbGain);
-    reverbGain.connect(dcBlocker);
+    reverbGain.connect(audioContext.destination);
   }
 
   function playFmBell(freq, duration, volume, startTime) {
-    const numVoices = 2 + Math.floor(Math.random() * 2);
+    const numVoices = 2 + Math.floor(Math.random() * 2); 
     const voices = [];
     let totalAmp = 0;
 
@@ -181,7 +165,7 @@
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      const detune = (Math.random() - 0.5) * 2.0;
+      const detune = (Math.random() - 0.5) * 2.0; 
       carrier.frequency.value = freq + detune;
 
       modulator.frequency.value = freq * voice.modRatio;
@@ -201,11 +185,11 @@
       carrier.connect(ampGain);
 
       ampGain.connect(reverbNode);
-      ampGain.connect(masterGain);
+      ampGain.connect(masterGain); 
 
       modulator.start(startTime);
       carrier.start(startTime);
-
+      
       modulator.stop(startTime + duration);
       carrier.stop(startTime + duration);
 
@@ -218,26 +202,32 @@
   function scheduler() {
     if (!isPlaying) return;
 
+    // Fix: Handle empty/invalid inputs safely
     let durationInput = document.getElementById("songDuration")?.value;
-    if (!durationInput || durationInput.trim() === "") durationInput = "60";
+    if (!durationInput || durationInput.trim() === "") {
+        durationInput = "60";
+    }
 
     const currentTime = audioContext.currentTime;
 
     if (durationInput !== "infinite") {
       const elapsed = currentTime - sessionStartTime;
+      // Safety check: ensure we compare numbers
       const limit = parseFloat(durationInput);
       if (!isNaN(limit) && elapsed >= limit) {
-        stopAll(); // Natural end
+        stopAll();
         return;
       }
     }
 
     while (nextNoteTime < currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+
       const scale = scales[runMood] || scales.major;
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
-      const density = runDensity;
+
+      const density = runDensity;               
       const dur = (1 / density) * 2.5;
 
       playFmBell(freq, dur, 0.4, nextNoteTime);
@@ -254,19 +244,17 @@
     if (audioContext.state === "suspended") await audioContext.resume();
 
     rerollHiddenParamsForThisPlay();
-
-    // Reset UI to Playing State immediately
+    
+    // 1. Force UI to Playing state
     updateButtons(true);
 
+    // 2. Reset Master Gain
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
-    if (isPlaying) {
-      // If we were already playing, quick cleanup
-      if (rafId) cancelAnimationFrame(rafId);
-      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
-      activeNodes = [];
-    }
+    // 3. Stop internal logic without resetting UI to 'Stopped' yet
+    stopAll(true); 
 
+    // 4. Start fresh
     isPlaying = true;
     sessionStartTime = audioContext.currentTime;
     nextNoteTime = audioContext.currentTime;
@@ -274,24 +262,33 @@
     scheduler();
   }
 
-  function stopAll() {
-    // Reset UI to Stopped State
-    updateButtons(false);
+  function stopAll(isRestarting = false) {
+    // 1. Kill the loop immediately
+    if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+    }
 
-    if (!audioContext) return;
-    isPlaying = false;
-    if (rafId) cancelAnimationFrame(rafId);
+    // 2. If we are genuinely stopping (not just restarting), update UI
+    if (!isRestarting) {
+      isPlaying = false;
+      updateButtons(false); // Re-enable Play, Disable Stop
+    }
 
-    const now = audioContext.currentTime;
+    // 3. Audio Cleanup (Fade out to avoid clicks)
+    const now = audioContext?.currentTime || 0;
     if (masterGain) {
+      masterGain.gain.cancelScheduledValues(now);
       masterGain.gain.setValueAtTime(masterGain.gain.value, now);
       masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
     }
 
     setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+      activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
       activeNodes = [];
-      if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+      if (masterGain && audioContext) {
+         masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+      }
     }, 60);
   }
 
@@ -303,8 +300,8 @@
     if (isPopoutMode()) {
       const saved = loadState();
       applyControls(saved);
-
-      // Initialize UI: Default is Stopped (Stop button filled)
+      
+      // Initial button state
       updateButtons(false);
 
       const toneSlider = document.getElementById("tone");
@@ -329,7 +326,7 @@
         await startFromUI();
       });
 
-      document.getElementById("stop")?.addEventListener("click", () => stopAll());
+      document.getElementById("stop")?.addEventListener("click", () => stopAll(false));
     }
   });
 })();
