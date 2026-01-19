@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v14";
+  const STATE_KEY = "open_player_settings_v15";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -106,10 +106,11 @@
     masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
 
+    // ===============================================
+    // REVERB (Matches Original Script)
+    // ===============================================
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
-    
-    // Original Script Gain
     reverbGain.gain.value = 1.5; 
 
     createReverb();
@@ -136,6 +137,7 @@
   }
 
   function playFmBell(freq, duration, volume, startTime) {
+    // Generate fresh voices per note (Original Script logic)
     const numVoices = 2 + Math.floor(Math.random() * 2); 
     const voices = [];
     let totalAmp = 0;
@@ -149,10 +151,14 @@
     }
 
     // ========================================================
-    // TANDEM FADE LOGIC (+20%)
+    // SINE REMOVAL LOGIC
     // ========================================================
-    const modDuration = duration * 1.2; // Metallic sound lasts 20% longer
-    const ampDuration = duration;       // Volume hits 0 at standard duration
+    // Metallic Modulator lasts the full duration
+    const modDuration = duration; 
+    
+    // Volume CUTS at 70% of duration. 
+    // This silences the tail before it resolves to a pure sine wave.
+    const ampDuration = duration * 0.7; 
 
     voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
@@ -166,13 +172,13 @@
       const maxDeviation = freq * voice.modIndex;
       modGain.gain.setValueAtTime(maxDeviation, startTime);
       
-      // Modulator decays over the LONGER duration
+      // Modulator rings out full length
       modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + modDuration);
 
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
       
-      // Volume decays over the SHORTER duration
+      // Volume fades out EARLY (at 70%)
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + ampDuration);
 
       modulator.connect(modGain);
@@ -185,7 +191,7 @@
       modulator.start(startTime);
       carrier.start(startTime);
       
-      // Important: Stop oscillators only after the LONGER duration finishes
+      // Stop oscillators at full duration (safe point)
       modulator.stop(startTime + modDuration);
       carrier.stop(startTime + modDuration);
 
