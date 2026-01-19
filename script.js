@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v15";
+  const STATE_KEY = "open_player_settings_v16";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -137,7 +137,6 @@
   }
 
   function playFmBell(freq, duration, volume, startTime) {
-    // Generate fresh voices per note (Original Script logic)
     const numVoices = 2 + Math.floor(Math.random() * 2); 
     const voices = [];
     let totalAmp = 0;
@@ -150,36 +149,34 @@
       totalAmp += amp;
     }
 
-    // ========================================================
-    // SINE REMOVAL LOGIC
-    // ========================================================
-    // Metallic Modulator lasts the full duration
-    const modDuration = duration; 
-    
-    // Volume CUTS at 70% of duration. 
-    // This silences the tail before it resolves to a pure sine wave.
-    const ampDuration = duration * 0.7; 
-
     voices.forEach((voice) => {
       const carrier = audioContext.createOscillator();
       const modulator = audioContext.createOscillator();
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      carrier.frequency.value = freq;
+      // CHANGE 1: Micro-Detuning
+      // We add a tiny random offset (+/- 2 Hz) to the carrier.
+      // This prevents the sine wave from being "mathematically perfect" and sterile.
+      const detune = (Math.random() - 0.5) * 2.0; 
+      carrier.frequency.value = freq + detune;
+
       modulator.frequency.value = freq * voice.modRatio;
 
       const maxDeviation = freq * voice.modIndex;
-      modGain.gain.setValueAtTime(maxDeviation, startTime);
       
-      // Modulator rings out full length
-      modGain.gain.exponentialRampToValueAtTime(0.0001, startTime + modDuration);
+      // CHANGE 2: The Non-Zero Floor
+      // Instead of ramping to 0.0001 (Pure Sine), we ramp to 'freq * 0.5'.
+      // This ensures the "wobble" (metal character) persists until the very end.
+      const minDeviation = freq * 0.5;
 
+      modGain.gain.setValueAtTime(maxDeviation, startTime);
+      modGain.gain.exponentialRampToValueAtTime(minDeviation, startTime + duration);
+
+      // Volume Envelope (Standard - no early cut needed anymore!)
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
-      
-      // Volume fades out EARLY (at 70%)
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + ampDuration);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
 
       modulator.connect(modGain);
       modGain.connect(carrier.frequency);
@@ -191,9 +188,8 @@
       modulator.start(startTime);
       carrier.start(startTime);
       
-      // Stop oscillators at full duration (safe point)
-      modulator.stop(startTime + modDuration);
-      carrier.stop(startTime + modDuration);
+      modulator.stop(startTime + duration);
+      carrier.stop(startTime + duration);
 
       activeNodes.push(carrier, modulator, modGain, ampGain);
     });
