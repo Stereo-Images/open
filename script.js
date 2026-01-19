@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v17";
+  const STATE_KEY = "open_player_settings_v16";
 
   function isPopoutMode() {
     return window.location.hash === "#popout";
@@ -59,19 +59,6 @@
   }
 
   // =========================
-  // UI STATE MANAGEMENT
-  // =========================
-  function updateButtons(isPlaying) {
-    const playBtn = document.getElementById("playNow");
-    const stopBtn = document.getElementById("stop");
-
-    // When playing: Disable Play, Enable Stop
-    // When stopped: Enable Play, Disable Stop
-    if (playBtn) playBtn.disabled = isPlaying;
-    if (stopBtn) stopBtn.disabled = !isPlaying;
-  }
-
-  // =========================
   // Audio engine (popout only)
   // =========================
   let audioContext = null;
@@ -119,6 +106,9 @@
     masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
 
+    // ===============================================
+    // REVERB (Matches Original Script)
+    // ===============================================
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.5; 
@@ -165,19 +155,25 @@
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      // Micro-Detune (v16)
+      // CHANGE 1: Micro-Detuning
+      // We add a tiny random offset (+/- 2 Hz) to the carrier.
+      // This prevents the sine wave from being "mathematically perfect" and sterile.
       const detune = (Math.random() - 0.5) * 2.0; 
       carrier.frequency.value = freq + detune;
 
       modulator.frequency.value = freq * voice.modRatio;
 
       const maxDeviation = freq * voice.modIndex;
-      // Non-Zero Floor (v16)
+      
+      // CHANGE 2: The Non-Zero Floor
+      // Instead of ramping to 0.0001 (Pure Sine), we ramp to 'freq * 0.5'.
+      // This ensures the "wobble" (metal character) persists until the very end.
       const minDeviation = freq * 0.5;
 
       modGain.gain.setValueAtTime(maxDeviation, startTime);
       modGain.gain.exponentialRampToValueAtTime(minDeviation, startTime + duration);
 
+      // Volume Envelope (Standard - no early cut needed anymore!)
       ampGain.gain.setValueAtTime(0.0001, startTime);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
@@ -239,13 +235,10 @@
     if (audioContext.state === "suspended") await audioContext.resume();
 
     rerollHiddenParamsForThisPlay();
-    
-    // UPDATE UI: Playing state
-    updateButtons(true);
 
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
-    stopAll(true); // pass true to skip setting isPlaying=false immediately
+    stopAll();
     isPlaying = true;
     sessionStartTime = audioContext.currentTime;
     nextNoteTime = audioContext.currentTime;
@@ -253,22 +246,15 @@
     scheduler();
   }
 
-  function stopAll(isRestarting = false) {
-    // If we are just restarting, don't kill the flag yet
-    if (!isRestarting) {
-      isPlaying = false;
-      // UPDATE UI: Stopped state
-      updateButtons(false);
-    }
-    
+  function stopAll() {
+    if (!isPlaying) return;
+
+    isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
     const now = audioContext.currentTime;
-    // Fade out to prevent clicks
-    if (masterGain) {
-      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-      masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    }
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
 
     setTimeout(() => {
       activeNodes.forEach(n => { try { n.stop(); } catch(e) {} });
@@ -285,9 +271,6 @@
     if (isPopoutMode()) {
       const saved = loadState();
       applyControls(saved);
-      
-      // Initialize button state
-      updateButtons(false);
 
       const toneSlider = document.getElementById("tone");
       const hzReadout = document.getElementById("hzReadout");
@@ -311,7 +294,7 @@
         await startFromUI();
       });
 
-      document.getElementById("stop")?.addEventListener("click", () => stopAll(false));
+      document.getElementById("stop")?.addEventListener("click", stopAll);
     }
   });
 })();
