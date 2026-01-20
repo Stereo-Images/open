@@ -14,12 +14,6 @@
     return uaMobile || (coarse && small);
   }
 
-  function isPlayerMode() {
-    // “player mode” means controls are visible and audio is allowed:
-    // popout OR mobile one-page
-    return isPopoutMode() || document.body.classList.contains("mobile-player");
-  }
-
   function safeParse(raw) {
     try { return JSON.parse(raw); } catch { return null; }
   }
@@ -56,26 +50,27 @@
     }
   }
 
-  // =========================
-  // Button UI state (.filled)
-  // =========================
-  function setButtonsPlaying(playing) {
+  // ============================================================
+  // Button state: EXACTLY ONE is filled at all times.
+  // playing => Play filled (black), Stop unfilled (white)
+  // stopped => Stop filled (black), Play unfilled (white)
+  // ============================================================
+  function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     if (!playBtn || !stopBtn) return;
 
-    if (playing) {
-      playBtn.classList.add("filled");   // black
-      stopBtn.classList.remove("filled"); // white
+    // Clear both first (prevents impossible "both black/white" states)
+    playBtn.classList.remove("filled");
+    stopBtn.classList.remove("filled");
+
+    if (state === "playing") {
+      playBtn.classList.add("filled");
     } else {
-      playBtn.classList.remove("filled"); // white
-      stopBtn.classList.add("filled");    // black
+      stopBtn.classList.add("filled");
     }
   }
 
-  // =========================
-  // Launch logic
-  // =========================
   function openPopout() {
     const base = window.location.href.split("#")[0];
     const url = `${base}#popout`;
@@ -93,14 +88,14 @@
     try { w.focus(); } catch {}
   }
 
+  // Mobile one-page mode: reveal controls without popups
   function enterMobileOnePageMode() {
     document.body.classList.add("mobile-player");
-    // If user is already in player mode, make sure initial button state is correct.
-    setButtonsPlaying(false);
+    setButtonState("stopped");
   }
 
   // =========================
-  // Audio engine (player mode)
+  // Audio engine
   // =========================
   let audioContext = null;
   let masterGain = null;
@@ -120,8 +115,6 @@
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
   };
-
-  // Hidden params (as you already had)
   const MOOD_CHOICES = ["major", "minor", "pentatonic"];
   const DENSITY_MIN = 0.05;
   const DENSITY_MAX = 0.425;
@@ -149,7 +142,7 @@
     masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
 
-    // Reverb (unchanged from your current v16)
+    // Reverb (unchanged)
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.5;
@@ -196,14 +189,14 @@
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      // Micro-detune
+      // Micro-detuning (+/- 2 Hz)
       const detune = (Math.random() - 0.5) * 2.0;
       carrier.frequency.value = freq + detune;
 
       modulator.frequency.value = freq * voice.modRatio;
 
       const maxDeviation = freq * voice.modIndex;
-      const minDeviation = freq * 0.5; // keep some wobble
+      const minDeviation = freq * 0.5;
 
       modGain.gain.setValueAtTime(maxDeviation, startTime);
       modGain.gain.exponentialRampToValueAtTime(minDeviation, startTime + duration);
@@ -237,6 +230,7 @@
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const currentTime = audioContext.currentTime;
 
+    // Natural end => stopAll() => will set buttons to stopped (Play white)
     if (durationInput !== "infinite") {
       const elapsed = currentTime - sessionStartTime;
       if (elapsed >= parseFloat(durationInput)) {
@@ -264,37 +258,57 @@
     rafId = requestAnimationFrame(scheduler);
   }
 
+  // Stop tail regardless of isPlaying (for clean restart)
+  function hardStopTail() {
+    if (!audioContext) return;
+
+    if (rafId) cancelAnimationFrame(rafId);
+
+    const now = audioContext.currentTime;
+    if (masterGain) {
+      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+      masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    }
+
+    setTimeout(() => {
+      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+      activeNodes = [];
+      if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+    }, 60);
+
+    isPlaying = false;
+  }
+
   async function startFromUI() {
     ensureAudio();
-
-    // iOS requires resume() from a user gesture; click handler qualifies.
     if (audioContext.state === "suspended") await audioContext.resume();
 
     rerollHiddenParamsForThisPlay();
 
-    // Ensure any previous tail is cut before restarting
-    stopAll(/*internal*/ true);
+    // Clean restart
+    hardStopTail();
 
     isPlaying = true;
-    setButtonsPlaying(true);
+    setButtonState("playing");
 
     sessionStartTime = audioContext.currentTime;
     nextNoteTime = audioContext.currentTime;
 
-    masterGain.gain.setValueAtTime(1, audioContext.currentTime);
+    if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
     scheduler();
   }
 
-  // internalStop=true means "don’t fight button state if we’re about to restart"
-  function stopAll(internalStop = false) {
+  function stopAll() {
+    // Ensure visual state updates even if audio isn't initialized
     if (!audioContext) {
       isPlaying = false;
-      if (!internalStop) setButtonsPlaying(false);
+      setButtonState("stopped");
       return;
     }
-    if (!isPlaying && !internalStop) {
-      setButtonsPlaying(false);
+
+    if (!isPlaying) {
+      setButtonState("stopped");
       return;
     }
 
@@ -313,80 +327,63 @@
       if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
     }, 60);
 
-    if (!internalStop) setButtonsPlaying(false);
+    // Play turns white when audio stops
+    setButtonState("stopped");
   }
 
-  // =========================
-  // DOM wiring
-  // =========================
-  document.addEventListener("DOMContentLoaded", () => {
-    // Popout flag
-    if (isPopoutMode()) document.body.classList.add("popout");
+  function setupPlayerUI() {
+    // Avoid double-binding if this function is called more than once
+    const form = document.getElementById("songForm");
+    if (!form || form.dataset.bound === "1") return;
+    form.dataset.bound = "1";
 
-    // Launch/Open behavior:
-    // - Desktop: open popout
-    // - Mobile: switch to one-page player mode
-    const launchBtn = document.getElementById("launchPlayer");
-    if (launchBtn) {
-      launchBtn.addEventListener("click", () => {
-        if (isMobileDevice() && !isPopoutMode()) {
-          enterMobileOnePageMode();
-        } else {
-          openPopout();
-        }
+    const saved = loadState();
+    applyControls(saved);
+
+    const toneSlider = document.getElementById("tone");
+    const hzReadout = document.getElementById("hzReadout");
+
+    if (toneSlider && hzReadout) {
+      hzReadout.textContent = toneSlider.value;
+      toneSlider.addEventListener("input", () => {
+        hzReadout.textContent = toneSlider.value;
+        saveState(readControls());
       });
     }
 
-    // Player wiring (works for popout and mobile-player)
-    const setupPlayerUI = () => {
-      const saved = loadState();
-      applyControls(saved);
+    const sd = document.getElementById("songDuration");
+    if (sd) {
+      sd.addEventListener("input", () => saveState(readControls()));
+      sd.addEventListener("change", () => saveState(readControls()));
+    }
 
-      const toneSlider = document.getElementById("tone");
-      const hzReadout = document.getElementById("hzReadout");
+    // Initial visual state: stopped (Stop black)
+    setButtonState("stopped");
 
-      if (toneSlider && hzReadout) {
-        hzReadout.textContent = toneSlider.value;
-        toneSlider.addEventListener("input", () => {
-          hzReadout.textContent = toneSlider.value;
-          saveState(readControls());
-        });
-      }
+    document.getElementById("playNow")?.addEventListener("click", async () => {
+      saveState(readControls());
+      await startFromUI();
+    });
 
-      const sd = document.getElementById("songDuration");
-      if (sd) {
-        sd.addEventListener("input", () => saveState(readControls()));
-        sd.addEventListener("change", () => saveState(readControls()));
-      }
+    document.getElementById("stop")?.addEventListener("click", stopAll);
+  }
 
-      // Initial: stopped state => Stop filled, Play unfilled
-      setButtonsPlaying(false);
+  document.addEventListener("DOMContentLoaded", () => {
+    if (isPopoutMode()) document.body.classList.add("popout");
 
-      document.getElementById("playNow")?.addEventListener("click", async () => {
-        saveState(readControls());
-        await startFromUI();
-      });
-
-      document.getElementById("stop")?.addEventListener("click", () => {
-        stopAll(false);
-      });
-    };
-
-    // If we’re already in popout, setup immediately
-    if (isPopoutMode()) setupPlayerUI();
-
-    // If mobile user already has class (e.g., from bfcache), setup too
-    if (document.body.classList.contains("mobile-player")) setupPlayerUI();
-
-    // When we enter mobile mode on click, we need to setup UI once
-    // (simple approach: observe class change)
-    const mo = new MutationObserver(() => {
-      if (isPlayerMode()) {
-        // Only attach once
-        mo.disconnect();
+    // Open button behavior:
+    // - mobile => one-page mode (no popup)
+    // - desktop => popout
+    document.getElementById("launchPlayer")?.addEventListener("click", () => {
+      if (!isPopoutMode() && isMobileDevice()) {
+        enterMobileOnePageMode();
         setupPlayerUI();
+      } else {
+        openPopout();
       }
     });
-    mo.observe(document.body, { attributes: true, attributeFilter: ["class"] });
+
+    // In popout, setup immediately
+    if (isPopoutMode()) setupPlayerUI();
   });
 })();
