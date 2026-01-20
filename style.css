@@ -1,4 +1,4 @@
-/* style.css — Open (v16) + Stop-ended styling */
+/* style.css — Open (v16+) with .filled toggling + mobile one-page mode */
 
 * { box-sizing: border-box; }
 
@@ -16,9 +16,9 @@ main {
   padding: 0 2rem;
 }
 
-/* Popout-only title (hidden by default) */
+/* Title (hidden by default; shown in popout + mobile-player) */
 #popoutTitle {
-  display: none; /* shown in popout mode */
+  display: none;
   font-weight: normal;
   text-transform: uppercase;
   letter-spacing: 0.5rem;
@@ -37,7 +37,7 @@ main {
 }
 
 /* =========================
-   CONTROLS (popout)
+   CONTROLS (player)
    ========================= */
 
 .form-group {
@@ -48,8 +48,8 @@ main {
 }
 
 input, select, button {
-  background-color: #fff !important;
-  color: #000 !important;
+  background-color: #fff;
+  color: #000;
   border: 1px solid #000;
   padding: 0.5rem;
   font-family: inherit;
@@ -77,14 +77,15 @@ button {
   flex: 1;
   cursor: pointer;
   text-transform: uppercase;
-  transition: none !important;
+  transition: none;
 }
 
+/* Default hover for non-filled buttons */
 button:hover,
 button:active,
 button:focus {
-  background-color: #000 !important;
-  color: #fff !important;
+  background-color: #000;
+  color: #fff;
   outline: none;
 }
 
@@ -108,32 +109,27 @@ button:focus {
 }
 
 /* =========================
-   Stop button: natural-end state
+   .filled state (class-based toggling)
    ========================= */
 
-/* Darken + disable only when ended naturally (JS sets .ended + disabled=true) */
-button.ended,
-button:disabled {
-  background-color: #000 !important;
-  color: #fff !important;
-  opacity: 0.35;
-  cursor: not-allowed;
+button.filled {
+  background-color: #000;
+  color: #fff;
 }
 
-/* Prevent hover/focus from "lighting up" disabled buttons */
-button:disabled:hover,
-button:disabled:active,
-button:disabled:focus {
-  background-color: #000 !important;
-  color: #fff !important;
-  outline: none;
+/* Keep filled buttons filled on hover/focus (don’t invert away) */
+button.filled:hover,
+button.filled:active,
+button.filled:focus {
+  background-color: #000;
+  color: #fff;
 }
 
 /* =========================
    Mode switching
    ========================= */
 
-/* Default (main tab): hide player UI and your name */
+/* Default (main tab): hide player UI and extras */
 #controls { display: none; }
 #credits { display: none; }
 .separator { display: none; }
@@ -146,8 +142,21 @@ body.popout #popoutTitle { display: block; }
 body.popout #credits { display: block; }
 body.popout .separator { display: block; }
 
+/* Mobile one-page player mode: same visibility behavior as popout */
+body.mobile-player #controls { display: block; }
+body.mobile-player #launchOnly { display: none; }
+body.mobile-player #popoutTitle { display: block; }
+body.mobile-player #credits { display: block; }
+body.mobile-player .separator { display: block; }
+
 /* Popout layout tweaks */
 body.popout main {
   margin: 2rem auto;
   max-width: 460px;
+}
+
+/* Mobile layout tweaks */
+body.mobile-player main {
+  margin: 2rem auto;
+  max-width: 520px;
 }
