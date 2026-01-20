@@ -60,15 +60,11 @@
     const stopBtn = document.getElementById("stop");
     if (!playBtn || !stopBtn) return;
 
-    // Clear both first (prevents impossible "both black/white" states)
     playBtn.classList.remove("filled");
     stopBtn.classList.remove("filled");
 
-    if (state === "playing") {
-      playBtn.classList.add("filled");
-    } else {
-      stopBtn.classList.add("filled");
-    }
+    if (state === "playing") playBtn.classList.add("filled");
+    else stopBtn.classList.add("filled");
   }
 
   function openPopout() {
@@ -88,7 +84,6 @@
     try { w.focus(); } catch {}
   }
 
-  // Mobile one-page mode: reveal controls without popups
   function enterMobileOnePageMode() {
     document.body.classList.add("mobile-player");
     setButtonState("stopped");
@@ -115,6 +110,7 @@
     minor: [0, 2, 3, 5, 7, 8, 10],
     pentatonic: [0, 2, 4, 7, 9],
   };
+
   const MOOD_CHOICES = ["major", "minor", "pentatonic"];
   const DENSITY_MIN = 0.05;
   const DENSITY_MAX = 0.425;
@@ -139,8 +135,8 @@
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
     masterGain = audioContext.createGain();
-    masterGain.connect(audioContext.destination);
     masterGain.gain.value = 1;
+    masterGain.connect(audioContext.destination);
 
     // Reverb (unchanged)
     reverbNode = audioContext.createConvolver();
@@ -189,7 +185,6 @@
       const modGain = audioContext.createGain();
       const ampGain = audioContext.createGain();
 
-      // Micro-detuning (+/- 2 Hz)
       const detune = (Math.random() - 0.5) * 2.0;
       carrier.frequency.value = freq + detune;
 
@@ -230,11 +225,10 @@
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const currentTime = audioContext.currentTime;
 
-    // Natural end => stopAll() => will set buttons to stopped (Play white)
     if (durationInput !== "infinite") {
       const elapsed = currentTime - sessionStartTime;
       if (elapsed >= parseFloat(durationInput)) {
-        stopAll();
+        stopAll(); // natural end => buttons go to stopped (Play white)
         return;
       }
     }
@@ -258,25 +252,20 @@
     rafId = requestAnimationFrame(scheduler);
   }
 
-  // Stop tail regardless of isPlaying (for clean restart)
-  function hardStopTail() {
-    if (!audioContext) return;
-
+  // Restart-safe: stop nodes and cancel scheduling WITHOUT muting masterGain.
+  function killCurrentRunImmediately() {
     if (rafId) cancelAnimationFrame(rafId);
 
-    const now = audioContext.currentTime;
-    if (masterGain) {
-      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-      masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    }
-
-    setTimeout(() => {
-      activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
-      activeNodes = [];
-      if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-    }, 60);
+    activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
+    activeNodes = [];
 
     isPlaying = false;
+
+    if (audioContext && masterGain) {
+      const now = audioContext.currentTime;
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(1, now);
+    }
   }
 
   async function startFromUI() {
@@ -285,8 +274,8 @@
 
     rerollHiddenParamsForThisPlay();
 
-    // Clean restart
-    hardStopTail();
+    // Clean restart without muting the master
+    killCurrentRunImmediately();
 
     isPlaying = true;
     setButtonState("playing");
@@ -294,45 +283,41 @@
     sessionStartTime = audioContext.currentTime;
     nextNoteTime = audioContext.currentTime;
 
-    if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-
     scheduler();
   }
 
   function stopAll() {
-    // Ensure visual state updates even if audio isn't initialized
+    // Always update UI state
+    setButtonState("stopped");
+
     if (!audioContext) {
       isPlaying = false;
-      setButtonState("stopped");
       return;
     }
 
-    if (!isPlaying) {
-      setButtonState("stopped");
-      return;
-    }
+    if (!isPlaying) return;
 
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
+    // Gentle fade on STOP only (not on restart)
     const now = audioContext.currentTime;
-    if (masterGain) {
-      masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-      masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-    }
+    masterGain.gain.cancelScheduledValues(now);
+    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
 
     setTimeout(() => {
       activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
       activeNodes = [];
-      if (masterGain) masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-    }, 60);
 
-    // Play turns white when audio stops
-    setButtonState("stopped");
+      // restore for next play
+      const t = audioContext.currentTime;
+      masterGain.gain.cancelScheduledValues(t);
+      masterGain.gain.setValueAtTime(1, t);
+    }, 80);
   }
 
   function setupPlayerUI() {
-    // Avoid double-binding if this function is called more than once
     const form = document.getElementById("songForm");
     if (!form || form.dataset.bound === "1") return;
     form.dataset.bound = "1";
@@ -357,7 +342,7 @@
       sd.addEventListener("change", () => saveState(readControls()));
     }
 
-    // Initial visual state: stopped (Stop black)
+    // Initial visual state
     setButtonState("stopped");
 
     document.getElementById("playNow")?.addEventListener("click", async () => {
@@ -371,9 +356,6 @@
   document.addEventListener("DOMContentLoaded", () => {
     if (isPopoutMode()) document.body.classList.add("popout");
 
-    // Open button behavior:
-    // - mobile => one-page mode (no popup)
-    // - desktop => popout
     document.getElementById("launchPlayer")?.addEventListener("click", () => {
       if (!isPopoutMode() && isMobileDevice()) {
         enterMobileOnePageMode();
@@ -383,7 +365,7 @@
       }
     });
 
-    // In popout, setup immediately
     if (isPopoutMode()) setupPlayerUI();
   });
 })();
+
