@@ -39,13 +39,11 @@
     const tone = document.getElementById("tone");
     const hzReadout = document.getElementById("hzReadout");
 
-    // Duration: default 60, but accept only known values
     const allowedDurations = new Set(["60", "300", "600", "1800", "infinite"]);
     const savedDur = state && state.songDuration != null ? String(state.songDuration) : null;
     const durVal = (savedDur && allowedDurations.has(savedDur)) ? savedDur : "60";
     if (sd) sd.value = durVal;
 
-    // Tone: default 110, clamp 30–200
     let toneVal = 110;
     if (state && state.tone != null) {
       const n = Number(state.tone);
@@ -57,11 +55,6 @@
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
 
-  // ============================================================
-  // Button state: EXACTLY ONE is filled at all times.
-  // playing => Play filled (black), Stop unfilled (white)
-  // stopped => Stop filled (black), Play unfilled (white)
-  // ============================================================
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
@@ -103,19 +96,21 @@
   let masterGain = null;
   let reverbNode = null;
   let reverbGain = null;
+  
+  // macOS Background Persistence Nodes
+  let streamDest = null;
+  let audioTag = null;
 
   let activeNodes = [];
   let isPlaying = false;
-  let isEndingNaturally = false; // NEW: prevents double-stop + UI flipping early
+  let isEndingNaturally = false;
   let nextNoteTime = 0;
   let sessionStartTime = 0;
   let rafId = null;
 
   const scheduleAheadTime = 0.5;
-
-  // NEW: natural end tail behavior
-  const NATURAL_END_FADE_SEC = 1.2;   // gentle fade (lets tail feel intentional)
-  const NATURAL_END_HOLD_SEC = 0.35;  // hold before fade so attack doesn't feel cut
+  const NATURAL_END_FADE_SEC = 1.2;
+  const NATURAL_END_HOLD_SEC = 0.35;
 
   const scales = {
     major: [0, 2, 4, 5, 7, 9, 11],
@@ -141,16 +136,33 @@
     runDensity = randFloat(DENSITY_MIN, DENSITY_MAX);
   }
 
+  /**
+   * Enhanced ensureAudio for macOS desktop switching persistence
+   */
   function ensureAudio() {
     if (audioContext) return;
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
+    // Route through MediaStream to bypass OS background throttling
+    streamDest = audioContext.createMediaStreamDestination();
+
     masterGain = audioContext.createGain();
     masterGain.gain.value = 1;
+    
+    // Connect to stream destination
+    masterGain.connect(streamDest);
+
+    // Anchor stream to a silent audio tag
+    if (!audioTag) {
+        audioTag = new Audio();
+        audioTag.srcObject = streamDest.stream;
+        audioTag.play().catch(e => console.log("Stream play delayed", e));
+    }
+
+    // Connect to primary hardware output
     masterGain.connect(audioContext.destination);
 
-    // Reverb (unchanged)
     reverbNode = audioContext.createConvolver();
     reverbGain = audioContext.createGain();
     reverbGain.gain.value = 1.5;
@@ -199,7 +211,6 @@
 
       const detune = (Math.random() - 0.5) * 2.0;
       carrier.frequency.value = freq + detune;
-
       modulator.frequency.value = freq * voice.modRatio;
 
       const maxDeviation = freq * voice.modIndex;
@@ -221,7 +232,6 @@
 
       modulator.start(startTime);
       carrier.start(startTime);
-
       modulator.stop(startTime + duration);
       carrier.stop(startTime + duration);
 
@@ -233,33 +243,25 @@
 
   function beginNaturalEnd() {
     if (!audioContext || isEndingNaturally) return;
-
     isEndingNaturally = true;
-
-    // Stop scheduling new notes immediately, but keep UI in "playing"
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-
-    // Hold briefly (lets attack feel complete), then fade down gently
     masterGain.gain.setValueAtTime(masterGain.gain.value, now + NATURAL_END_HOLD_SEC);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + NATURAL_END_HOLD_SEC + NATURAL_END_FADE_SEC);
 
-    // After fade, hard stop nodes, restore gain, THEN flip UI to stopped
     const ms = Math.ceil((NATURAL_END_HOLD_SEC + NATURAL_END_FADE_SEC + 0.12) * 1000);
     setTimeout(() => {
       activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
       activeNodes = [];
-
       const t = audioContext.currentTime;
       masterGain.gain.cancelScheduledValues(t);
       masterGain.gain.setValueAtTime(1, t);
-
       isEndingNaturally = false;
-      setButtonState("stopped"); // Play goes white here (not early)
+      setButtonState("stopped");
     }, ms);
   }
 
@@ -272,7 +274,6 @@
     if (durationInput !== "infinite") {
       const elapsed = currentTime - sessionStartTime;
       if (elapsed >= parseFloat(durationInput)) {
-        // Natural end: don't snap UI immediately; do a tail-aware end.
         beginNaturalEnd();
         return;
       }
@@ -280,7 +281,6 @@
 
     while (nextNoteTime < currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-
       const scale = scales[runMood] || scales.major;
       const interval = scale[Math.floor(Math.random() * scale.length)];
       const freq = baseFreq * Math.pow(2, interval / 12);
@@ -289,7 +289,6 @@
       const dur = (1 / density) * 2.5;
 
       playFmBell(freq, dur, 0.4, nextNoteTime);
-
       const drift = 0.95 + (Math.random() * 0.1);
       nextNoteTime += (1 / density) * drift;
     }
@@ -299,10 +298,8 @@
 
   function killCurrentRunImmediately() {
     if (rafId) cancelAnimationFrame(rafId);
-
     activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
     activeNodes = [];
-
     isPlaying = false;
     isEndingNaturally = false;
 
@@ -316,40 +313,27 @@
   async function startFromUI() {
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
-
     rerollHiddenParamsForThisPlay();
-
-    // Clean restart
     killCurrentRunImmediately();
-
     isPlaying = true;
     setButtonState("playing");
-
     sessionStartTime = audioContext.currentTime;
     nextNoteTime = audioContext.currentTime;
-
     scheduler();
   }
 
   function stopAllManual() {
-    // Manual stop: UI flips immediately (as your original behavior)
     setButtonState("stopped");
-
     if (!audioContext) {
       isPlaying = false;
       isEndingNaturally = false;
       return;
     }
-
-    // Cancel any natural ending in progress
     isEndingNaturally = false;
-
     if (!isPlaying) {
-      // Still ensure everything is quiet if something is lingering
       killCurrentRunImmediately();
       return;
     }
-
     isPlaying = false;
     if (rafId) cancelAnimationFrame(rafId);
 
@@ -361,7 +345,6 @@
     setTimeout(() => {
       activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
       activeNodes = [];
-
       const t = audioContext.currentTime;
       masterGain.gain.cancelScheduledValues(t);
       masterGain.gain.setValueAtTime(1, t);
