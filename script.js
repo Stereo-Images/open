@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v24";
+  const STATE_KEY = "open_player_settings_v25";
 
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
@@ -37,166 +37,25 @@
   }
 
   // =========================
-  // AUDIO ENGINE (Studio Edition)
+  // SHARED AUDIO LOGIC
   // =========================
-  let audioContext = null, masterGain = null, reverbNode = null, streamDest = null, heartbeat = null;
-  let activeNodes = [], isPlaying = false, isEndingNaturally = false;
-  let nextNoteTime = 0, sessionStartTime = 0, timerInterval = null;
-  
-  // RECORDING STATE
-  let mediaRecorder = null;
-  let recordedChunks = [];
-  let isRecording = false;
-
-  // THE BRAIN: Wide Melodic Walker
-  let lastNoteIndex = 3; 
-  let driftDirection = 1; 
-
-  const scheduleAheadTime = 0.5, NATURAL_END_FADE_SEC = 1.2, NATURAL_END_HOLD_SEC = 0.35;
   const scales = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], pentatonic: [0, 2, 4, 7, 9] };
   let runMood = "major", runDensity = 0.2;
 
-  function ensureAudio() {
-    if (audioContext) return;
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    
-    // 1. STREAM DESTINATION (Used for both Video Anchor AND Recording)
-    streamDest = audioContext.createMediaStreamDestination();
-    
-    masterGain = audioContext.createGain();
-    masterGain.connect(streamDest);
-    masterGain.connect(audioContext.destination);
-
-    // 2. PERSISTENCE
-    const silentBuffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
-    heartbeat = audioContext.createBufferSource();
-    heartbeat.buffer = silentBuffer;
-    heartbeat.loop = true;
-    heartbeat.start();
-    heartbeat.connect(audioContext.destination);
-
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({ title: 'Open', artist: 'Stereo Images' });
-      navigator.mediaSession.setActionHandler('play', startFromUI);
-      navigator.mediaSession.setActionHandler('pause', stopAllManual);
-    }
-    
-    let videoWakeLock = document.querySelector('video');
-    if (!videoWakeLock) {
-        videoWakeLock = document.createElement('video');
-        Object.assign(videoWakeLock.style, { position: 'fixed', bottom: '0', right: '0', width: '1px', height: '1px', opacity: '0.01', pointerEvents: 'none', zIndex: '-1' });
-        videoWakeLock.setAttribute('playsinline', '');
-        videoWakeLock.setAttribute('muted', '');
-        document.body.appendChild(videoWakeLock);
-    }
-    videoWakeLock.srcObject = streamDest.stream;
-    videoWakeLock.play().catch(() => {});
-
-    createReverb();
-    setupKeyboardShortcuts();
-  }
-
-  // STUDIO FEATURE: DIRECT RECORDING
-  function startStudioRecording() {
-    if (!streamDest || isRecording) return;
-    console.log("Started Recording...");
-    isRecording = true;
-    recordedChunks = [];
-    
-    // Capture the pure digital stream
-    try {
-        mediaRecorder = new MediaRecorder(streamDest.stream, { mimeType: 'audio/webm;codecs=opus' });
-    } catch (e) {
-        mediaRecorder = new MediaRecorder(streamDest.stream); // Fallback
-    }
-
-    mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) recordedChunks.push(event.data);
-    };
-
-    mediaRecorder.onstop = exportRecording;
-    mediaRecorder.start();
-
-    // Auto-stop after 30 seconds
-    setTimeout(() => {
-        if (mediaRecorder.state === "recording") {
-            mediaRecorder.stop();
-            isRecording = false;
-            console.log("Recording Finished.");
-        }
-    }, 30000);
-  }
-
-  function exportRecording() {
-    const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = `open-session-${Date.now()}.webm`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-    }, 100);
-  }
-
-  function setupKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
-        if (e.key.toLowerCase() === 'r' && isPlaying) {
-            startStudioRecording();
-        }
-    });
-  }
-
-  // TEXTURE: Grainy Reverb
-  function createReverb() {
-    const duration = 5.0, decay = 1.5, rate = audioContext.sampleRate, length = Math.floor(rate * duration);
-    const impulse = audioContext.createBuffer(2, length, rate);
+  // Reverb Impulse Generator (Shared)
+  function createReverbBuffer(ctx) {
+    const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
+    const impulse = ctx.createBuffer(2, length, rate);
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
       for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
     }
-    reverbNode = audioContext.createConvolver();
-    reverbNode.buffer = impulse;
-    const reverbGain = audioContext.createGain();
-    reverbGain.gain.value = 1.5;
-    reverbNode.connect(reverbGain);
-    reverbGain.connect(audioContext.destination);
+    return impulse;
   }
 
-  // SOUND: Sine on Sine
-  function playFmBell(freq, duration, volume, startTime) {
-    const numVoices = 2 + Math.floor(Math.random() * 2);
-    let totalAmp = 0;
-    const voices = Array.from({length: numVoices}, () => {
-      const v = { modRatio: 1.5 + Math.random() * 2.5, modIndex: 1 + Math.random() * 4, amp: Math.random() };
-      totalAmp += v.amp;
-      return v;
-    });
-
-    voices.forEach(voice => {
-      const carrier = audioContext.createOscillator(), modulator = audioContext.createOscillator();
-      const modGain = audioContext.createGain(), ampGain = audioContext.createGain();
-      carrier.frequency.value = freq + (Math.random() - 0.5) * 2;
-      modulator.frequency.value = freq * voice.modRatio;
-      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, startTime + duration);
-      ampGain.gain.setValueAtTime(0.0001, startTime);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
-      modulator.connect(modGain); modGain.connect(carrier.frequency);
-      carrier.connect(ampGain); ampGain.connect(reverbNode); ampGain.connect(masterGain);
-      modulator.start(startTime); carrier.start(startTime);
-      modulator.stop(startTime + duration); carrier.stop(startTime + duration);
-      activeNodes.push(carrier, modulator, modGain, ampGain);
-    });
-    if (activeNodes.length > 200) activeNodes.splice(0, 100);
-  }
-
-  // LOGIC: Wide Walker (v23)
-  function getNextNote(baseFreq) {
+  // NOTE GENERATOR (Shared Logic)
+  // We need to pass the current state (lastIndex) so the Offline render follows the same logic
+  function getNextNote(baseFreq, currentLastIndex) {
     const scale = scales[runMood] || scales.major;
     const len = scale.length;
     
@@ -210,99 +69,75 @@
         shift = (Math.random() < 0.5 ? -jumpSize : jumpSize);
     }
 
-    if (Math.random() < 0.15) driftDirection *= -1; 
-    if (Math.random() < 0.4) shift += driftDirection; 
+    // Simple random drift for the static function
+    if (Math.random() < 0.4) shift += (Math.random() < 0.5 ? 1 : -1); 
 
-    let newIndex = lastNoteIndex + shift;
+    let newIndex = currentLastIndex + shift;
 
-    if (newIndex < 0) { newIndex = 1; driftDirection = 1; }
-    if (newIndex >= len * 2) { newIndex = (len * 2) - 2; driftDirection = -1; }
+    if (newIndex < 0) newIndex = 1;
+    if (newIndex >= len * 2) newIndex = (len * 2) - 2;
     
-    lastNoteIndex = newIndex;
-
     const octave = Math.floor(newIndex / len);
     const noteDegree = newIndex % len;
     const interval = scale[noteDegree];
     
-    return baseFreq * Math.pow(2, (interval / 12) + octave);
+    return { 
+        freq: baseFreq * Math.pow(2, (interval / 12) + octave),
+        newIndex: newIndex
+    };
   }
 
-  function scheduler() {
-    if (!isPlaying) return;
-    const durationInput = document.getElementById("songDuration")?.value ?? "60";
-    if (durationInput !== "infinite" && (audioContext.currentTime - sessionStartTime) >= parseFloat(durationInput)) {
-      beginNaturalEnd(); return;
-    }
-    while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
-      const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-      const freq = getNextNote(baseFreq);
-      playFmBell(freq, (1 / runDensity) * 2.5, 0.4, nextNoteTime);
-      nextNoteTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
-    }
-  }
+  // SOUND GENERATOR (Context Agnostic)
+  // Accepts 'ctx' so it can write to Realtime OR Offline context
+  function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
+    const numVoices = 2 + Math.floor(Math.random() * 2);
+    let totalAmp = 0;
+    
+    // Create Reverb Node specific to this context
+    const conv = ctx.createConvolver();
+    conv.buffer = reverbBuffer;
+    const revGain = ctx.createGain();
+    revGain.gain.value = 1.5;
+    conv.connect(revGain);
+    revGain.connect(destination);
 
-  function killImmediate() {
-    if (timerInterval) clearInterval(timerInterval);
-    activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
-    activeNodes = []; isPlaying = isEndingNaturally = false;
-    if (masterGain) { masterGain.gain.cancelScheduledValues(audioContext.currentTime); masterGain.gain.setValueAtTime(1, audioContext.currentTime); }
-  }
-
-  async function startFromUI() {
-    ensureAudio();
-    if (audioContext.state === "suspended") await audioContext.resume();
-    runMood = ["major", "minor", "pentatonic"][Math.floor(Math.random() * 3)];
-    runDensity = 0.05 + Math.random() * 0.375;
-    killImmediate();
-    isPlaying = true; setButtonState("playing");
-    sessionStartTime = nextNoteTime = audioContext.currentTime;
-    timerInterval = setInterval(scheduler, 100); 
-  }
-
-  function stopAllManual() {
-    setButtonState("stopped");
-    if (!audioContext) { isPlaying = false; return; }
-    isPlaying = isEndingNaturally = false;
-    if (timerInterval) clearInterval(timerInterval);
-    masterGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.1);
-    setTimeout(killImmediate, 120);
-  }
-
-  function beginNaturalEnd() {
-    if (isEndingNaturally) return;
-    isEndingNaturally = true; isPlaying = false;
-    if (timerInterval) clearInterval(timerInterval);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, audioContext.currentTime + NATURAL_END_HOLD_SEC);
-    masterGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + NATURAL_END_HOLD_SEC + NATURAL_END_FADE_SEC);
-    setTimeout(() => { killImmediate(); setButtonState("stopped"); }, (NATURAL_END_HOLD_SEC + NATURAL_END_FADE_SEC + 0.1) * 1000);
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    if (isPopoutMode()) {
-        document.body.classList.add("popout");
-        applyControls(loadState());
-        document.getElementById("tone").addEventListener("input", (e) => {
-            document.getElementById("hzReadout").textContent = e.target.value;
-            saveState(readControls());
-        });
-        document.getElementById("songDuration").addEventListener("change", () => saveState(readControls()));
-        document.getElementById("playNow").onclick = startFromUI;
-        document.getElementById("stop").onclick = stopAllManual;
-        setButtonState("stopped");
-    }
-    document.getElementById("launchPlayer")?.addEventListener("click", () => {
-      if (!isPopoutMode() && isMobileDevice()) {
-        document.body.classList.add("mobile-player");
-        applyControls(loadState());
-        document.getElementById("tone").addEventListener("input", (e) => {
-            document.getElementById("hzReadout").textContent = e.target.value;
-            saveState(readControls());
-        });
-        document.getElementById("playNow").onclick = startFromUI;
-        document.getElementById("stop").onclick = stopAllManual;
-      } else {
-        window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", "width=500,height=680,resizable=yes");
-      }
+    const voices = Array.from({length: numVoices}, () => {
+      const v = { modRatio: 1.5 + Math.random() * 2.5, modIndex: 1 + Math.random() * 4, amp: Math.random() };
+      totalAmp += v.amp;
+      return v;
     });
-  });
-})();
+
+    voices.forEach(voice => {
+      const carrier = ctx.createOscillator();
+      const modulator = ctx.createOscillator();
+      const modGain = ctx.createGain();
+      const ampGain = ctx.createGain();
+
+      carrier.frequency.value = freq + (Math.random() - 0.5) * 2;
+      modulator.frequency.value = freq * voice.modRatio;
+
+      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
+
+      ampGain.gain.setValueAtTime(0.0001, time);
+      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+      modulator.connect(modGain);
+      modGain.connect(carrier.frequency);
+      
+      carrier.connect(ampGain);
+      ampGain.connect(conv); // Send to reverb
+      ampGain.connect(destination); // Send to master
+
+      modulator.start(time);
+      carrier.start(time);
+      modulator.stop(time + duration);
+      carrier.stop(time + duration);
+    });
+  }
+
+  // =========================
+  // REALTIME ENGINE
+  // =========================
+  let audioContext =
