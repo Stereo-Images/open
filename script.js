@@ -22,13 +22,11 @@
     const sd = document.getElementById("songDuration");
     const tone = document.getElementById("tone");
     const hzReadout = document.getElementById("hzReadout");
-    applyValue(sd, state?.songDuration, "60");
+    if (sd) sd.value = state?.songDuration || "60";
     let toneVal = state?.tone ? Math.max(30, Math.min(200, Number(state.tone))) : 110;
     if (tone) tone.value = String(toneVal);
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
-
-  function applyValue(el, val, def) { if (el) el.value = val || def; }
 
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
@@ -38,6 +36,9 @@
     stopBtn.classList.toggle("filled", state !== "playing");
   }
 
+  // =========================
+  // Audio engine
+  // =========================
   let audioContext = null, masterGain = null, reverbNode = null, streamDest = null, heartbeat = null;
   let activeNodes = [], isPlaying = false, isEndingNaturally = false;
   let nextNoteTime = 0, sessionStartTime = 0, timerInterval = null;
@@ -54,7 +55,7 @@
     masterGain.connect(streamDest);
     masterGain.connect(audioContext.destination);
 
-    // PERSISTENCE HEARTBEAT
+    // PERSISTENCE HEARTBEAT: Forces macOS to keep thread alive
     const silentBuffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
     heartbeat = audioContext.createBufferSource();
     heartbeat.buffer = silentBuffer;
@@ -143,7 +144,7 @@
     killImmediate();
     isPlaying = true; setButtonState("playing");
     sessionStartTime = nextNoteTime = audioContext.currentTime;
-    timerInterval = setInterval(scheduler, 100);
+    timerInterval = setInterval(scheduler, 100); // Robust background timing
   }
 
   function stopAllManual() {
@@ -188,7 +189,8 @@
         document.getElementById("playNow").onclick = startFromUI;
         document.getElementById("stop").onclick = stopAllManual;
       } else {
-        window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", "width=480,height=620");
+        // Optimized window launch size
+        window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", "width=500,height=680,resizable=yes");
       }
     });
   });
