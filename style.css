@@ -1,4 +1,4 @@
-/* style.css — Open (v16) Final Precision Alignment */
+/* style.css — Open (v16) Final Precision UI & Persistence */
 
 * { box-sizing: border-box; }
 
@@ -17,9 +17,7 @@ main {
   padding: 0 2rem;
 }
 
-/* =========================
-   FIX: VISIBLE SLIDER
-   ========================= */
+/* SLIDER VISIBILITY */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -32,49 +30,22 @@ input[type="range"] {
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
-  appearance: none;
   width: 12px;
   height: 12px;
   background: #000;
-  border: none;
   cursor: pointer;
 }
 
-input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: #000;
-  border: none;
-  cursor: pointer;
-}
-
-/* =========================
-   PIXEL ANCHOR (macOS Background Fix)
-   ========================= */
-video {
-  pointer-events: none;
-  position: fixed;
-  bottom: 0;
-  right: 0;
-  width: 1px;
-  height: 1px;
-  opacity: 0.01;
-  z-index: -1;
-}
-
-/* =========================
-   UI ELEMENTS
-   ========================= */
+/* UI ELEMENTS */
 #popoutTitle {
   display: none;
   font-weight: normal;
   text-transform: uppercase;
-  letter-spacing: 0.8rem; /* Increased to match your popout screenshot */
-  text-indent: 0.8rem;   /* Counter-balance for perfect centering */
+  letter-spacing: 0.8rem;
+  text-indent: 0.8rem; /* Center offset */
   border-bottom: 1px solid #000;
   padding-bottom: 1rem;
   margin: 0 0 2rem 0;
-  user-select: none;
   text-align: center;
 }
 
@@ -85,14 +56,13 @@ video {
   margin-bottom: 1.5rem;
 }
 
-input[type="number"], select, button {
+input, select, button {
   background-color: #fff !important;
   color: #000 !important;
   border: 1px solid #000;
   padding: 0.5rem;
   font-family: inherit;
   font-size: 1rem;
-  border-radius: 0;
 }
 
 .form-actions {
@@ -101,9 +71,7 @@ input[type="number"], select, button {
   margin-top: 2rem;
 }
 
-/* =========================
-   BUTTON LOGIC
-   ========================= */
+/* BUTTON CONSISTENCY */
 button {
   flex: 1;
   cursor: pointer;
@@ -119,15 +87,15 @@ button.filled {
   color: #fff !important;
 }
 
-/* Home Page "Open" Button - Precision Centering */
+/* HOME PAGE BUTTON: Precision Airy Look */
 .secondary-btn {
   background-color: #000 !important;
   color: #fff !important;
   border: 1px solid #000;
   padding: 1.2rem;
-  font-size: 0.75rem;     /* Slightly smaller for more elegance */
-  letter-spacing: 1.2rem;  /* Wide spacing to match the aesthetic */
-  text-indent: 1.2rem;    /* CRITICAL: Offsets the last letter's spacing to center the word */
+  font-size: 0.75rem;
+  letter-spacing: 1.2rem;
+  text-indent: 1.2rem; /* Exact mathematical center */
   width: 100%;
   display: block;
   text-align: center;
@@ -138,40 +106,15 @@ button.filled {
   color: #000 !important;
 }
 
-/* =========================
-   FOOTER & SEPARATOR
-   ========================= */
-.separator {
-  margin-top: 4rem;
-  border: 0;
-  border-top: 1px solid #000;
-}
+/* FOOTER */
+.separator { margin-top: 4rem; border: 0; border-top: 1px solid #000; }
+#credits { margin-top: 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; }
 
-#credits {
-  margin-top: 1.5rem;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.75;
-}
-
-/* =========================
-   MODE SWITCHING
-   ========================= */
-#controls, #credits, .separator, #popoutTitle { 
-  display: none; 
-}
-
+/* MODE SWITCHING */
+#controls, #credits, .separator, #popoutTitle { display: none; }
 body.popout #controls, body.popout #credits, body.popout .separator, body.popout #popoutTitle,
 body.mobile-player #controls, body.mobile-player #credits, body.mobile-player .separator, body.mobile-player #popoutTitle {
   display: block;
 }
-
-body.popout #launchOnly, body.mobile-player #launchOnly {
-  display: none;
-}
-
-body.popout main {
-  margin: 2rem auto;
-  max-width: 460px;
-}
+body.popout #launchOnly, body.mobile-player #launchOnly { display: none; }
+body.popout main { margin: 2rem auto; max-width: 460px; }
