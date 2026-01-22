@@ -1,4 +1,4 @@
-/* style.css — Open (v16) Final Precision Hero UI */
+/* style.css — Open (v16) Final Precision Hero UI & Corrected Hover States */
 
 * { box-sizing: border-box; }
 
@@ -58,7 +58,7 @@ video {
   font-weight: normal;
   text-transform: uppercase;
   letter-spacing: 0.8rem;
-  text-indent: 0.8rem; /* Precision centering */
+  text-indent: 0.8rem; /* Corrects center-shift from letter-spacing */
   border-bottom: 1px solid #000;
   padding-bottom: 1rem;
   margin: 0 0 2rem 0;
@@ -98,32 +98,39 @@ button {
   transition: background-color 0.1s ease, color 0.1s ease;
 }
 
+/* Active state for Play/Stop toggling */
 button.filled {
   background-color: #000 !important;
   color: #fff !important;
 }
 
-/* HOME PAGE "OPEN" BUTTON: Hero Sizing & Initial White State */
+/* HOME PAGE "OPEN" BUTTON: Hero Sizing & Corrected States */
 .secondary-btn {
-  background-color: #fff !important; /* Fixed: Starts white */
-  color: #000 !important;           /* Fixed: Black text */
+  /* INITIAL STATE: White background, Black text */
+  background-color: #fff !important; 
+  color: #000 !important;           
   border: 1px solid #000;
   padding: 1.5rem;
   
-  /* Precision sizing for hero presence */
-  font-size: 1.2rem;         
+  /* Hero Precision Sizing */
+  font-size: 1.25rem;         
   font-weight: normal;
   letter-spacing: 1.6rem;    
-  text-indent: 1.6rem;       
+  text-indent: 1.6rem; /* Ensures "O P E N" is mathematically centered */
   
   width: 100%;
   display: block;
   text-align: center;
 }
 
-/* Hover effect for the "OPEN" button */
+/* HOVER STATE: Black background, White text */
 .secondary-btn:hover {
-  background-color: #000 !important; /* Turns black on hover */
+  background-color: #000 !important; 
+  color: #fff !important;
+}
+
+.secondary-btn:active {
+  background-color: #333 !important;
   color: #fff !important;
 }
 
