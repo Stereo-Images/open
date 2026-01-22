@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v21";
+  const STATE_KEY = "open_player_settings_v23";
 
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
@@ -37,7 +37,7 @@
   }
 
   // =========================
-  // AUDIO ENGINE (v17 Texture / v21 Brain)
+  // AUDIO ENGINE (v17 Texture / v23 Wide Brain)
   // =========================
   let audioContext = null, masterGain = null, reverbNode = null, streamDest = null, heartbeat = null;
   let activeNodes = [], isPlaying = false, isEndingNaturally = false;
@@ -89,7 +89,6 @@
   }
 
   // THE TEXTURE: Standard "Granular" Reverb (v17)
-  // - Keeping the raw impulse response for texture
   function createReverb() {
     const duration = 5.0, decay = 1.5, rate = audioContext.sampleRate, length = Math.floor(rate * duration);
     const impulse = audioContext.createBuffer(2, length, rate);
@@ -105,8 +104,7 @@
     reverbGain.connect(audioContext.destination);
   }
 
-  // THE SOUND: Standard FM Bell (v17)
-  // - Keeping the Sine-on-Sine logic you prefer
+  // THE SOUND: Standard FM Bell (v17 - Sine on Sine)
   function playFmBell(freq, duration, volume, startTime) {
     const numVoices = 2 + Math.floor(Math.random() * 2);
     let totalAmp = 0;
@@ -135,32 +133,49 @@
     if (activeNodes.length > 200) activeNodes.splice(0, 100);
   }
 
-  // THE BRAIN: Markov Chain / Random Walk
-  // - This is the new logic that creates "Melody" instead of randomness
+  // THE BRAIN: Wide Melodic Walker (Feldman/Cage Inspired)
   function getNextNote(baseFreq) {
     const scale = scales[runMood] || scales.major;
     const len = scale.length;
     
-    // 
-    // 50% chance: Step 1 note (Melodic)
-    // 30% chance: Step 2 notes (Harmonic)
-    // 20% chance: Jump (Surprise)
+    // UPDATED PROBABILITIES for "Angular" Melody:
+    // 50% Step (Anchors the melody)
+    // 25% Skip (Standard movement)
+    // 25% Leap (The Cage/Feldman factor - wider jumps)
+    
     const r = Math.random();
     let shift = 0;
 
-    if (r < 0.5) shift = (Math.random() < 0.5 ? -1 : 1);
-    else if (r < 0.8) shift = (Math.random() < 0.5 ? -2 : 2);
-    else shift = Math.floor(Math.random() * len) - lastNoteIndex;
+    if (r < 0.50) {
+        // STEP (+/- 1 scale degree)
+        shift = (Math.random() < 0.5 ? -1 : 1);
+    } 
+    else if (r < 0.75) {
+        // SKIP (+/- 2 scale degrees)
+        shift = (Math.random() < 0.5 ? -2 : 2);
+    } 
+    else {
+        // LEAP (Wider jump: +/- 3 to 6 scale degrees)
+        const jumpSize = 3 + Math.floor(Math.random() * 4); 
+        shift = (Math.random() < 0.5 ? -jumpSize : jumpSize);
+    }
 
-    // Drift Intent
-    if (Math.random() < 0.1) driftDirection *= -1; 
-    if (Math.random() < 0.3) shift += driftDirection; 
+    // Drift Intent: Keeps the phrase moving in one direction for a bit
+    if (Math.random() < 0.15) driftDirection *= -1; 
+    if (Math.random() < 0.4) shift += driftDirection; 
 
     let newIndex = lastNoteIndex + shift;
 
     // Constrain to playable range (approx 2 octaves)
-    if (newIndex < 0) newIndex = Math.abs(newIndex);
-    if (newIndex >= len * 2) newIndex = len * 2 - (newIndex % len);
+    // We bounce off the edges to keep melody centered
+    if (newIndex < 0) {
+        newIndex = 1; 
+        driftDirection = 1; // Force direction up
+    }
+    if (newIndex >= len * 2) {
+        newIndex = (len * 2) - 2;
+        driftDirection = -1; // Force direction down
+    }
     
     lastNoteIndex = newIndex;
 
@@ -180,10 +195,9 @@
     while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
       
-      // NEW: Use the brain instead of the dice
       const freq = getNextNote(baseFreq);
       
-      // OLD: Keep the "predictable" v17 pacing you liked
+      // Even pacing (v17 style)
       playFmBell(freq, (1 / runDensity) * 2.5, 0.4, nextNoteTime);
       nextNoteTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
@@ -199,8 +213,13 @@
   async function startFromUI() {
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
+    
+    // Pick a scale for this session
     runMood = ["major", "minor", "pentatonic"][Math.floor(Math.random() * 3)];
+    
+    // Reset density
     runDensity = 0.05 + Math.random() * 0.375;
+    
     killImmediate();
     isPlaying = true; setButtonState("playing");
     sessionStartTime = nextNoteTime = audioContext.currentTime;
