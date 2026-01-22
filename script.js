@@ -97,9 +97,9 @@
   let reverbNode = null;
   let reverbGain = null;
   
-  // macOS Background Persistence Nodes
+  // Cross-Platform Background Persistence Nodes
   let streamDest = null;
-  let audioTag = null;
+  let videoWakeLock = null;
 
   let activeNodes = [];
   let isPlaying = false;
@@ -137,30 +137,35 @@
   }
 
   /**
-   * Enhanced ensureAudio for macOS desktop switching persistence
+   * Refined ensureAudio for macOS and Windows background persistence
    */
   function ensureAudio() {
     if (audioContext) return;
 
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-    // Route through MediaStream to bypass OS background throttling
+    // Create a MediaStream destination to route the synthesis
     streamDest = audioContext.createMediaStreamDestination();
 
     masterGain = audioContext.createGain();
     masterGain.gain.value = 1;
     
-    // Connect to stream destination
+    // Connect to the stream destination
     masterGain.connect(streamDest);
 
-    // Anchor stream to a silent audio tag
-    if (!audioTag) {
-        audioTag = new Audio();
-        audioTag.srcObject = streamDest.stream;
-        audioTag.play().catch(e => console.log("Stream play delayed", e));
+    // Cross-Platform Wake Lock: Use a hidden video element to keep the process "Hot"
+    if (!videoWakeLock) {
+        videoWakeLock = document.createElement('video');
+        videoWakeLock.setAttribute('playsinline', '');
+        videoWakeLock.setAttribute('muted', ''); 
+        videoWakeLock.style.display = 'none';
+        
+        // Linking the generative audio stream to the video element to prevent throttling
+        videoWakeLock.srcObject = streamDest.stream;
+        videoWakeLock.play().catch(e => console.log("WakeLock active"));
     }
 
-    // Connect to primary hardware output
+    // Connect to the actual hardware speakers
     masterGain.connect(audioContext.destination);
 
     reverbNode = audioContext.createConvolver();
