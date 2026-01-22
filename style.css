@@ -8,7 +8,7 @@ body {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   background-color: #fff;
   color: #000;
-  overflow-x: hidden;
+  overflow-x: hidden; /* Prevents tiny shifts from the pixel anchor */
 }
 
 main {
@@ -17,7 +17,9 @@ main {
   padding: 0 2rem;
 }
 
-/* SLIDER VISIBILITY */
+/* =========================
+   FIX: VISIBLE SLIDER
+   ========================= */
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
@@ -36,16 +38,33 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
 }
 
-/* UI ELEMENTS */
+/* =========================
+   PIXEL ANCHOR (macOS Background Fix)
+   ========================= */
+video {
+  pointer-events: none;
+  position: fixed;
+  bottom: 0;
+  right: 0;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  z-index: -1;
+}
+
+/* =========================
+   UI ELEMENTS
+   ========================= */
 #popoutTitle {
   display: none;
   font-weight: normal;
   text-transform: uppercase;
-  letter-spacing: 0.8rem;
-  text-indent: 0.8rem; /* Center offset */
+  letter-spacing: 0.8rem; /* Airy title spacing */
+  text-indent: 0.8rem;   /* Counter-balance for centering */
   border-bottom: 1px solid #000;
   padding-bottom: 1rem;
   margin: 0 0 2rem 0;
+  user-select: none;
   text-align: center;
 }
 
@@ -63,6 +82,7 @@ input, select, button {
   padding: 0.5rem;
   font-family: inherit;
   font-size: 1rem;
+  border-radius: 0;
 }
 
 .form-actions {
@@ -71,7 +91,9 @@ input, select, button {
   margin-top: 2rem;
 }
 
-/* BUTTON CONSISTENCY */
+/* =========================
+   BUTTON LOGIC
+   ========================= */
 button {
   flex: 1;
   cursor: pointer;
@@ -87,15 +109,20 @@ button.filled {
   color: #fff !important;
 }
 
-/* HOME PAGE BUTTON: Precision Airy Look */
+/* HOME PAGE "OPEN" BUTTON
+   Updated to be larger than popout buttons for visual hierarchy 
+*/
 .secondary-btn {
   background-color: #000 !important;
   color: #fff !important;
   border: 1px solid #000;
-  padding: 1.2rem;
-  font-size: 0.75rem;
-  letter-spacing: 1.2rem;
-  text-indent: 1.2rem; /* Exact mathematical center */
+  padding: 1.5rem;          /* Increased height for hero presence */
+  
+  /* Precision sizing and centering */
+  font-size: 1.15rem;       /* Larger than PLAY/STOP buttons */
+  letter-spacing: 1.4rem;   /* Ultra-wide airy spacing */
+  text-indent: 1.4rem;      /* Mathematical offset for perfect centering */
+  
   width: 100%;
   display: block;
   text-align: center;
@@ -106,15 +133,40 @@ button.filled {
   color: #000 !important;
 }
 
-/* FOOTER */
-.separator { margin-top: 4rem; border: 0; border-top: 1px solid #000; }
-#credits { margin-top: 1.5rem; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.75; }
+/* =========================
+   FOOTER & SEPARATOR
+   ========================= */
+.separator {
+  margin-top: 4rem;
+  border: 0;
+  border-top: 1px solid #000;
+}
 
-/* MODE SWITCHING */
-#controls, #credits, .separator, #popoutTitle { display: none; }
+#credits {
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.75;
+}
+
+/* =========================
+   MODE SWITCHING
+   ========================= */
+#controls, #credits, .separator, #popoutTitle { 
+  display: none; 
+}
+
 body.popout #controls, body.popout #credits, body.popout .separator, body.popout #popoutTitle,
 body.mobile-player #controls, body.mobile-player #credits, body.mobile-player .separator, body.mobile-player #popoutTitle {
   display: block;
 }
-body.popout #launchOnly, body.mobile-player #launchOnly { display: none; }
-body.popout main { margin: 2rem auto; max-width: 460px; }
+
+body.popout #launchOnly, body.mobile-player #launchOnly {
+  display: none;
+}
+
+body.popout main {
+  margin: 2rem auto;
+  max-width: 460px;
+}
