@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v20";
+  const STATE_KEY = "open_player_settings_v17";
 
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
@@ -37,15 +37,11 @@
   }
 
   // =========================
-  // AUDIO ENGINE (Pure Glass)
+  // AUDIO ENGINE (Pro Persistence Model)
   // =========================
   let audioContext = null, masterGain = null, reverbNode = null, streamDest = null, heartbeat = null;
   let activeNodes = [], isPlaying = false, isEndingNaturally = false;
   let nextNoteTime = 0, sessionStartTime = 0, timerInterval = null;
-  
-  // LOGIC STATE (The "Brain" - Markov Drift)
-  let lastNoteIndex = 3; 
-  let driftDirection = 1; 
 
   const scheduleAheadTime = 0.5, NATURAL_END_FADE_SEC = 1.2, NATURAL_END_HOLD_SEC = 0.35;
   const scales = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], pentatonic: [0, 2, 4, 7, 9] };
@@ -55,15 +51,13 @@
     if (audioContext) return;
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     
+    // 1. Media Stream for Video Anchor
     streamDest = audioContext.createMediaStreamDestination();
     masterGain = audioContext.createGain();
-    
-    // Conservative gain staging for cleaner headroom
-    masterGain.gain.value = 0.8; 
-    
     masterGain.connect(streamDest);
     masterGain.connect(audioContext.destination);
 
+    // 2. Silent Heartbeat to prevent OS throttling
     const silentBuffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
     heartbeat = audioContext.createBufferSource();
     heartbeat.buffer = silentBuffer;
@@ -71,12 +65,14 @@
     heartbeat.start();
     heartbeat.connect(audioContext.destination);
 
+    // 3. Media Session API
     if ('mediaSession' in navigator) {
       navigator.mediaSession.metadata = new MediaMetadata({ title: 'Open', artist: 'Stereo Images' });
       navigator.mediaSession.setActionHandler('play', startFromUI);
       navigator.mediaSession.setActionHandler('pause', stopAllManual);
     }
     
+    // 4. Inject Pixel Anchor
     let videoWakeLock = document.querySelector('video');
     if (!videoWakeLock) {
         videoWakeLock = document.createElement('video');
@@ -88,135 +84,50 @@
     videoWakeLock.srcObject = streamDest.stream;
     videoWakeLock.play().catch(() => {});
 
-    createHighQualityReverb();
+    createReverb();
   }
 
-  // ATMOSPHERE (Filtered Offline Reverb for realism)
-  function createHighQualityReverb() {
-    const lengthSec = 4.0;
-    const sampleRate = audioContext.sampleRate;
-    const lengthSamples = sampleRate * lengthSec;
-
-    const offlineCtx = new OfflineAudioContext(2, lengthSamples, sampleRate);
-    const noiseBuffer = offlineCtx.createBuffer(2, lengthSamples, sampleRate);
-    
+  function createReverb() {
+    const duration = 5.0, decay = 1.5, rate = audioContext.sampleRate, length = Math.floor(rate * duration);
+    const impulse = audioContext.createBuffer(2, length, rate);
     for (let ch = 0; ch < 2; ch++) {
-      const data = noiseBuffer.getChannelData(ch);
-      for (let i = 0; i < lengthSamples; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / lengthSamples, 2.5);
-      }
+      const data = impulse.getChannelData(ch);
+      for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
     }
-
-    const source = offlineCtx.createBufferSource();
-    source.buffer = noiseBuffer;
-
-    // Lowpass Filter removes metallic "hiss", keeping the reverb dark and atmospheric
-    const filter = offlineCtx.createBiquadFilter();
-    filter.type = "lowpass";
-    filter.frequency.setValueAtTime(15000, 0); 
-    filter.frequency.exponentialRampToValueAtTime(300, lengthSec); 
-
-    source.connect(filter);
-    filter.connect(offlineCtx.destination);
-    source.start();
-
-    offlineCtx.startRendering().then((renderedBuffer) => {
-      reverbNode = audioContext.createConvolver();
-      reverbNode.buffer = renderedBuffer;
-      const reverbGain = audioContext.createGain();
-      reverbGain.gain.value = 1.2; 
-      reverbNode.connect(reverbGain);
-      reverbGain.connect(masterGain); 
-    });
+    reverbNode = audioContext.createConvolver();
+    reverbNode.buffer = impulse;
+    const reverbGain = audioContext.createGain();
+    reverbGain.gain.value = 1.5;
+    reverbNode.connect(reverbGain);
+    reverbGain.connect(audioContext.destination);
   }
 
-  // RICHNESS (Pure Sine-on-Sine)
   function playFmBell(freq, duration, volume, startTime) {
-    if (!reverbNode) return; 
-
-    // CARRIERS: Two Sine Waves (Physical purity)
-    const carrierA = audioContext.createOscillator();
-    const carrierB = audioContext.createOscillator();
-    const modulator = audioContext.createOscillator();
-
-    const modGain = audioContext.createGain();
-    const ampGain = audioContext.createGain();
-
-    carrierA.type = 'sine';
-    carrierB.type = 'sine'; // Ensuring smooth, glass-like texture
-    modulator.type = 'sine';
-
-    // Detuning for "Chorus" Effect (Width without roughness)
-    carrierA.frequency.value = freq;
-    carrierB.frequency.value = freq;
-    carrierB.detune.value = 4; // +4 cents detune for subtle, shimmering beat
-
-    const ratio = 1.4 + Math.random() * 0.2; 
-    modulator.frequency.value = freq * ratio;
-    
-    const modIndex = 150 + Math.random() * 100;
-    modGain.gain.setValueAtTime(modIndex, startTime);
-    modGain.gain.exponentialRampToValueAtTime(1, startTime + duration * 0.8);
-
-    // Amplitude Envelope
-    // Adjusted gain to 0.6 since we are summing two pure sines
-    const safeVol = volume * 0.6; 
-    
-    ampGain.gain.setValueAtTime(0, startTime);
-    ampGain.gain.linearRampToValueAtTime(safeVol, startTime + 0.02); 
-    ampGain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
-
-    modulator.connect(modGain);
-    
-    // Modulate BOTH carriers
-    modGain.connect(carrierA.frequency);
-    modGain.connect(carrierB.frequency);
-
-    carrierA.connect(ampGain);
-    carrierB.connect(ampGain);
-
-    ampGain.connect(reverbNode);
-    ampGain.connect(masterGain);
-
-    const stopTime = startTime + duration + 0.1;
-    [carrierA, carrierB, modulator].forEach(node => {
-        node.start(startTime);
-        node.stop(stopTime);
+    const numVoices = 2 + Math.floor(Math.random() * 2);
+    let totalAmp = 0;
+    const voices = Array.from({length: numVoices}, () => {
+      const v = { modRatio: 1.5 + Math.random() * 2.5, modIndex: 1 + Math.random() * 4, amp: Math.random() };
+      totalAmp += v.amp;
+      return v;
     });
 
-    activeNodes.push(carrierA, carrierB, modulator, modGain, ampGain);
-    if (activeNodes.length > 250) activeNodes.splice(0, 100);
-  }
-
-  // INTENT (Markov Chain / Random Walk)
-  function getNextNote(baseFreq) {
-    const scale = scales[runMood] || scales.major;
-    const len = scale.length;
-
-    // "Lazy" Probability: Prefers stepping over jumping
-    const r = Math.random();
-    let shift = 0;
-
-    if (r < 0.5) shift = (Math.random() < 0.5 ? -1 : 1);
-    else if (r < 0.8) shift = (Math.random() < 0.5 ? -2 : 2);
-    else shift = Math.floor(Math.random() * len) - lastNoteIndex;
-
-    // Drift tendency
-    if (Math.random() < 0.1) driftDirection *= -1; 
-    if (Math.random() < 0.3) shift += driftDirection; 
-
-    let newIndex = lastNoteIndex + shift;
-
-    if (newIndex < 0) newIndex = Math.abs(newIndex);
-    if (newIndex >= len * 2) newIndex = len * 2 - (newIndex % len);
-    
-    lastNoteIndex = newIndex;
-
-    const octave = Math.floor(newIndex / len);
-    const noteDegree = newIndex % len;
-    const interval = scale[noteDegree];
-    
-    return baseFreq * Math.pow(2, (interval / 12) + octave);
+    voices.forEach(voice => {
+      const carrier = audioContext.createOscillator(), modulator = audioContext.createOscillator();
+      const modGain = audioContext.createGain(), ampGain = audioContext.createGain();
+      carrier.frequency.value = freq + (Math.random() - 0.5) * 2;
+      modulator.frequency.value = freq * voice.modRatio;
+      modGain.gain.setValueAtTime(freq * voice.modIndex, startTime);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, startTime + duration);
+      ampGain.gain.setValueAtTime(0.0001, startTime);
+      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, startTime + 0.01);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+      modulator.connect(modGain); modGain.connect(carrier.frequency);
+      carrier.connect(ampGain); ampGain.connect(reverbNode); ampGain.connect(masterGain);
+      modulator.start(startTime); carrier.start(startTime);
+      modulator.stop(startTime + duration); carrier.stop(startTime + duration);
+      activeNodes.push(carrier, modulator, modGain, ampGain);
+    });
+    if (activeNodes.length > 200) activeNodes.splice(0, 100);
   }
 
   function scheduler() {
@@ -227,14 +138,10 @@
     }
     while (nextNoteTime < audioContext.currentTime + scheduleAheadTime) {
       const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-      
-      const freq = getNextNote(baseFreq);
-      const dur = (1 / runDensity) * 3.5; 
-      
-      playFmBell(freq, dur, 0.3, nextNoteTime);
-      
-      const space = (1 / runDensity) * (1.0 + Math.random() * 0.5);
-      nextNoteTime += space;
+      const scale = scales[runMood] || scales.major;
+      const freq = baseFreq * Math.pow(2, scale[Math.floor(Math.random() * scale.length)] / 12);
+      playFmBell(freq, (1 / runDensity) * 2.5, 0.4, nextNoteTime);
+      nextNoteTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
   }
 
@@ -242,17 +149,18 @@
     if (timerInterval) clearInterval(timerInterval);
     activeNodes.forEach(n => { try { n.stop(); } catch (e) {} });
     activeNodes = []; isPlaying = isEndingNaturally = false;
-    if (masterGain) { masterGain.gain.cancelScheduledValues(audioContext.currentTime); masterGain.gain.setValueAtTime(0.8, audioContext.currentTime); }
+    if (masterGain) { masterGain.gain.cancelScheduledValues(audioContext.currentTime); masterGain.gain.setValueAtTime(1, audioContext.currentTime); }
   }
 
   async function startFromUI() {
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
     runMood = ["major", "minor", "pentatonic"][Math.floor(Math.random() * 3)];
-    runDensity = 0.05 + Math.random() * 0.30; 
+    runDensity = 0.05 + Math.random() * 0.375;
     killImmediate();
     isPlaying = true; setButtonState("playing");
     sessionStartTime = nextNoteTime = audioContext.currentTime;
+    // Uses setInterval instead of requestAnimationFrame for background stability
     timerInterval = setInterval(scheduler, 100); 
   }
 
@@ -298,6 +206,7 @@
         document.getElementById("playNow").onclick = startFromUI;
         document.getElementById("stop").onclick = stopAllManual;
       } else {
+        // Optimized size for 1.5rem title text
         window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", "width=500,height=680,resizable=yes");
       }
     });
