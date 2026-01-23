@@ -1,11 +1,10 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v26";
+  const STATE_KEY = "open_player_settings_v27";
 
   // UTILITIES
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
     const ua = navigator.userAgent || "";
-    // Robust check for phones/tablets including iPadOS
     return /iPhone|iPad|iPod|Android/i.test(ua) || 
            (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
   }
@@ -33,17 +32,25 @@
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
 
+  // UPDATED: Now handles Slider Locking
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
+    const toneInput = document.getElementById("tone");
+    
     if (!playBtn || !stopBtn) return;
     
     playBtn.classList.toggle("filled", state === "playing");
     stopBtn.classList.toggle("filled", state !== "playing");
+
+    // Lock the slider when playing, unlock when stopped
+    if (toneInput) {
+        toneInput.disabled = (state === "playing");
+    }
   }
 
   // =========================
-  // SHARED LOGIC (Renderer & Realtime)
+  // SHARED LOGIC
   // =========================
   const scales = { major: [0, 2, 4, 5, 7, 9, 11], minor: [0, 2, 3, 5, 7, 8, 10], pentatonic: [0, 2, 4, 7, 9] };
   let runMood = "major", runDensity = 0.2;
@@ -136,6 +143,7 @@
   let isPlaying = false, isEndingNaturally = false;
   let nextNoteTime = 0, sessionStartTime = 0, timerInterval = null;
   let lastNoteIndex = 3; 
+  let sessionBaseFreq = 110; // Stores the frequency when play starts
 
   function ensureAudio() {
     if (audioContext) return;
@@ -176,8 +184,8 @@
       beginNaturalEnd(); return;
     }
     while (nextNoteTime < audioContext.currentTime + 0.5) {
-      const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-      const result = getNextNote(baseFreq, lastNoteIndex);
+      // Use the LOCKED session frequency, not the live DOM element
+      const result = getNextNote(sessionBaseFreq, lastNoteIndex);
       lastNoteIndex = result.newIndex;
       
       scheduleNote(audioContext, masterGain, result.freq, nextNoteTime, (1 / runDensity) * 2.5, 0.4, liveReverbBuffer);
@@ -200,7 +208,10 @@
 
     let offlineTime = 0;
     let offlineNoteIndex = 3;
-    const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+    
+    // If we are currently playing, use the locked frequency. 
+    // If stopped, use the visible slider value.
+    const baseFreq = isPlaying ? sessionBaseFreq : parseFloat(document.getElementById("tone")?.value ?? "110");
 
     while (offlineTime < duration - 2.0) { 
         const result = getNextNote(baseFreq, offlineNoteIndex);
@@ -255,16 +266,22 @@
   async function startFromUI() {
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
+    
+    // CAPTURE THE TONE FOR THIS SESSION
+    sessionBaseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+
     runMood = ["major", "minor", "pentatonic"][Math.floor(Math.random() * 3)];
     runDensity = 0.05 + Math.random() * 0.375;
     killImmediate();
-    isPlaying = true; setButtonState("playing");
+    isPlaying = true; 
+    setButtonState("playing"); // This will also disable the slider
+    
     sessionStartTime = nextNoteTime = audioContext.currentTime;
     timerInterval = setInterval(scheduler, 100); 
   }
 
   function stopAllManual() {
-    setButtonState("stopped");
+    setButtonState("stopped"); // This will also re-enable the slider
     if (!audioContext) { isPlaying = false; return; }
     isPlaying = isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
@@ -282,11 +299,10 @@
   }
 
   // =========================
-  // INITIALIZATION (Bulletproof Mobile Fix)
+  // INITIALIZATION
   // =========================
   document.addEventListener("DOMContentLoaded", () => {
     
-    // 1. Popout Mode (Child Window)
     if (isPopoutMode()) {
         document.body.classList.add("popout");
         applyControls(loadState());
@@ -308,18 +324,13 @@
         setButtonState("stopped");
     }
 
-    // 2. Launch Button (Main Window)
     const launchBtn = document.getElementById("launchPlayer");
     if (launchBtn) {
         launchBtn.addEventListener("click", () => {
-            
-            // Re-check mobile status on click to be safe
             if (!isPopoutMode() && isMobileDevice()) {
-                // MOBILE: Inline Player
                 document.body.classList.add("mobile-player");
                 applyControls(loadState());
                 
-                // Re-attach listeners for the inline controls
                 document.getElementById("tone")?.addEventListener("input", (e) => {
                     const val = e.target.value;
                     const ro = document.getElementById("hzReadout");
@@ -335,8 +346,6 @@
                 if (stopBtn) stopBtn.onclick = stopAllManual;
 
             } else {
-                // DESKTOP: Popout Window
-                // Optimized size for the new typography
                 window.open(
                     `${window.location.href.split("#")[0]}#popout`, 
                     "open_player", 
