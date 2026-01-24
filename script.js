@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v55";
+  const STATE_KEY = "open_player_final_v57";
 
   // =========================
   // UTILITIES & UI
@@ -100,11 +100,11 @@
     };
   }
 
-  // v27 SOUND ENGINE
-  function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
-    const numVoices = 2 + Math.floor(Math.random() * 2);
-    let totalAmp = 0;
-    
+  // ==========================================
+  // DUAL-TEXTURE ENGINE (Bell vs Bow)
+  // ==========================================
+  function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer, type) {
+    // 1. Reverb (Shared)
     const conv = ctx.createConvolver();
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
@@ -112,12 +112,23 @@
     conv.connect(revGain);
     revGain.connect(destination);
 
+    // 2. Voice Config based on Type
+    let numVoices = 2;
+    if (type === 'bell') numVoices = 2 + Math.floor(Math.random() * 2);
+    else numVoices = 2; // Bow is simpler, cleaner
+
+    let totalAmp = 0;
     const voices = Array.from({length: numVoices}, () => {
-      const v = { 
-          modRatio: 1.5 + Math.random() * 2.5, 
-          modIndex: 1 + Math.random() * 4, 
-          amp: Math.random() 
-      };
+      let v;
+      if (type === 'bell') {
+          // BELL: Complex FM, Metallic
+          v = { modRatio: 1.5 + Math.random() * 2.5, modIndex: 1 + Math.random() * 4, amp: Math.random() };
+      } else {
+          // BOW: Pure Sine, minimal FM (Just thickening)
+          // Ratio 1.0 = Unison (No clang)
+          // Index 0.5 = Very subtle warmth
+          v = { modRatio: 1.0 + (Math.random() * 0.01), modIndex: 0.5, amp: Math.random() };
+      }
       totalAmp += v.amp;
       return v;
     });
@@ -137,8 +148,18 @@
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
       modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
 
+      // ENVELOPE LOGIC
       ampGain.gain.setValueAtTime(0.0001, time);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
+      
+      if (type === 'bell') {
+          // BELL: Fast Attack (Click)
+          ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
+      } else {
+          // BOW: Slow Swell (1.5s Attack)
+          // We target a slightly lower volume for the bow so it sits *behind* the bell
+          ampGain.gain.linearRampToValueAtTime((voice.amp / totalAmp) * (volume * 0.7), time + 1.5);
+      }
+      
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
       modulator.connect(modGain); 
@@ -188,6 +209,8 @@
 
   function getArcState(progress, durationInput) {
     const rootIndex = getHarmonicRoot(progress, durationInput);
+    
+    // MICRO-PHASING (Still State)
     let ratio, minOctA, maxOctA, minOctB, maxOctB;
 
     if (progress < 0.2) {
@@ -195,13 +218,10 @@
       minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
     } else if (progress < 0.5) {
       const p = (progress - 0.2) / 0.3;
-      ratio = 1.0 + (p * 0.25); 
-      minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 2;
+      ratio = 1.0 + (p * 0.002); 
+      minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
     } else if (progress < 0.8) {
-      ratio = 1.5; 
-      minOctA = -1; maxOctA = 0; minOctB = 1; maxOctB = 2;
-    } else if (progress < 0.95) {
-      ratio = 1.0; 
+      ratio = 1.002; 
       minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
     } else {
       ratio = 1.0; 
@@ -214,8 +234,6 @@
   let liveReverbBuffer = null;
   let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
   let nextTimeA = 0, nextTimeB = 0;
-  // New tracker for collision avoidance
-  let lastScheduledAnchorTime = -1; 
   let patternIdxA = 0, patternIdxB = 0;
   let sessionStartTime = 0, timerInterval = null;
 
@@ -273,15 +291,13 @@
     const densityA = 0.14; 
     const noteDur = (1 / densityA) * 2.5;
 
-    // ANCHOR LOOP
+    // ANCHOR LOOP (The Bell)
     while (nextTimeA < now + 0.5) {
       if (isApproachingEnd && !isEndingNaturally) {
         const isStartOfPattern = (patternIdxA % motifA.length === 0);
-        const isPhysicallyLocked = (Math.abs(arc.ratio - 1.0) < 0.01);
-
-        if (isStartOfPattern && isPhysicallyLocked) {
+        if (isStartOfPattern) {
           const result = getNextPatternNote(baseFreq, patternIdxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
-          scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 20.0, 0.4, liveReverbBuffer);
+          scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 25.0, 0.4, liveReverbBuffer, 'bell');
           beginNaturalEnd();
           return;
         }
@@ -290,31 +306,21 @@
       const result = getNextPatternNote(baseFreq, patternIdxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
       patternIdxA = result.newPatternIndex;
       
-      scheduleNote(audioContext, masterGain, result.freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
-      
-      // Update global tracker so B can see it
-      lastScheduledAnchorTime = nextTimeA; 
-      
+      scheduleNote(audioContext, masterGain, result.freq, nextTimeA, noteDur, 0.4, liveReverbBuffer, 'bell');
       nextTimeA += (1 / densityA);
     }
 
-    // SATELLITE LOOP (With Anti-Collision)
+    // SATELLITE LOOP (The Bowed Glass)
     while (nextTimeB < now + 0.5 && !isEndingNaturally) {
-      
-      // COLLISION DETECTION:
-      // If B is about to hit within 250ms of the last A note, push B forward.
-      // This creates a "Flam" effect (ba-dum) instead of a digital volume spike.
-      if (Math.abs(nextTimeB - lastScheduledAnchorTime) < 0.25) {
-          // Push B slightly into the future to create offset
-          nextTimeB += 0.25;
-      }
+      // No collision detection needed because the envelopes are different (Attack vs Swell)
+      // They don't fight for the transient.
 
       const result = getNextPatternNote(baseFreq, patternIdxB, motifB, arc.minOctB, arc.maxOctB, arc.rootIndex);
       patternIdxB = result.newPatternIndex;
       const densityB = densityA * arc.ratio;
       const noteDurB = (1 / densityB) * 2.5;
       
-      scheduleNote(audioContext, masterGain, result.freq, nextTimeB, noteDurB, 0.4, liveReverbBuffer);
+      scheduleNote(audioContext, masterGain, result.freq, nextTimeB, noteDurB, 0.4, liveReverbBuffer, 'bow');
       nextTimeB += (1 / densityB);
     }
   }
@@ -370,7 +376,6 @@
 
     nextTimeA = audioContext.currentTime; nextTimeB = audioContext.currentTime;
     patternIdxA = 0; patternIdxB = 0;
-    lastScheduledAnchorTime = -1; // Reset collision tracker
     isEndingNaturally = false; isApproachingEnd = false;
 
     killImmediate();
@@ -404,14 +409,11 @@
     const densityA = 0.14;
     const noteDur = (1 / densityA) * 2.5;
 
-    let localLastAnchor = -1;
-
     let timeA = 0; let idxA = patternIdxA;
     while (timeA < 60) {
       const result = getNextPatternNote(baseFreq, idxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
       idxA = result.newPatternIndex;
-      scheduleNote(offlineCtx, offlineMaster, result.freq, timeA, noteDur, 0.4, offlineReverbBuffer);
-      localLastAnchor = timeA;
+      scheduleNote(offlineCtx, offlineMaster, result.freq, timeA, noteDur, 0.4, offlineReverbBuffer, 'bell');
       timeA += (1 / densityA);
     }
 
@@ -420,14 +422,9 @@
     const noteDurB = (1 / densityB) * 2.5;
     
     while (timeB < 60) {
-      // Export Collision Logic
-      if (Math.abs(timeB - localLastAnchor) < 0.25) {
-          timeB += 0.25;
-      }
-
       const result = getNextPatternNote(baseFreq, idxB, motifB, arc.minOctB, arc.maxOctB, arc.rootIndex);
       idxB = result.newPatternIndex;
-      scheduleNote(offlineCtx, offlineMaster, result.freq, timeB, noteDurB, 0.4, offlineReverbBuffer);
+      scheduleNote(offlineCtx, offlineMaster, result.freq, timeB, noteDurB, 0.4, offlineReverbBuffer, 'bow');
       timeB += (1 / densityB);
     }
 
@@ -437,7 +434,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v55-${Math.floor(currentProgress * 100)}percent-${Date.now()}.wav`;
+    a.download = `open-final-v57-${Math.floor(currentProgress * 100)}percent-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
