@@ -1,6 +1,9 @@
 (() => {
-  const STATE_KEY = "open_player_final_v46";
+  const STATE_KEY = "open_player_final_v48";
 
+  // =========================
+  // UTILITIES & UI
+  // =========================
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
     const ua = navigator.userAgent || "";
@@ -31,9 +34,14 @@
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
+    const toneInput = document.getElementById("tone");
+    
     if (!playBtn || !stopBtn) return;
+    
     playBtn.classList.toggle("filled", state === "playing");
     stopBtn.classList.toggle("filled", state !== "playing");
+    
+    if (toneInput) toneInput.disabled = (state === "playing");
   }
 
   // =========================
@@ -43,6 +51,7 @@
   let runMood = "major";
 
   function createReverbBuffer(ctx) {
+    // 8.0s Decay: Preserves the "Cathedral" space
     const duration = 8.0, decay = 2.0, rate = ctx.sampleRate, length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
     for (let ch = 0; ch < 2; ch++) {
@@ -52,6 +61,8 @@
     return impulse;
   }
 
+  // FIXED MOTIFS (The "Bells")
+  // 4 vs 5 steps ensures complex phasing patterns
   const motifA = [0, 4, 0, 6]; 
   const motifB = [0, 2, 4, 6, 8]; 
 
@@ -60,6 +71,8 @@
     const len = scale.length;
     const noteOffset = patternArray[patternIndex % patternArray.length];
     
+    // Calculate raw index based on Harmonic Root + Motif Offset
+    // +3 shifts it to the middle register
     let rawIndex = harmonicRootIndex + noteOffset + 3; 
 
     const absoluteMin = minOct * len;
@@ -77,28 +90,33 @@
     };
   }
 
-  // PURE SINE GENERATOR
+  // CORE GENERATOR: PURE SINE FM
+  // No compression. No limiting. Pure math.
   function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer, complexity) {
     const numVoices = 2; 
+    
+    // 1. REVERB PATH (Parallel / Aux Send)
     const conv = ctx.createConvolver();
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
-    revGain.gain.value = 1.3; 
+    revGain.gain.value = 1.3; // High wet mix for distance
     conv.connect(revGain);
-    revGain.connect(destination);
+    revGain.connect(destination); // Reverb goes to master
 
     const voices = Array.from({length: numVoices}, () => {
-      // FM Synthesis Ratios
+      // FM RATIOS
+      // Complexity pushes the ratio from Integer (Harmonic) to Decimal (Inharmonic/Metallic)
       const baseRatio = 1.5 + (Math.random() * 0.5); 
-      // Complexity adds inharmonic ratios (still Sine waves, just mathematically offset)
       const alienRatio = 1.1 + (Math.random() * 3.0); 
       const ratio = baseRatio + ((alienRatio - baseRatio) * complexity);
+      
+      // FM INDEX
+      // Determines brightness
       const modIdx = 50 + (Math.random() * 200);
       return { modRatio: ratio, modIndex: modIdx, amp: Math.random() };
     });
 
     voices.forEach(voice => {
-      // EXPLICIT SINE WAVES ONLY
       const carrier = ctx.createOscillator();
       const carrier2 = ctx.createOscillator(); 
       const modulator = ctx.createOscillator();
@@ -106,25 +124,27 @@
       const modGain = ctx.createGain();
       const ampGain = ctx.createGain();
 
-      carrier.type = 'sine';   // Pure
-      carrier2.type = 'sine';  // Pure
-      modulator.type = 'sine'; // Pure
+      // STRICT SINE WAVE POLICY
+      carrier.type = 'sine';   
+      carrier2.type = 'sine';  
+      modulator.type = 'sine'; 
 
+      // Carrier Frequency with tiny random drift for analog feel
       carrier.frequency.value = freq + (Math.random() - 0.5) * 2;
       carrier2.frequency.value = freq;
       
-      // Slight Detune creates the "beating" pulsation of a bell
-      // This is not a different waveform, just two sines rubbing against each other
+      // Detuning the second carrier creates the "beating" effect of a physical bell
       carrier2.detune.value = 2 + (complexity * 8) + (Math.random() * 2); 
 
-      // FM LOGIC
+      // FM CONFIGURATION
       modulator.frequency.value = freq * voice.modRatio;
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration); // Timbre darkens over time
 
-      // ENVELOPE (Bell Shape)
+      // AMPLITUDE ENVELOPE
+      // Linear attack (50ms) to simulate the mass of a heavy bell being struck
       ampGain.gain.setValueAtTime(0.0001, time);
-      ampGain.gain.linearRampToValueAtTime(volume, time + 0.05); 
+      ampGain.gain.linearRampToValueAtTime(volume * 0.6, time + 0.05); // Lowered gain to prevent clipping
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
       // ROUTING
@@ -134,8 +154,10 @@
       
       carrier.connect(ampGain);
       carrier2.connect(ampGain);
-      ampGain.connect(conv); 
-      ampGain.connect(destination);
+      
+      // OUTPUT SPLIT
+      ampGain.connect(conv); // Wet
+      ampGain.connect(destination); // Dry
 
       [carrier, carrier2, modulator].forEach(n => {
           n.start(time);
@@ -144,34 +166,60 @@
     });
   }
 
+  // =========================
+  // LOGIC: HARMONY & PHYSICS
+  // =========================
   function calculateProgress(elapsed, durationInput) {
     let totalDuration = parseFloat(durationInput);
     if (durationInput === "infinite") {
         totalDuration = 3600; 
         const doubleCycle = totalDuration * 2;
         const p = (elapsed % doubleCycle) / totalDuration; 
-        return (p <= 1.0) ? p : (2.0 - p); 
+        return (p <= 1.0) ? p : (2.0 - p); // Ping-Pong
     } else {
+        // Cap at 1.0, but allow engine to run past it for phase quantization
         return Math.min(1.0, elapsed / totalDuration);
     }
   }
 
-  // ADAPTIVE HARMONY
   function getHarmonicRoot(progress, durationInput) {
     let totalSeconds = parseFloat(durationInput);
     if (durationInput === "infinite") totalSeconds = 3600;
 
     let sequence = [];
+    
     if (totalSeconds <= 120) {
-        sequence = [ { t: 0.5, chord: 0 }, { t: 0.8, chord: 4 }, { t: 1.0, chord: 1 } ];
-    } else if (totalSeconds <= 600) {
-        sequence = [ { t: 0.3, chord: 0 }, { t: 0.6, chord: 5 }, { t: 0.85, chord: 4 }, { t: 1.0, chord: 1 } ];
-    } else {
+        // THE HAIKU (< 2 mins)
+        // I -> V -> ii (Ambiguous Ending)
         sequence = [
-            { t: 0.20, chord: 0 }, { t: 0.40, chord: 2 }, { t: 0.60, chord: 5 }, 
-            { t: 0.75, chord: 4 }, { t: 0.90, chord: 0 }, { t: 1.00, chord: 1 }
+            { t: 0.5, chord: 0 }, // I
+            { t: 0.8, chord: 4 }, // V
+            { t: 1.0, chord: 1 }  // ii
+        ];
+    } 
+    else if (totalSeconds <= 600) {
+        // THE SKETCH (2 - 10 mins)
+        // I -> vi -> V -> ii
+        sequence = [
+            { t: 0.3, chord: 0 }, // I
+            { t: 0.6, chord: 5 }, // vi
+            { t: 0.85, chord: 4 }, // V
+            { t: 1.0, chord: 1 }  // ii
+        ];
+    } 
+    else {
+        // THE NOVEL (10+ mins)
+        // Full Jazz Progression: I -> iii -> vi -> V -> I -> ii
+        sequence = [
+            { t: 0.20, chord: 0 }, // I
+            { t: 0.40, chord: 2 }, // iii
+            { t: 0.60, chord: 5 }, // vi
+            { t: 0.75, chord: 4 }, // V
+            { t: 0.90, chord: 0 }, // I (False Resolution)
+            { t: 1.00, chord: 1 }  // ii (Departure)
         ];
     }
+
     for (let i = 0; i < sequence.length; i++) {
         if (progress < sequence[i].t) return sequence[i].chord;
     }
@@ -183,21 +231,38 @@
     let ratio, complexity, minOctA, maxOctA, minOctB, maxOctB;
 
     if (progress < 0.2) {
-        ratio = 1.0; complexity = 0.1; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
-    } else if (progress < 0.5) {
+        // PHASE 1: LOCKED
+        ratio = 1.0; complexity = 0.1; 
+        minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
+    } 
+    else if (progress < 0.5) {
+        // PHASE 2: DRIFT (5:4 ratio)
         const p = (progress - 0.2) / 0.3;
-        ratio = 1.0 + (p * 0.25); complexity = 0.2; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 2;
-    } else if (progress < 0.8) {
-        ratio = 1.5; complexity = 0.5; minOctA = -1; maxOctA = 0; minOctB = 1; maxOctB = 2;
-    } else if (progress < 0.95) {
-        ratio = 1.0; complexity = 0.1; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
-    } else {
-        ratio = 1.0; complexity = 0.2; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
+        ratio = 1.0 + (p * 0.25); complexity = 0.2; 
+        minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 2;
+    } 
+    else if (progress < 0.8) {
+        // PHASE 3: CLASH (3:2 ratio / Polyrhythm)
+        ratio = 1.5; complexity = 0.5; 
+        minOctA = -1; maxOctA = 0; minOctB = 1; maxOctB = 2;
+    } 
+    else if (progress < 0.95) {
+        // PHASE 4: RETURN (False Resolution)
+        ratio = 1.0; complexity = 0.1; 
+        minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
     }
+    else {
+        // PHASE 5: SUSPENSION (Ending on ii)
+        ratio = 1.0; complexity = 0.2; 
+        minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
+    }
+
     return { ratio, complexity, minOctA, maxOctA, minOctB, maxOctB, rootIndex };
   }
 
+  // =========================
   // REALTIME SCHEDULER
+  // =========================
   let audioContext = null, masterGain = null, streamDest = null;
   let liveReverbBuffer = null;
   let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
@@ -210,6 +275,8 @@
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
     streamDest = audioContext.createMediaStreamDestination();
     masterGain = audioContext.createGain();
+    
+    // Direct connection to output (No Limiters)
     masterGain.connect(streamDest);
     masterGain.connect(audioContext.destination);
 
@@ -242,6 +309,7 @@
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
     
+    // Check if we passed the user's selected time
     if (durationInput !== "infinite") {
         const targetDuration = parseFloat(durationInput);
         if (elapsed >= targetDuration) isApproachingEnd = true;
@@ -250,42 +318,57 @@
     const progress = calculateProgress(elapsed, durationInput);
     const arc = getArcState(progress, durationInput); 
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
+    
+    // Spaciousness: ~7 seconds between anchor strikes
     const densityA = 0.14; 
 
-    // ANCHOR (Phase Lock Control)
+    // ANCHOR SCHEDULER (Phase Lock Control)
     while (nextTimeA < now + 0.5) {
+        // PHASE QUANTIZED ENDING LOGIC:
+        // If time is up, we wait until:
+        // 1. The Anchor is at index 0 (The "One")
+        // 2. The Satellite is mathematically aligned (ratio approx 1.0)
         if (isApproachingEnd && !isEndingNaturally) {
             const isStartOfPattern = (patternIdxA % motifA.length === 0);
             const isPhysicallyLocked = (Math.abs(arc.ratio - 1.0) < 0.01);
 
             if (isStartOfPattern && isPhysicallyLocked) {
+                // Play final note (long tail) and quit
                 const result = getNextPatternNote(baseFreq, patternIdxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
-                scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 6.0, 0.4, liveReverbBuffer, arc.complexity); 
+                scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 8.0, 0.4, liveReverbBuffer, arc.complexity); 
                 beginNaturalEnd(); 
                 return; 
             }
         }
+
         const result = getNextPatternNote(baseFreq, patternIdxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
         patternIdxA = result.newPatternIndex;
+        // 4.0s duration allows the Sine FM to bloom
         scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 4.0, 0.4, liveReverbBuffer, arc.complexity);
         nextTimeA += (1 / densityA); 
     }
 
-    // SATELLITE
+    // SATELLITE SCHEDULER (Variable Gravity)
     while (nextTimeB < now + 0.5 && !isEndingNaturally) {
         const result = getNextPatternNote(baseFreq, patternIdxB, motifB, arc.minOctB, arc.maxOctB, arc.rootIndex);
         patternIdxB = result.newPatternIndex;
+        
         const densityB = densityA * arc.ratio; 
         scheduleNote(audioContext, masterGain, result.freq, nextTimeB, 4.0, 0.4, liveReverbBuffer, arc.complexity);
         nextTimeB += (1 / densityB); 
     }
   }
 
+  // =========================
+  // WAV EXPORT
+  // =========================
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
-    console.log("Rendering Pure Sine Export...");
+    
+    console.log("Rendering Studio Export...");
     const sampleRate = 44100;
-    const duration = 60 + 15; 
+    // Render 75 seconds to capture a full minute + tail
+    const duration = 75; 
     const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
     const offlineMaster = offlineCtx.createGain();
     offlineMaster.connect(offlineCtx.destination);
@@ -299,6 +382,7 @@
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
     const densityA = 0.14;
 
+    // Snapshot Render: Captures the current "vibe" (Ratio + Key) for 60s
     let timeA = 0; let idxA = patternIdxA;
     while (timeA < 60) {
         const result = getNextPatternNote(baseFreq, idxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
@@ -317,12 +401,12 @@
     }
 
     const renderedBuffer = await offlineCtx.startRendering();
-    const wavBlob = bufferToWave(renderedBuffer, 60 * sampleRate);
+    const wavBlob = bufferToWave(renderedBuffer, duration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-sine-snapshot-${Math.floor(currentProgress*100)}percent-${Date.now()}.wav`;
+    a.download = `open-final-v48-${Math.floor(currentProgress*100)}percent-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
