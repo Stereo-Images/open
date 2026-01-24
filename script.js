@@ -7,7 +7,8 @@
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
     const ua = navigator.userAgent || "";
-    return /iPhone|iPad|iPod|Android/i.test(ua) || (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
+    return /iPhone|iPad|iPod|Android/i.test(ua) ||
+      (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
   }
 
   function loadState() {
@@ -76,19 +77,19 @@
   function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
     const numVoices = 2 + Math.floor(Math.random() * 2);
     let totalAmp = 0;
-    
+
     const conv = ctx.createConvolver();
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
-    revGain.gain.value = 1.5; 
+    revGain.gain.value = 1.5;
     conv.connect(revGain);
     revGain.connect(destination);
 
-    const voices = Array.from({length: numVoices}, () => {
-      const v = { 
-          modRatio: 1.5 + Math.random() * 2.5, 
-          modIndex: 1 + Math.random() * 4, 
-          amp: Math.random() 
+    const voices = Array.from({ length: numVoices }, () => {
+      const v = {
+        modRatio: 1.5 + Math.random() * 2.5,
+        modIndex: 1 + Math.random() * 4,
+        amp: Math.random()
       };
       totalAmp += v.amp;
       return v;
@@ -113,11 +114,11 @@
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-      modulator.connect(modGain); 
+      modulator.connect(modGain);
       modGain.connect(carrier.frequency);
-      
-      carrier.connect(ampGain); 
-      ampGain.connect(conv); 
+
+      carrier.connect(ampGain);
+      ampGain.connect(conv);
       ampGain.connect(destination);
 
       modulator.start(time); carrier.start(time);
@@ -128,9 +129,8 @@
   // ==========================================
   // HARMONIC ENGINE
   // ==========================================
-  
-  let circlePosition = 0; 
-  let isMinor = false; 
+  let circlePosition = 0;
+  let isMinor = false;
 
   function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode) {
     let pos = circlePos % 12;
@@ -138,66 +138,63 @@
 
     let semitones = (pos * 7) % 12;
     let rootOffset = semitones;
-    
-    if (minorMode) {
-        rootOffset = (semitones + 9) % 12; 
-    }
 
-    const intervals = minorMode 
-        ? [0, 2, 3, 5, 7, 8, 10] 
-        : [0, 2, 4, 5, 7, 9, 11];
+    if (minorMode) rootOffset = (semitones + 9) % 12;
+
+    const intervals = minorMode
+      ? [0, 2, 3, 5, 7, 8, 10]
+      : [0, 2, 4, 5, 7, 9, 11];
 
     const len = intervals.length;
     const octave = Math.floor(scaleIndex / len);
     const degree = ((scaleIndex % len) + len) % len;
-    
+
     const noteValue = rootOffset + intervals[degree] + (octave * 12);
     return baseFreq * Math.pow(2, noteValue / 12);
   }
 
   function updateHarmonyState(durationInput) {
-      const r = Math.random();
-      let totalSeconds = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
+    const r = Math.random();
+    let totalSeconds = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
 
-      if (totalSeconds <= 60) return; 
+    if (totalSeconds <= 60) return;
 
-      if (totalSeconds <= 300) { 
-          if (r < 0.2) { 
-              isMinor = !isMinor;
-              console.log(`Modulating (5m): ${isMinor ? 'Relative Minor' : 'Relative Major'}`);
-          }
-          return;
+    if (totalSeconds <= 300) {
+      if (r < 0.2) {
+        isMinor = !isMinor;
+        console.log(`Modulating (5m): ${isMinor ? 'Relative Minor' : 'Relative Major'}`);
       }
+      return;
+    }
 
-      if (totalSeconds <= 1800) { 
-          if (r < 0.4) {
-              isMinor = !isMinor; 
-          } else {
-              const dir = Math.random() < 0.7 ? 1 : -1; 
-              circlePosition += dir;
-              console.log(`Modulating (Drift): Circle ${circlePosition}`);
-          }
-          return;
+    if (totalSeconds <= 1800) {
+      if (r < 0.4) {
+        isMinor = !isMinor;
+      } else {
+        const dir = Math.random() < 0.7 ? 1 : -1;
+        circlePosition += dir;
+        console.log(`Modulating (Drift): Circle ${circlePosition}`);
       }
+      return;
+    }
 
-      // Infinite
-      if (durationInput === "infinite") {
-          if (!isMinor) {
-              if (r < 0.7) isMinor = true; 
-              else circlePosition += (Math.random() < 0.9 ? 1 : -1);
-          } else {
-              if (r < 0.3) isMinor = false; 
-              else circlePosition += (Math.random() < 0.9 ? 1 : -1);
-          }
-          console.log(`Modulating (Shadow): Circle ${circlePosition}, Minor: ${isMinor}`);
+    if (durationInput === "infinite") {
+      if (!isMinor) {
+        if (r < 0.7) isMinor = true;
+        else circlePosition += (Math.random() < 0.9 ? 1 : -1);
+      } else {
+        if (r < 0.3) isMinor = false;
+        else circlePosition += (Math.random() < 0.9 ? 1 : -1);
       }
+      console.log(`Modulating (Shadow): Circle ${circlePosition}, Minor: ${isMinor}`);
+    }
   }
 
   function getDynamicDensity(elapsed) {
-      const period = 60; 
-      const sine = Math.sin((elapsed / period) * 2 * Math.PI);
-      const normalized = (sine + 1) / 2; 
-      return 0.08 + (normalized * 0.12);
+    const period = 60;
+    const sine = Math.sin((elapsed / period) * 2 * Math.PI);
+    const normalized = (sine + 1) / 2;
+    return 0.08 + (normalized * 0.12);
   }
 
   // =========================
@@ -207,7 +204,7 @@
   let liveReverbBuffer = null;
   let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
   let nextTimeA = 0;
-  let patternIdxA = 0; 
+  let patternIdxA = 0;
   let notesSinceModulation = 0;
   let sessionStartTime = 0, timerInterval = null;
 
@@ -264,68 +261,56 @@
 
     while (nextTimeA < now + 0.5) {
       if (isApproachingEnd && !isEndingNaturally) {
-        // ENDING LOGIC (NO HOMING)
-        // Just look for the Root Note of whatever key we are currently in.
         const isRootNote = (patternIdxA % 7 === 0);
-
         if (isRootNote) {
-           const freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-           // Final note gets Bass treatment
-           scheduleNote(audioContext, masterGain, freq * 0.5, nextTimeA, 25.0, 0.5, liveReverbBuffer);
-           beginNaturalEnd();
-           return;
+          const freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+          scheduleNote(audioContext, masterGain, freq * 0.5, nextTimeA, 25.0, 0.5, liveReverbBuffer);
+          beginNaturalEnd();
+          return;
         }
       }
 
-      // MODULATION CHECK (Standard)
       if (!isApproachingEnd) {
-          let modChance = 0.10; 
-          const totalSecs = parseFloat(durationInput);
-          if (durationInput !== "infinite" && totalSecs > 300) {
-              modChance = 0.40; 
-          }
+        let modChance = 0.10;
+        const totalSecs = parseFloat(durationInput);
+        if (durationInput !== "infinite" && totalSecs > 300) modChance = 0.40;
 
-          if (notesSinceModulation > 16 && Math.random() < modChance) {
-              updateHarmonyState(durationInput);
-              notesSinceModulation = 0;
-          }
+        if (notesSinceModulation > 16 && Math.random() < modChance) {
+          updateHarmonyState(durationInput);
+          notesSinceModulation = 0;
+        }
       }
 
-      // MELODY WALKER
       const r = Math.random();
       let shift = 0;
       if (r < 0.4) shift = 1;
       else if (r < 0.8) shift = -1;
       else shift = (Math.random() < 0.5 ? 2 : -2);
-      
+
       patternIdxA += shift;
       if (patternIdxA > 10) patternIdxA = 10;
       if (patternIdxA < -8) patternIdxA = -8;
 
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-      
-      // BASS TOLL LOGIC
+
       if (patternIdxA % 7 === 0) {
-          if (Math.random() < 0.15) {
-              freq = freq * 0.5; // 1 Octave
-              noteDur = 25.0; 
-              console.log("Bass Toll");
-          }
+        if (Math.random() < 0.15) {
+          freq = freq * 0.5;
+          noteDur = 25.0;
+          console.log("Bass Toll");
+        }
       }
-      
+
       scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
-      
+
       notesSinceModulation++;
       nextTimeA += (1 / density);
     }
   }
 
+  // ✅ FIX: do NOT touch gain here (it cancels fades)
   function killImmediate() {
     if (timerInterval) clearInterval(timerInterval);
-    if (masterGain) { 
-        masterGain.gain.cancelScheduledValues(audioContext.currentTime); 
-        masterGain.gain.setValueAtTime(1, audioContext.currentTime); 
-    }
     isPlaying = false;
   }
 
@@ -343,14 +328,17 @@
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
 
-    setTimeout(killImmediate, 120);
+    // ✅ After fade completes, stop scheduling. Don't reset gain to 1.
+    setTimeout(killImmediate, 140);
   }
 
   function beginNaturalEnd() {
     if (isEndingNaturally) return;
-    isEndingNaturally = true; isPlaying = false;
+    isEndingNaturally = true;
+    isPlaying = false;
+
     if (timerInterval) clearInterval(timerInterval);
-    
+
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
@@ -366,16 +354,18 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
+    // Reset gain at the start of a new run
     masterGain.gain.cancelScheduledValues(audioContext.currentTime);
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
     nextTimeA = audioContext.currentTime;
-    patternIdxA = 0; 
-    circlePosition = 0; 
-    isMinor = false; 
+    patternIdxA = 0;
+    circlePosition = 0;
+    isMinor = false;
     notesSinceModulation = 0;
 
-    isEndingNaturally = false; isApproachingEnd = false;
+    isEndingNaturally = false;
+    isApproachingEnd = false;
 
     killImmediate();
     isPlaying = true;
@@ -414,40 +404,39 @@
     let totalSeconds = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
 
     while (localTime < 60) {
-       let modChance = (durationInput !== "infinite" && totalSeconds > 300) ? 0.40 : 0.10;
+      let modChance = (durationInput !== "infinite" && totalSeconds > 300) ? 0.40 : 0.10;
 
-       if (localModCount > 16 && Math.random() < modChance) {
-          const r = Math.random();
-          if (totalSeconds <= 60) { }
-          else if (totalSeconds <= 300) { if (r < 0.2) localMinor = !localMinor; }
-          else if (totalSeconds <= 1800) {
-              if (r < 0.4) localMinor = !localMinor;
-              else localCircle += (Math.random() < 0.7 ? 1 : -1);
-          } else {
-              // Infinite
-              if (!localMinor) { if (r < 0.7) localMinor = true; else localCircle += (Math.random() < 0.9 ? 1 : -1); }
-              else { if (r < 0.3) localMinor = false; else localCircle += (Math.random() < 0.9 ? 1 : -1); }
-          }
-          localModCount = 0;
-       }
+      if (localModCount > 16 && Math.random() < modChance) {
+        const r = Math.random();
+        if (totalSeconds <= 60) { }
+        else if (totalSeconds <= 300) { if (r < 0.2) localMinor = !localMinor; }
+        else if (totalSeconds <= 1800) {
+          if (r < 0.4) localMinor = !localMinor;
+          else localCircle += (Math.random() < 0.7 ? 1 : -1);
+        } else {
+          if (!localMinor) { if (r < 0.7) localMinor = true; else localCircle += (Math.random() < 0.9 ? 1 : -1); }
+          else { if (r < 0.3) localMinor = false; else localCircle += (Math.random() < 0.9 ? 1 : -1); }
+        }
+        localModCount = 0;
+      }
 
-       const r = Math.random();
-       let shift = 0;
-       if (r < 0.4) shift = 1; else if (r < 0.8) shift = -1; else shift = (Math.random() < 0.5 ? 2 : -2);
-       localIdx += shift;
-       if (localIdx > 10) localIdx = 10; if (localIdx < -8) localIdx = -8;
+      const r = Math.random();
+      let shift = 0;
+      if (r < 0.4) shift = 1; else if (r < 0.8) shift = -1; else shift = (Math.random() < 0.5 ? 2 : -2);
+      localIdx += shift;
+      if (localIdx > 10) localIdx = 10; if (localIdx < -8) localIdx = -8;
 
-       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
-       let localDur = noteDur;
+      let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
+      let localDur = noteDur;
 
-       if (localIdx % 7 === 0 && Math.random() < 0.15) {
-           freq = freq * 0.5;
-           localDur = 25.0;
-       }
+      if (localIdx % 7 === 0 && Math.random() < 0.15) {
+        freq = freq * 0.5;
+        localDur = 25.0;
+      }
 
-       scheduleNote(offlineCtx, offlineMaster, freq, localTime, localDur, 0.4, offlineReverbBuffer);
-       localModCount++;
-       localTime += (1 / density);
+      scheduleNote(offlineCtx, offlineMaster, freq, localTime, localDur, 0.4, offlineReverbBuffer);
+      localModCount++;
+      localTime += (1 / density);
     }
 
     const renderedBuffer = await offlineCtx.startRendering();
