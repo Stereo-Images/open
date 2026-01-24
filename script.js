@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v45";
+  const STATE_KEY = "open_player_final_v46";
 
   function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
@@ -52,9 +52,8 @@
     return impulse;
   }
 
-  // FIXED MOTIFS
-  const motifA = [0, 4, 0, 6]; // Anchor (4 steps)
-  const motifB = [0, 2, 4, 6, 8]; // Satellite (5 steps)
+  const motifA = [0, 4, 0, 6]; 
+  const motifB = [0, 2, 4, 6, 8]; 
 
   function getNextPatternNote(baseFreq, patternIndex, patternArray, minOct, maxOct, harmonicRootIndex) {
     const scale = scales[runMood];
@@ -78,6 +77,7 @@
     };
   }
 
+  // PURE SINE GENERATOR
   function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer, complexity) {
     const numVoices = 2; 
     const conv = ctx.createConvolver();
@@ -88,7 +88,9 @@
     revGain.connect(destination);
 
     const voices = Array.from({length: numVoices}, () => {
+      // FM Synthesis Ratios
       const baseRatio = 1.5 + (Math.random() * 0.5); 
+      // Complexity adds inharmonic ratios (still Sine waves, just mathematically offset)
       const alienRatio = 1.1 + (Math.random() * 3.0); 
       const ratio = baseRatio + ((alienRatio - baseRatio) * complexity);
       const modIdx = 50 + (Math.random() * 200);
@@ -96,28 +98,36 @@
     });
 
     voices.forEach(voice => {
+      // EXPLICIT SINE WAVES ONLY
       const carrier = ctx.createOscillator();
       const carrier2 = ctx.createOscillator(); 
       const modulator = ctx.createOscillator();
+      
       const modGain = ctx.createGain();
       const ampGain = ctx.createGain();
 
-      carrier.type = 'sine';
-      carrier2.type = 'sine';
-      modulator.type = 'sine';
+      carrier.type = 'sine';   // Pure
+      carrier2.type = 'sine';  // Pure
+      modulator.type = 'sine'; // Pure
 
       carrier.frequency.value = freq + (Math.random() - 0.5) * 2;
       carrier2.frequency.value = freq;
+      
+      // Slight Detune creates the "beating" pulsation of a bell
+      // This is not a different waveform, just two sines rubbing against each other
       carrier2.detune.value = 2 + (complexity * 8) + (Math.random() * 2); 
 
+      // FM LOGIC
       modulator.frequency.value = freq * voice.modRatio;
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
       modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
 
+      // ENVELOPE (Bell Shape)
       ampGain.gain.setValueAtTime(0.0001, time);
       ampGain.gain.linearRampToValueAtTime(volume, time + 0.05); 
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
+      // ROUTING
       modulator.connect(modGain);
       modGain.connect(carrier.frequency);
       modGain.connect(carrier2.frequency); 
@@ -142,36 +152,26 @@
         const p = (elapsed % doubleCycle) / totalDuration; 
         return (p <= 1.0) ? p : (2.0 - p); 
     } else {
-        // Allow progress to sit at 1.0 if we are waiting for phase alignment
         return Math.min(1.0, elapsed / totalDuration);
     }
   }
 
-  // =========================
-  // ADAPTIVE HARMONIC ENGINE
-  // =========================
+  // ADAPTIVE HARMONY
   function getHarmonicRoot(progress, durationInput) {
     let totalSeconds = parseFloat(durationInput);
     if (durationInput === "infinite") totalSeconds = 3600;
 
     let sequence = [];
-    
     if (totalSeconds <= 120) {
-        // HAIKU
         sequence = [ { t: 0.5, chord: 0 }, { t: 0.8, chord: 4 }, { t: 1.0, chord: 1 } ];
-    } 
-    else if (totalSeconds <= 600) {
-        // SKETCH
+    } else if (totalSeconds <= 600) {
         sequence = [ { t: 0.3, chord: 0 }, { t: 0.6, chord: 5 }, { t: 0.85, chord: 4 }, { t: 1.0, chord: 1 } ];
-    } 
-    else {
-        // NOVEL
+    } else {
         sequence = [
             { t: 0.20, chord: 0 }, { t: 0.40, chord: 2 }, { t: 0.60, chord: 5 }, 
             { t: 0.75, chord: 4 }, { t: 0.90, chord: 0 }, { t: 1.00, chord: 1 }
         ];
     }
-
     for (let i = 0; i < sequence.length; i++) {
         if (progress < sequence[i].t) return sequence[i].chord;
     }
@@ -184,26 +184,20 @@
 
     if (progress < 0.2) {
         ratio = 1.0; complexity = 0.1; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
-    } 
-    else if (progress < 0.5) {
+    } else if (progress < 0.5) {
         const p = (progress - 0.2) / 0.3;
         ratio = 1.0 + (p * 0.25); complexity = 0.2; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 2;
-    } 
-    else if (progress < 0.8) {
+    } else if (progress < 0.8) {
         ratio = 1.5; complexity = 0.5; minOctA = -1; maxOctA = 0; minOctB = 1; maxOctB = 2;
-    } 
-    else if (progress < 0.95) {
+    } else if (progress < 0.95) {
         ratio = 1.0; complexity = 0.1; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
-    }
-    else {
+    } else {
         ratio = 1.0; complexity = 0.2; minOctA = 0; maxOctA = 1; minOctB = 0; maxOctB = 1;
     }
     return { ratio, complexity, minOctA, maxOctA, minOctB, maxOctB, rootIndex };
   }
 
-  // =========================
-  // REALTIME SCHEDULER (PHASE QUANTIZED)
-  // =========================
+  // REALTIME SCHEDULER
   let audioContext = null, masterGain = null, streamDest = null;
   let liveReverbBuffer = null;
   let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
@@ -248,66 +242,49 @@
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
     
-    // CHECK FOR TIME LIMIT
     if (durationInput !== "infinite") {
         const targetDuration = parseFloat(durationInput);
-        if (elapsed >= targetDuration) {
-            isApproachingEnd = true;
-        }
+        if (elapsed >= targetDuration) isApproachingEnd = true;
     }
     
-    // ARC CALCULATIONS
     const progress = calculateProgress(elapsed, durationInput);
     const arc = getArcState(progress, durationInput); 
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
     const densityA = 0.14; 
 
-    // ANCHOR SCHEDULER (The Master Clock)
+    // ANCHOR (Phase Lock Control)
     while (nextTimeA < now + 0.5) {
-        // CRITICAL CHECK: END ON PHASE ALIGNMENT
-        // We only stop if:
-        // 1. Time is up (isApproachingEnd)
-        // 2. We are at the start of the pattern (patternIdxA % length === 0)
-        // 3. We are physically locked (ratio === 1.0)
         if (isApproachingEnd && !isEndingNaturally) {
             const isStartOfPattern = (patternIdxA % motifA.length === 0);
             const isPhysicallyLocked = (Math.abs(arc.ratio - 1.0) < 0.01);
 
             if (isStartOfPattern && isPhysicallyLocked) {
-                // Play this final note (The Root) then end.
                 const result = getNextPatternNote(baseFreq, patternIdxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
-                scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 6.0, 0.4, liveReverbBuffer, arc.complexity); // Longer tail
+                scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 6.0, 0.4, liveReverbBuffer, arc.complexity); 
                 beginNaturalEnd(); 
-                return; // Stop scheduling new notes
+                return; 
             }
         }
-
         const result = getNextPatternNote(baseFreq, patternIdxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
         patternIdxA = result.newPatternIndex;
         scheduleNote(audioContext, masterGain, result.freq, nextTimeA, 4.0, 0.4, liveReverbBuffer, arc.complexity);
         nextTimeA += (1 / densityA); 
     }
 
-    // SATELLITE SCHEDULER
+    // SATELLITE
     while (nextTimeB < now + 0.5 && !isEndingNaturally) {
         const result = getNextPatternNote(baseFreq, patternIdxB, motifB, arc.minOctB, arc.maxOctB, arc.rootIndex);
         patternIdxB = result.newPatternIndex;
-        
         const densityB = densityA * arc.ratio; 
         scheduleNote(audioContext, masterGain, result.freq, nextTimeB, 4.0, 0.4, liveReverbBuffer, arc.complexity);
         nextTimeB += (1 / densityB); 
     }
   }
 
-  // =========================
-  // WAV EXPORT (ADJUSTED FOR PHASE ENDING)
-  // =========================
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
-    
-    console.log("Rendering Phase-Quantized Export...");
+    console.log("Rendering Pure Sine Export...");
     const sampleRate = 44100;
-    // We add buffer time to ensure we catch the resolution
     const duration = 60 + 15; 
     const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
     const offlineMaster = offlineCtx.createGain();
@@ -315,20 +292,13 @@
     const offlineReverbBuffer = createReverbBuffer(offlineCtx);
 
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
-    // We snapshot the current progress to start the render WHERE WE ARE
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
-    
+    const currentProgress = calculateProgress(elapsed, durationInput);
+    const arc = getArcState(currentProgress, durationInput);
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
     const densityA = 0.14;
 
-    // We only render 60s of the *current state* for the snapshot
-    // This is different from the realtime logic which extends.
-    // For "Recording", we simply capture a slice of the current vibe.
-    
-    const currentProgress = calculateProgress(elapsed, durationInput);
-    const arc = getArcState(currentProgress, durationInput);
-    
     let timeA = 0; let idxA = patternIdxA;
     while (timeA < 60) {
         const result = getNextPatternNote(baseFreq, idxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
@@ -352,7 +322,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-phase-snapshot-${Math.floor(currentProgress*100)}percent-${Date.now()}.wav`;
+    a.download = `open-sine-snapshot-${Math.floor(currentProgress*100)}percent-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
@@ -393,11 +363,7 @@
     if (audioContext.state === "suspended") await audioContext.resume();
     nextTimeA = audioContext.currentTime; nextTimeB = audioContext.currentTime;
     patternIdxA = 0; patternIdxB = 0;
-    
-    // RESET FLAGS
-    isEndingNaturally = false;
-    isApproachingEnd = false;
-
+    isEndingNaturally = false; isApproachingEnd = false;
     killImmediate();
     isPlaying = true; setButtonState("playing");
     sessionStartTime = audioContext.currentTime;
@@ -416,11 +382,8 @@
   function beginNaturalEnd() {
     if (isEndingNaturally) return;
     isEndingNaturally = true; isPlaying = false;
-    
-    // Fade out naturally
     if (timerInterval) clearInterval(timerInterval);
     masterGain.gain.setValueAtTime(masterGain.gain.value, audioContext.currentTime);
-    // 6 second fade out to let the final bell ring out
     masterGain.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 6.0);
     setTimeout(() => { killImmediate(); setButtonState("stopped"); }, 6100);
   }
