@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v54";
+  const STATE_KEY = "open_player_final_v55";
 
   // =========================
   // UTILITIES & UI
@@ -66,8 +66,6 @@
   const scales = { major: [0, 2, 4, 5, 7, 9, 11] }; 
   let runMood = "major";
 
-  // v27 EXACT REVERB SETTINGS
-  // Duration: 5.0s | Decay: 1.5
   function createReverbBuffer(ctx) {
     const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
@@ -102,20 +100,15 @@
     };
   }
 
-  // v27 EXACT SOUND ENGINE
+  // v27 SOUND ENGINE
   function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
-    // 1. Voice Count: 2 to 3
     const numVoices = 2 + Math.floor(Math.random() * 2);
     let totalAmp = 0;
     
-    // 2. Reverb Routing: Parallel Wet/Dry
     const conv = ctx.createConvolver();
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
-    
-    // v27 EXACT GAIN: 1.5
     revGain.gain.value = 1.5; 
-    
     conv.connect(revGain);
     revGain.connect(destination);
 
@@ -144,8 +137,6 @@
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
       modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
 
-      // v27 EXACT ENVELOPE
-      // Fast Attack: 0.01s (This creates the "click/ping" transient)
       ampGain.gain.setValueAtTime(0.0001, time);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
@@ -154,10 +145,8 @@
       modGain.connect(carrier.frequency);
       
       carrier.connect(ampGain); 
-      
-      // PARALLEL OUTPUT
-      ampGain.connect(conv); // Wet
-      ampGain.connect(destination); // Dry
+      ampGain.connect(conv); 
+      ampGain.connect(destination);
 
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
@@ -225,6 +214,8 @@
   let liveReverbBuffer = null;
   let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
   let nextTimeA = 0, nextTimeB = 0;
+  // New tracker for collision avoidance
+  let lastScheduledAnchorTime = -1; 
   let patternIdxA = 0, patternIdxB = 0;
   let sessionStartTime = 0, timerInterval = null;
 
@@ -280,11 +271,6 @@
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
 
     const densityA = 0.14; 
-    
-    // v27 CALCULATED OVERLAP
-    // v27 Logic: Duration = (1/density) * 2.5
-    // Tower Logic: Gap = 1/densityA (~7.14s)
-    // Resulting Duration = 7.14 * 2.5 = 17.85s
     const noteDur = (1 / densityA) * 2.5;
 
     // ANCHOR LOOP
@@ -305,16 +291,27 @@
       patternIdxA = result.newPatternIndex;
       
       scheduleNote(audioContext, masterGain, result.freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
+      
+      // Update global tracker so B can see it
+      lastScheduledAnchorTime = nextTimeA; 
+      
       nextTimeA += (1 / densityA);
     }
 
-    // SATELLITE LOOP
+    // SATELLITE LOOP (With Anti-Collision)
     while (nextTimeB < now + 0.5 && !isEndingNaturally) {
+      
+      // COLLISION DETECTION:
+      // If B is about to hit within 250ms of the last A note, push B forward.
+      // This creates a "Flam" effect (ba-dum) instead of a digital volume spike.
+      if (Math.abs(nextTimeB - lastScheduledAnchorTime) < 0.25) {
+          // Push B slightly into the future to create offset
+          nextTimeB += 0.25;
+      }
+
       const result = getNextPatternNote(baseFreq, patternIdxB, motifB, arc.minOctB, arc.maxOctB, arc.rootIndex);
       patternIdxB = result.newPatternIndex;
       const densityB = densityA * arc.ratio;
-      
-      // Satellite also scales duration to its own density
       const noteDurB = (1 / densityB) * 2.5;
       
       scheduleNote(audioContext, masterGain, result.freq, nextTimeB, noteDurB, 0.4, liveReverbBuffer);
@@ -373,6 +370,7 @@
 
     nextTimeA = audioContext.currentTime; nextTimeB = audioContext.currentTime;
     patternIdxA = 0; patternIdxB = 0;
+    lastScheduledAnchorTime = -1; // Reset collision tracker
     isEndingNaturally = false; isApproachingEnd = false;
 
     killImmediate();
@@ -406,11 +404,14 @@
     const densityA = 0.14;
     const noteDur = (1 / densityA) * 2.5;
 
+    let localLastAnchor = -1;
+
     let timeA = 0; let idxA = patternIdxA;
     while (timeA < 60) {
       const result = getNextPatternNote(baseFreq, idxA, motifA, arc.minOctA, arc.maxOctA, arc.rootIndex);
       idxA = result.newPatternIndex;
       scheduleNote(offlineCtx, offlineMaster, result.freq, timeA, noteDur, 0.4, offlineReverbBuffer);
+      localLastAnchor = timeA;
       timeA += (1 / densityA);
     }
 
@@ -419,6 +420,11 @@
     const noteDurB = (1 / densityB) * 2.5;
     
     while (timeB < 60) {
+      // Export Collision Logic
+      if (Math.abs(timeB - localLastAnchor) < 0.25) {
+          timeB += 0.25;
+      }
+
       const result = getNextPatternNote(baseFreq, idxB, motifB, arc.minOctB, arc.maxOctB, arc.rootIndex);
       idxB = result.newPatternIndex;
       scheduleNote(offlineCtx, offlineMaster, result.freq, timeB, noteDurB, 0.4, offlineReverbBuffer);
@@ -431,7 +437,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v54-${Math.floor(currentProgress * 100)}percent-${Date.now()}.wav`;
+    a.download = `open-final-v55-${Math.floor(currentProgress * 100)}percent-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
