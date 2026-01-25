@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v83";
+  const STATE_KEY = "open_player_final_v83_patched";
 
   // =========================
   // UTILITIES & UI
@@ -79,7 +79,7 @@
   let isMinor = false; 
   let runDensity = 0.2; 
   
-  // v81+ STATE
+  // v83 STATE
   let sessionMotif = []; 
   let motifPos = 0; 
   let phraseStep = 0; 
@@ -263,7 +263,7 @@
   }
 
   // =========================
-  // SCHEDULER
+  // SCHEDULER (LIVE)
   // =========================
   function scheduler() {
     if (!isPlaying) return;
@@ -277,11 +277,11 @@
     }
 
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    const baseDur = (1 / runDensity) * 2.5;
+    let noteDur = (1 / runDensity) * 2.5;
 
     while (nextTimeA < now + 0.5) {
       
-      let appliedDur = baseDur;
+      let appliedDur = noteDur;
 
       // --- ENDING LOGIC ---
       if (isApproachingEnd && !isEndingNaturally) {
@@ -294,6 +294,7 @@
       }
 
       if (!isApproachingEnd) {
+          // Modulation check
           let modChance = (durationInput !== "infinite" && parseFloat(durationInput) > 300) ? 0.40 : 0.10;
           if (notesSinceModulation > 16 && Math.random() < modChance) {
               updateHarmonyState(durationInput);
@@ -314,7 +315,7 @@
       // --- LESS DETERMINISTIC SLOWDOWN ---
       let slowProb = 0.0;
       if (phraseStep === 15) slowProb = 0.85;
-      else if (phraseStep === 0) slowProb = 0.25; // slight breath at start
+      else if (phraseStep === 0) slowProb = 0.25; 
       else if (phraseStep === 14) slowProb = 0.35;
       else if (phraseStep === 13) slowProb = 0.20;
 
@@ -396,6 +397,7 @@
       }
       
       notesSinceModulation++;
+      // Jitter
       nextTimeA += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
   }
@@ -416,6 +418,7 @@
     isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
 
+    // No-Click Discharge
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setTargetAtTime(0, now, 0.05);
@@ -443,7 +446,7 @@
     initAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Reset Master Gain
+    // Reset Master Gain (Headroom)
     masterGain.gain.cancelScheduledValues(audioContext.currentTime);
     masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     masterGain.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.1);
@@ -480,7 +483,7 @@
   }
 
   // =========================
-  // EXPORT (Global Architecture)
+  // EXPORT (Uses Global Architecture)
   // =========================
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
@@ -491,7 +494,7 @@
     const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
     
     const offlineMaster = offlineCtx.createGain();
-    offlineMaster.gain.value = 0.3; 
+    offlineMaster.gain.value = 0.3; // Headroom
     offlineMaster.connect(offlineCtx.destination);
     
     const offlineReverb = offlineCtx.createConvolver();
@@ -531,77 +534,90 @@
           localModCount = 0;
        }
 
-       // --- PHRASE LOGIC ---
-       if (localPhraseStep >= 13) isCadence = true;
-       if (localPhraseStep >= 16) localPhraseStep = 0;
-       
-       let appliedDur = noteDur;
-       let isCadence = (localPhraseStep >= 13);
-       localPhraseStep++; // Increment for next loop
+       // -------------------------
+       // PHRASE + CADENCE (match LIVE order)
+       // -------------------------
+       localPhraseStep++;                 // LIVE does increment first
 
-       // LESS DETERMINISTIC SLOWDOWN
+       let isCadence = false;
+       if (localPhraseStep >= 13) isCadence = true;
+
+       // reset after 16 (LIVE does this after cadence check)
+       if (localPhraseStep >= 16) localPhraseStep = 0;
+
+       let appliedDur = noteDur;
+
+       // LESS DETERMINISTIC SLOWDOWN (match LIVE)
        let slowProb = 0.0;
-       // Note: we use previous value for logic because we just incremented, or careful alignment
-       // Aligning with Live Scheduler: PhraseStep checked THEN incremented, or vice versa?
-       // Live: phraseStep++ THEN check.
-       // So if we just incremented localPhraseStep:
        if (localPhraseStep === 15) slowProb = 0.85;
        else if (localPhraseStep === 0) slowProb = 0.25;
        else if (localPhraseStep === 14) slowProb = 0.35;
        else if (localPhraseStep === 13) slowProb = 0.20;
 
        if (Math.random() < slowProb) {
-          appliedDur *= (1.20 + Math.random() * 0.20);
+         appliedDur *= (1.20 + Math.random() * 0.20);
        }
 
-       // NOTE LOGIC
-       if (localPhraseStep >= 13 && localPhraseStep <= 16) { // Cadence Window
-           const targets = [0, 2, 4];
-           const currentOctave = Math.floor(localIdx / 7) * 7;
-           let deg = localIdx - currentOctave;
-           deg = ((deg % 7) + 7) % 7;
+       // -------------------------
+       // NOTE SELECTION (match LIVE)
+       // -------------------------
+       if (isCadence) {
+         const targets = [0, 2, 4];
+         const currentOctave = Math.floor(localIdx / 7) * 7;
 
-           let best = targets[0];
-           let bestD = circDist(deg, best);
-           for (let i = 1; i < targets.length; i++) {
-             const t = targets[i];
-             const d = circDist(deg, t);
-             if (d < bestD || (d === bestD && Math.random() < 0.5)) {
-               best = t; bestD = d;
-             }
+         let deg = localIdx - currentOctave;
+         deg = ((deg % 7) + 7) % 7;
+
+         let best = targets[0];
+         let bestD = circDist(deg, best);
+         for (let i = 1; i < targets.length; i++) {
+           const t = targets[i];
+           const d = circDist(deg, t);
+           if (d < bestD || (d === bestD && Math.random() < 0.5)) {
+             best = t; bestD = d;
            }
-           const landProb = (localPhraseStep >= 15) ? 0.85 : 0.55;
-           let targetDeg = best;
-           if (Math.random() > landProb) {
-             const dir = (Math.random() < 0.5) ? -1 : 1;
-             targetDeg = (targetDeg + dir + 7) % 7;
-           }
-           let delta = targetDeg - deg;
-           if (delta > 3) delta -= 7;
-           if (delta < -3) delta += 7;
-           
-           localIdx = currentOctave + deg + delta;
+         }
+
+         const landProb = (localPhraseStep >= 15) ? 0.85 : 0.55;
+         let targetDeg = best;
+
+         if (Math.random() > landProb) {
+           const dir = (Math.random() < 0.5) ? -1 : 1;
+           targetDeg = (targetDeg + dir + 7) % 7;
+         }
+
+         let delta = targetDeg - deg;
+         if (delta > 3) delta -= 7;
+         if (delta < -3) delta += 7;
+
+         localIdx = currentOctave + deg + delta;
 
        } else {
-           const useMotif = Math.random() < 0.25;
-           if (useMotif && sessionMotif.length > 0) {
-               const motifInterval = sessionMotif[localMotifPos];
-               const currentOctave = Math.floor(localIdx / 7) * 7;
-               localIdx = currentOctave + motifInterval;
-               localMotifPos = (localMotifPos + 1) % sessionMotif.length;
-           } else {
-               const r = Math.random();
-               let shift = 0;
-               if (r < 0.4) shift = 1; else if (r < 0.8) shift = -1; else shift = (Math.random() < 0.5 ? 2 : -2);
-               localIdx += shift;
-           }
+         const useMotif = Math.random() < 0.25;
+         if (useMotif && sessionMotif.length > 0) {
+           const motifInterval = sessionMotif[localMotifPos];
+           const currentOctave = Math.floor(localIdx / 7) * 7;
+           localIdx = currentOctave + motifInterval;
+           localMotifPos = (localMotifPos + 1) % sessionMotif.length;
+         } else {
+           const r = Math.random();
+           let shift = 0;
+           if (r < 0.4) shift = 1;
+           else if (r < 0.8) shift = -1;
+           else shift = (Math.random() < 0.5 ? 2 : -2);
+           localIdx += shift;
+         }
        }
 
-       if (localIdx > 10) localIdx = 10; if (localIdx < -8) localIdx = -8;
+       // bounds (same)
+       if (localIdx > 10) localIdx = 10;
+       if (localIdx < -8) localIdx = -8;
 
        let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
 
-       // --- PHRASE-AWARE BASS TOLL ---
+       // -------------------------
+       // PHRASE-AWARE BASS TOLL (match LIVE)
+       // -------------------------
        const isRoot = (localIdx % 7 === 0);
        const atPhraseStart = (localPhraseStep === 0 || localPhraseStep === 1);
        const atCadenceHit  = (localPhraseStep === 15 || localPhraseStep === 0);
@@ -612,11 +628,11 @@
        else tollProb = 0.04;
 
        if (isRoot && Math.random() < tollProb) {
-           freq = freq * 0.5;
-           const dur = (atPhraseStart || atCadenceHit) ? 20.0 : 6.0;
-           scheduleNote(offlineCtx, offlineMaster, offlineReverb, freq, localTime, dur, 0.4);
+         freq = freq * 0.5;
+         const dur = (atPhraseStart || atCadenceHit) ? 20.0 : 6.0;
+         scheduleNote(offlineCtx, offlineMaster, offlineReverb, freq, localTime, dur, 0.4);
        } else {
-           scheduleNote(offlineCtx, offlineMaster, offlineReverb, freq, localTime, appliedDur, 0.4);
+         scheduleNote(offlineCtx, offlineMaster, offlineReverb, freq, localTime, appliedDur, 0.4);
        }
        
        localModCount++;
