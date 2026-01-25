@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v79";
+  const STATE_KEY = "open_player_final_v80";
 
   // =========================
   // UTILITIES & UI
@@ -55,10 +55,38 @@
   }
 
   // =========================
-  // AUDIO ENGINE (v77 Architecture)
+  // AUDIO GRAPH (GLOBAL ARCHITECTURE)
   // =========================
-  function createReverbBuffer(ctx) {
-    const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
+  let audioContext = null;
+  let masterGain = null;   // The Final Output (Headroom controlled)
+  let reverbNode = null;   // The Shared Room (Convolver)
+  let reverbGain = null;   // The Wet Return Level (Adaptive)
+  let streamDest = null;
+  
+  // Session State
+  let isPlaying = false;
+  let isEndingNaturally = false;
+  let isApproachingEnd = false;
+  let timerInterval = null;
+  
+  let nextTimeA = 0;
+  let patternIdxA = 0; 
+  let notesSinceModulation = 0;
+  let sessionStartTime = 0;
+
+  // Session Variables
+  let circlePosition = 0; 
+  let isMinor = false; 
+  let runDensity = 0.2; 
+  let sessionMotif = []; 
+
+  // --- REVERB IMPULSE GENERATOR ---
+  function createImpulseResponse(ctx) {
+    // 5.0s Tail, Standard Decay
+    const duration = 5.0;
+    const decay = 1.5;
+    const rate = ctx.sampleRate;
+    const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
@@ -67,22 +95,63 @@
     return impulse;
   }
 
-  function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
-    // v77 Optimization: Locked to 2 Voices
-    const numVoices = 2; 
+  function initAudio() {
+    if (audioContext) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    audioContext = new Ctx();
+    
+    // 1. MASTER BUS (Headroom: 0.3)
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = 0.3; 
+    masterGain.connect(audioContext.destination);
+
+    // 2. STREAM DEST (For Wake Lock)
+    streamDest = audioContext.createMediaStreamDestination();
+    masterGain.connect(streamDest);
+
+    // 3. GLOBAL REVERB BUS
+    reverbNode = audioContext.createConvolver();
+    reverbNode.buffer = createImpulseResponse(audioContext);
+    
+    reverbGain = audioContext.createGain();
+    reverbGain.gain.value = 1.5; // Default, will be overridden by Adaptive Mix
+    
+    reverbNode.connect(reverbGain);
+    reverbGain.connect(masterGain);
+
+    // 4. WAKE LOCK
+    const silent = audioContext.createBuffer(1, 1, audioContext.sampleRate);
+    const heartbeat = audioContext.createBufferSource();
+    heartbeat.buffer = silent;
+    heartbeat.loop = true;
+    heartbeat.start();
+    heartbeat.connect(audioContext.destination);
+
+    let videoWakeLock = document.querySelector('video');
+    if (!videoWakeLock) {
+      videoWakeLock = document.createElement('video');
+      Object.assign(videoWakeLock.style, {
+        position: 'fixed', bottom: '0', right: '0',
+        width: '1px', height: '1px',
+        opacity: '0.01', pointerEvents: 'none', zIndex: '-1'
+      });
+      videoWakeLock.setAttribute('playsinline', '');
+      videoWakeLock.setAttribute('muted', '');
+      document.body.appendChild(videoWakeLock);
+    }
+    videoWakeLock.srcObject = streamDest.stream;
+    videoWakeLock.play().catch(() => {});
+
+    setupKeyboardShortcuts();
+  }
+
+  // =========================
+  // NOTE SCHEDULING (SEND/RETURN)
+  // =========================
+  function scheduleNote(ctx, destination, wetDestination, freq, time, duration, volume) {
+    const numVoices = 2; // Locked to 2
     let totalAmp = 0;
     
-    // Per-Note Reverb Instance (v77 Style)
-    const conv = ctx.createConvolver();
-    conv.buffer = reverbBuffer;
-    const revGain = ctx.createGain();
-    
-    // Adaptive Mix Gain applied here
-    revGain.gain.value = sessionReverbGain; 
-    
-    conv.connect(revGain);
-    revGain.connect(destination);
-
     const voices = Array.from({length: numVoices}, () => {
       const v = { 
           modRatio: 1.5 + Math.random() * 2.5, 
@@ -115,9 +184,14 @@
       modulator.connect(modGain); 
       modGain.connect(carrier.frequency);
       
-      carrier.connect(ampGain); 
-      ampGain.connect(conv); 
-      ampGain.connect(destination);
+      // ROUTING:
+      // 1. Dry Signal -> Master
+      carrier.connect(ampGain);
+      ampGain.connect(destination); 
+
+      // 2. Wet Signal -> Reverb Node (Global)
+      // We assume 'wetDestination' is the input to the Convolver
+      ampGain.connect(wetDestination);
 
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
@@ -125,18 +199,14 @@
   }
 
   // =========================
-  // HARMONIC ENGINE
+  // HARMONIC & MOTIF ENGINE
   // =========================
-  let circlePosition = 0; 
-  let isMinor = false; 
-
   function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode) {
     let pos = circlePos % 12;
     if (pos < 0) pos += 12;
 
     let semitones = (pos * 7) % 12;
     let rootOffset = semitones;
-    
     if (minorMode) rootOffset = (semitones + 9) % 12; 
 
     const intervals = minorMode 
@@ -179,26 +249,8 @@
       }
   }
 
-  // =========================
-  // SCHEDULER & MOTIF ENGINE
-  // =========================
-  let audioContext = null, masterGain = null, streamDest = null;
-  let liveReverbBuffer = null;
-  let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
-  let nextTimeA = 0;
-  let patternIdxA = 0; 
-  let notesSinceModulation = 0;
-  let sessionStartTime = 0, timerInterval = null;
-  
-  // SESSION VARIABLES
-  let runDensity = 0.2; 
-  let sessionReverbGain = 1.5; 
-  let sessionMotif = []; // Holds the "Memory" of the session
-
-  // --- MOTIF GENERATOR ---
   function generateSessionMotif() {
-      // Create a 3-note Theme (Intervals relative to local root)
-      // e.g., [0, 2, 4] (Triad) or [0, -2, 2] (Motion)
+      // 3-note theme
       const m = [0];
       let walker = 0;
       for(let i=0; i<2; i++) {
@@ -212,45 +264,9 @@
       return outMin + (outMax - outMin) * ((value - inMin) / (inMax - inMin));
   }
 
-  function ensureAudio() {
-    if (audioContext) return;
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    streamDest = audioContext.createMediaStreamDestination();
-    masterGain = audioContext.createGain();
-
-    // HEADROOM: Initialized to 0.3 (Safe Ceiling)
-    masterGain.gain.value = 0.3;
-
-    masterGain.connect(streamDest);
-    masterGain.connect(audioContext.destination);
-
-    const silentBuffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
-    const heartbeat = audioContext.createBufferSource();
-    heartbeat.buffer = silentBuffer;
-    heartbeat.loop = true;
-    heartbeat.start();
-    heartbeat.connect(audioContext.destination);
-
-    liveReverbBuffer = createReverbBuffer(audioContext);
-
-    let videoWakeLock = document.querySelector('video');
-    if (!videoWakeLock) {
-      videoWakeLock = document.createElement('video');
-      Object.assign(videoWakeLock.style, {
-        position: 'fixed', bottom: '0', right: '0',
-        width: '1px', height: '1px',
-        opacity: '0.01', pointerEvents: 'none', zIndex: '-1'
-      });
-      videoWakeLock.setAttribute('playsinline', '');
-      videoWakeLock.setAttribute('muted', '');
-      document.body.appendChild(videoWakeLock);
-    }
-    videoWakeLock.srcObject = streamDest.stream;
-    videoWakeLock.play().catch(() => {});
-
-    setupKeyboardShortcuts();
-  }
-
+  // =========================
+  // SCHEDULER
+  // =========================
   function scheduler() {
     if (!isPlaying) return;
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
@@ -270,7 +286,8 @@
         const isRootNote = (patternIdxA % 7 === 0);
         if (isRootNote) {
            const freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-           scheduleNote(audioContext, masterGain, freq * 0.5, nextTimeA, 25.0, 0.5, liveReverbBuffer);
+           // Route to Master and ReverbNode
+           scheduleNote(audioContext, masterGain, reverbNode, freq * 0.5, nextTimeA, 25.0, 0.5);
            beginNaturalEnd();
            return;
         }
@@ -287,40 +304,33 @@
           }
       }
 
-      // --- MOTIF WALKER LOGIC ---
-      const useMotif = Math.random() < 0.20; // 20% Chance to recall memory
-      
+      // MOTIF + WALKER
+      const useMotif = Math.random() < 0.20;
       if (useMotif && sessionMotif.length > 0) {
-          // Snap relative to current octave
           const currentOctave = Math.floor(patternIdxA / 7) * 7;
           const motifInterval = sessionMotif[Math.floor(Math.random() * sessionMotif.length)];
           patternIdxA = currentOctave + motifInterval;
       } else {
-          // Standard Drunken Walk
           const r = Math.random();
           let shift = 0;
-          if (r < 0.4) shift = 1;
-          else if (r < 0.8) shift = -1;
-          else shift = (Math.random() < 0.5 ? 2 : -2);
+          if (r < 0.4) shift = 1; else if (r < 0.8) shift = -1; else shift = (Math.random() < 0.5 ? 2 : -2);
           patternIdxA += shift;
       }
 
-      // Bounds Check
       if (patternIdxA > 10) patternIdxA = 10;
       if (patternIdxA < -8) patternIdxA = -8;
 
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
       
-      // Bass Toll
       if (patternIdxA % 7 === 0) {
           if (Math.random() < 0.15) {
               freq = freq * 0.5; 
-              scheduleNote(audioContext, masterGain, freq, nextTimeA, 25.0, 0.4, liveReverbBuffer);
+              scheduleNote(audioContext, masterGain, reverbNode, freq, nextTimeA, 25.0, 0.4);
           } else {
-              scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
+              scheduleNote(audioContext, masterGain, reverbNode, freq, nextTimeA, noteDur, 0.4);
           }
       } else {
-          scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
+          scheduleNote(audioContext, masterGain, reverbNode, freq, nextTimeA, noteDur, 0.4);
       }
       
       notesSinceModulation++;
@@ -329,11 +339,10 @@
   }
 
   // =========================
-  // STOP / KILL LOGIC (NO CLICK)
+  // CONTROL LOGIC
   // =========================
   function killImmediate() {
     if (timerInterval) clearInterval(timerInterval);
-    // Note: We do NOT reset gain here. We let setTargetAtTime finish.
     isPlaying = false;
   }
 
@@ -345,10 +354,9 @@
     isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
 
-    // NO-CLICK STOP: Analog Discharge Curve
+    // NO-CLICK: Discharge Master Gain
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
-    // Discharge to 0 over ~0.2s (Time Constant 0.05)
     masterGain.gain.setTargetAtTime(0, now, 0.05);
 
     setTimeout(killImmediate, 250);
@@ -371,10 +379,10 @@
   }
 
   async function startFromUI() {
-    ensureAudio();
+    initAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Reset Gain for Start (Targeting 0.3 Headroom)
+    // HEADROOM START: Ramp to 0.3
     masterGain.gain.cancelScheduledValues(audioContext.currentTime);
     masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     masterGain.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.1);
@@ -386,17 +394,18 @@
     notesSinceModulation = 0;
     isEndingNaturally = false; isApproachingEnd = false;
     
-    // 1. ROLL THE DICE (Density)
+    // 1. DENSITY ROLL
     runDensity = 0.05 + Math.random() * 0.375;
     
-    // 2. ADAPT THE ROOM (Mix)
-    sessionReverbGain = mapRange(runDensity, 0.05, 0.425, 2.0, 1.5);
-    sessionReverbGain = Math.max(1.5, Math.min(2.0, sessionReverbGain));
+    // 2. ADAPTIVE MIX (Controls Return Gain)
+    // Range: 1.5 to 2.2 for Global Bus (needs more juice than per-note)
+    const mixLevel = mapRange(runDensity, 0.05, 0.425, 2.2, 1.5);
+    reverbGain.gain.setValueAtTime(mixLevel, audioContext.currentTime);
 
-    // 3. GENERATE MOTIF (Memory)
+    // 3. MOTIF
     sessionMotif = generateSessionMotif();
 
-    console.log(`Session: Density ${runDensity.toFixed(3)} | Reverb ${sessionReverbGain.toFixed(2)} | Motif: [${sessionMotif}]`);
+    console.log(`Session: Density ${runDensity.toFixed(3)} | Return ${mixLevel.toFixed(2)} | Motif: [${sessionMotif}]`);
 
     killImmediate();
     isPlaying = true;
@@ -407,7 +416,7 @@
   }
 
   // =========================
-  // WAV EXPORT
+  // WAV EXPORT (Global Architecture)
   // =========================
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
@@ -416,17 +425,26 @@
     const sampleRate = 44100;
     const duration = 75;
     const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
+    
+    // 1. OFFLINE MASTER
     const offlineMaster = offlineCtx.createGain();
-    
-    // HEADROOM IN EXPORT
-    offlineMaster.gain.value = 0.3;
-    
+    offlineMaster.gain.value = 0.3; // Headroom
     offlineMaster.connect(offlineCtx.destination);
-    const offlineReverbBuffer = createReverbBuffer(offlineCtx);
+    
+    // 2. OFFLINE REVERB BUS
+    const offlineReverb = offlineCtx.createConvolver();
+    // We must regenerate buffer for offline context
+    offlineReverb.buffer = createImpulseResponse(offlineCtx);
+    
+    const offlineRevGain = offlineCtx.createGain();
+    // Use the CALCULATED mix from the live session
+    const currentMix = reverbGain.gain.value;
+    offlineRevGain.gain.value = currentMix;
+    
+    offlineReverb.connect(offlineRevGain);
+    offlineRevGain.connect(offlineMaster);
 
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
-    const now = audioContext.currentTime;
-    const elapsed = now - sessionStartTime;
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
     const noteDur = (1 / runDensity) * 2.5;
 
@@ -453,8 +471,8 @@
           }
           localModCount = 0;
        }
-       
-       // EXPORT MOTIF LOGIC
+
+       // MOTIF
        const useMotif = Math.random() < 0.20;
        if (useMotif && sessionMotif.length > 0) {
           const currentOctave = Math.floor(localIdx / 7) * 7;
@@ -477,7 +495,9 @@
            appliedDur = 25.0; 
        }
 
-       scheduleNote(offlineCtx, offlineMaster, freq, localTime, appliedDur, 0.4, offlineReverbBuffer);
+       // Route to Offline Master and Offline Reverb
+       scheduleNote(offlineCtx, offlineMaster, offlineReverb, freq, localTime, appliedDur, 0.4);
+       
        localModCount++;
        localTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
@@ -488,7 +508,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v79-${Date.now()}.wav`;
+    a.download = `open-final-v80-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
