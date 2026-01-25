@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v83_patched";
+  const STATE_KEY = "open_player_final_v88";
 
   // =========================
   // UTILITIES & UI
@@ -79,10 +79,11 @@
   let isMinor = false; 
   let runDensity = 0.2; 
   
-  // v83 STATE
+  // v88 STATE
   let sessionMotif = []; 
   let motifPos = 0; 
   let phraseStep = 0; 
+  let pendingLTResolution = false; // Memory flag
 
   // --- HELPERS ---
   function createImpulseResponse(ctx) {
@@ -209,21 +210,28 @@
   // =========================
   // HARMONIC & COMPOSITION ENGINE
   // =========================
-  function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode) {
+  function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
     let pos = circlePos % 12;
     if (pos < 0) pos += 12;
     let semitones = (pos * 7) % 12;
     let rootOffset = semitones;
     if (minorMode) rootOffset = (semitones + 9) % 12; 
 
-    const intervals = minorMode 
-        ? [0, 2, 3, 5, 7, 8, 10] 
-        : [0, 2, 4, 5, 7, 9, 11];
+    const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
+    const minorIntervals = [0, 2, 3, 5, 7, 8, 10]; 
 
-    const len = intervals.length;
+    const len = 7;
     const octave = Math.floor(scaleIndex / len);
     const degree = ((scaleIndex % len) + len) % len;
     
+    let intervals = minorMode ? minorIntervals : majorIntervals;
+
+    // Harmonic Minor Flag
+    if (minorMode && opts.raiseLeadingTone && degree === 6) {
+        intervals = minorIntervals.slice(); 
+        intervals[6] = 11; 
+    }
+
     const noteValue = rootOffset + intervals[degree] + (octave * 12);
     return baseFreq * Math.pow(2, noteValue / 12);
   }
@@ -252,7 +260,6 @@
   }
 
   function generateSessionMotif() {
-      // Create a 4-note Theme for sequential playback
       const m = [0];
       let walker = 0;
       for(let i=0; i<3; i++) {
@@ -285,7 +292,7 @@
 
       // --- ENDING LOGIC ---
       if (isApproachingEnd && !isEndingNaturally) {
-        if (patternIdxA % 7 === 0) { // Wait for Root
+        if (patternIdxA % 7 === 0) { 
            const freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
            scheduleNote(audioContext, masterGain, reverbNode, freq * 0.5, nextTimeA, 25.0, 0.5);
            beginNaturalEnd();
@@ -294,7 +301,6 @@
       }
 
       if (!isApproachingEnd) {
-          // Modulation check
           let modChance = (durationInput !== "infinite" && parseFloat(durationInput) > 300) ? 0.40 : 0.10;
           if (notesSinceModulation > 16 && Math.random() < modChance) {
               updateHarmonyState(durationInput);
@@ -302,17 +308,17 @@
           }
       }
 
-      // --- PHRASE & CADENCE LOGIC (The Clock) ---
+      // --- PHRASE & CADENCE LOGIC ---
       let isCadence = false;
       phraseStep++;
 
-      // Steps 13-16 are cadence steps
       if (phraseStep >= 13) isCadence = true;
+      if (phraseStep >= 16) {
+          phraseStep = 0;
+          pendingLTResolution = false; 
+      }
 
-      // Reset phrase after 16
-      if (phraseStep >= 16) phraseStep = 0;
-
-      // --- LESS DETERMINISTIC SLOWDOWN ---
+      // --- SLOWDOWN ---
       let slowProb = 0.0;
       if (phraseStep === 15) slowProb = 0.85;
       else if (phraseStep === 0) slowProb = 0.25; 
@@ -323,9 +329,10 @@
         appliedDur *= (1.20 + Math.random() * 0.20); 
       }
 
-      // --- NOTE SELECTION (VOICE LEADING) ---
+      // --- NOTE SELECTION ---
       if (isCadence) {
-          const targets = [0, 2, 4]; // 1, 3, 5
+          // 1. Gravity Logic
+          const targets = [0, 2, 4];
           const currentOctave = Math.floor(patternIdxA / 7) * 7;
           let deg = patternIdxA - currentOctave;
           deg = ((deg % 7) + 7) % 7;
@@ -339,12 +346,12 @@
               best = t; bestD = d;
             }
           }
-          // Attraction strength increases
+
           const landProb = (phraseStep >= 15) ? 0.85 : 0.55;
           let targetDeg = best;
           
           if (Math.random() > landProb) {
-            const dir = (Math.random() < 0.5) ? -1 : 1;
+            const dir = (Math.random() < 0.65) ? -1 : 1; 
             targetDeg = (targetDeg + dir + 7) % 7;
           }
 
@@ -352,12 +359,46 @@
           if (delta > 3) delta -= 7;
           if (delta < -3) delta += 7;
 
+          if (Math.abs(delta) === 3) delta = -3;
+          else if (delta === 0 && phraseStep <= 14 && Math.random() < 0.25) delta = -1;
+
           patternIdxA = currentOctave + deg + delta;
 
+          // 2. OVERRIDES (Stateful Resolution)
+          // Step 14: Pull to Leading Tone
+          const leadProb14 = 0.65;
+          if (phraseStep === 14 && Math.random() < leadProb14) {
+             const targetDegLT = 6;
+             const curOct = Math.floor(patternIdxA / 7) * 7;
+             const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
+             
+             let deltaLT = targetDegLT - curDeg;
+             if (deltaLT > 3) deltaLT -= 7;
+             if (deltaLT < -3) deltaLT += 7;
+             patternIdxA += deltaLT;
+             
+             pendingLTResolution = true; 
+          }
+
+          // Step 15: Pull to Root (Clear flag regardless)
+          const landProb15 = 0.90;
+          if (phraseStep === 15) {
+             if (Math.random() < (pendingLTResolution ? 0.98 : landProb15)) {
+                 const targetDegRoot = 0;
+                 const curOct = Math.floor(patternIdxA / 7) * 7;
+                 const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
+                 
+                 let deltaR = targetDegRoot - curDeg;
+                 if (deltaR > 3) deltaR -= 7;
+                 if (deltaR < -3) deltaR += 7;
+                 patternIdxA += deltaR;
+             }
+             pendingLTResolution = false; // STRICT CLEANUP
+          }
+
       } else {
-          // --- NON-CADENCE: SEQUENTIAL MOTIF or WALK ---
+          // --- NON-CADENCE ---
           const useMotif = Math.random() < 0.25; 
-          
           if (useMotif && sessionMotif.length > 0) {
               const motifInterval = sessionMotif[motifPos];
               const currentOctave = Math.floor(patternIdxA / 7) * 7;
@@ -375,9 +416,13 @@
       if (patternIdxA > 10) patternIdxA = 10;
       if (patternIdxA < -8) patternIdxA = -8;
 
-      let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+      // --- CALCULATE FREQUENCY ---
+      const degNow = ((patternIdxA - Math.floor(patternIdxA / 7) * 7) % 7 + 7) % 7;
+      const raiseLT = isCadence && degNow === 6 && (phraseStep === 13 || phraseStep === 14 || pendingLTResolution);
+
+      let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
       
-      // --- PHRASE-AWARE BASS TOLL ---
+      // --- BASS TOLL ---
       const isRoot = (patternIdxA % 7 === 0);
       const atPhraseStart = (phraseStep === 0 || phraseStep === 1);
       const atCadenceHit  = (phraseStep === 15 || phraseStep === 0);
@@ -389,7 +434,6 @@
 
       if (isRoot && Math.random() < tollProb) {
         freq = freq * 0.5;
-        // duration depends on phrase position
         const dur = (atPhraseStart || atCadenceHit) ? 20.0 : 6.0;
         scheduleNote(audioContext, masterGain, reverbNode, freq, nextTimeA, dur, 0.4);
       } else {
@@ -446,7 +490,7 @@
     initAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
-    // Reset Master Gain (Headroom)
+    // Reset Master Gain
     masterGain.gain.cancelScheduledValues(audioContext.currentTime);
     masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     masterGain.gain.linearRampToValueAtTime(0.3, audioContext.currentTime + 0.1);
@@ -460,13 +504,14 @@
     // NEW SESSION STATE
     phraseStep = 0; 
     motifPos = 0;
+    pendingLTResolution = false; 
     isEndingNaturally = false; isApproachingEnd = false;
     
     // 1. ROLL DENSITY
     runDensity = 0.05 + Math.random() * 0.375;
     
-    // 2. ADAPTIVE MIX
-    const mixLevel = mapRange(runDensity, 0.05, 0.425, 1.0, 0.6);
+    // 2. ADAPTIVE MIX (Capped at 1.1)
+    const mixLevel = mapRange(runDensity, 0.05, 0.425, 1.1, 0.75);
     reverbGain.gain.setValueAtTime(mixLevel, audioContext.currentTime);
 
     // 3. GENERATE MOTIF
@@ -483,7 +528,7 @@
   }
 
   // =========================
-  // EXPORT (Uses Global Architecture)
+  // EXPORT (Mirrored Logic)
   // =========================
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
@@ -518,11 +563,12 @@
     let localModCount = 0;
     let localPhraseStep = 0;
     let localMotifPos = 0; 
+    let localPendingLT = false; 
 
     const totalSeconds = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
 
     while (localTime < 60) {
-       // Modulation Logic
+       // Modulation
        let modChance = (durationInput !== "infinite" && totalSeconds > 300) ? 0.40 : 0.10;
        if (localModCount > 16 && Math.random() < modChance) {
           const r = Math.random();
@@ -534,20 +580,16 @@
           localModCount = 0;
        }
 
-       // -------------------------
-       // PHRASE + CADENCE (match LIVE order)
-       // -------------------------
-       localPhraseStep++;                 // LIVE does increment first
-
+       // Phrase Logic
+       localPhraseStep++;                 
        let isCadence = false;
        if (localPhraseStep >= 13) isCadence = true;
-
-       // reset after 16 (LIVE does this after cadence check)
-       if (localPhraseStep >= 16) localPhraseStep = 0;
+       if (localPhraseStep >= 16) {
+           localPhraseStep = 0;
+           localPendingLT = false;
+       }
 
        let appliedDur = noteDur;
-
-       // LESS DETERMINISTIC SLOWDOWN (match LIVE)
        let slowProb = 0.0;
        if (localPhraseStep === 15) slowProb = 0.85;
        else if (localPhraseStep === 0) slowProb = 0.25;
@@ -558,13 +600,11 @@
          appliedDur *= (1.20 + Math.random() * 0.20);
        }
 
-       // -------------------------
-       // NOTE SELECTION (match LIVE)
-       // -------------------------
+       // Note Selection
        if (isCadence) {
+         // Gravity
          const targets = [0, 2, 4];
          const currentOctave = Math.floor(localIdx / 7) * 7;
-
          let deg = localIdx - currentOctave;
          deg = ((deg % 7) + 7) % 7;
 
@@ -582,7 +622,7 @@
          let targetDeg = best;
 
          if (Math.random() > landProb) {
-           const dir = (Math.random() < 0.5) ? -1 : 1;
+           const dir = (Math.random() < 0.65) ? -1 : 1;
            targetDeg = (targetDeg + dir + 7) % 7;
          }
 
@@ -590,7 +630,35 @@
          if (delta > 3) delta -= 7;
          if (delta < -3) delta += 7;
 
+         if (Math.abs(delta) === 3) delta = -3;
+         else if (delta === 0 && localPhraseStep <= 14 && Math.random() < 0.25) delta = -1;
+
          localIdx = currentOctave + deg + delta;
+
+         // Overrides
+         if (localPhraseStep === 14 && Math.random() < 0.65) {
+             const targetDegLT = 6;
+             const curOct = Math.floor(localIdx / 7) * 7;
+             const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
+             let deltaLT = targetDegLT - curDeg;
+             if (deltaLT > 3) deltaLT -= 7;
+             if (deltaLT < -3) deltaLT += 7;
+             localIdx += deltaLT;
+             localPendingLT = true;
+         }
+
+         if (localPhraseStep === 15) {
+             if (Math.random() < (localPendingLT ? 0.98 : 0.90)) {
+                 const targetDegRoot = 0;
+                 const curOct = Math.floor(localIdx / 7) * 7;
+                 const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
+                 let deltaR = targetDegRoot - curDeg;
+                 if (deltaR > 3) deltaR -= 7;
+                 if (deltaR < -3) deltaR += 7;
+                 localIdx += deltaR;
+             }
+             localPendingLT = false; // STRICT CLEANUP
+         }
 
        } else {
          const useMotif = Math.random() < 0.25;
@@ -609,15 +677,16 @@
          }
        }
 
-       // bounds (same)
        if (localIdx > 10) localIdx = 10;
        if (localIdx < -8) localIdx = -8;
 
-       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
+       // FREQ
+       const degNow = ((localIdx - Math.floor(localIdx / 7) * 7) % 7 + 7) % 7;
+       const raiseLT = isCadence && degNow === 6 && (localPhraseStep === 13 || localPhraseStep === 14 || localPendingLT);
 
-       // -------------------------
-       // PHRASE-AWARE BASS TOLL (match LIVE)
-       // -------------------------
+       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
+
+       // BASS TOLL
        const isRoot = (localIdx % 7 === 0);
        const atPhraseStart = (localPhraseStep === 0 || localPhraseStep === 1);
        const atCadenceHit  = (localPhraseStep === 15 || localPhraseStep === 0);
@@ -645,7 +714,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v83-${Date.now()}.wav`;
+    a.download = `open-final-v88-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
