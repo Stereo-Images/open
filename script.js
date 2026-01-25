@@ -1,5 +1,6 @@
 (() => {
-  const STATE_KEY = "open_player_final_v88";
+  // STABLE KEY: Persists user settings across future updates
+  const STATE_KEY = "open_player_settings";
 
   // =========================
   // UTILITIES & UI
@@ -79,11 +80,11 @@
   let isMinor = false; 
   let runDensity = 0.2; 
   
-  // v88 STATE
+  // v91 STATE
   let sessionMotif = []; 
   let motifPos = 0; 
   let phraseStep = 0; 
-  let pendingLTResolution = false; // Memory flag
+  let pendingLTResolution = false; 
 
   // --- HELPERS ---
   function createImpulseResponse(ctx) {
@@ -289,6 +290,7 @@
     while (nextTimeA < now + 0.5) {
       
       let appliedDur = noteDur;
+      let clearPendingAfterNote = false; 
 
       // --- ENDING LOGIC ---
       if (isApproachingEnd && !isEndingNaturally) {
@@ -309,14 +311,10 @@
       }
 
       // --- PHRASE & CADENCE LOGIC ---
-      let isCadence = false;
-      phraseStep++;
-
-      if (phraseStep >= 13) isCadence = true;
-      if (phraseStep >= 16) {
-          phraseStep = 0;
-          pendingLTResolution = false; 
-      }
+      // Increment logic guarantees first note is Step 0 (Downbeat)
+      phraseStep = (phraseStep + 1) % 16;
+      if (phraseStep === 0) pendingLTResolution = false;
+      const isCadence = (phraseStep >= 13);
 
       // --- SLOWDOWN ---
       let slowProb = 0.0;
@@ -331,7 +329,6 @@
 
       // --- NOTE SELECTION ---
       if (isCadence) {
-          // 1. Gravity Logic
           const targets = [0, 2, 4];
           const currentOctave = Math.floor(patternIdxA / 7) * 7;
           let deg = patternIdxA - currentOctave;
@@ -364,8 +361,7 @@
 
           patternIdxA = currentOctave + deg + delta;
 
-          // 2. OVERRIDES (Stateful Resolution)
-          // Step 14: Pull to Leading Tone
+          // 2. OVERRIDES
           const leadProb14 = 0.65;
           if (phraseStep === 14 && Math.random() < leadProb14) {
              const targetDegLT = 6;
@@ -380,7 +376,6 @@
              pendingLTResolution = true; 
           }
 
-          // Step 15: Pull to Root (Clear flag regardless)
           const landProb15 = 0.90;
           if (phraseStep === 15) {
              if (Math.random() < (pendingLTResolution ? 0.98 : landProb15)) {
@@ -393,7 +388,7 @@
                  if (deltaR < -3) deltaR += 7;
                  patternIdxA += deltaR;
              }
-             pendingLTResolution = false; // STRICT CLEANUP
+             clearPendingAfterNote = true; // Defer cleanup
           }
 
       } else {
@@ -441,7 +436,9 @@
       }
       
       notesSinceModulation++;
-      // Jitter
+      // Defer Cleanup
+      if (clearPendingAfterNote) pendingLTResolution = false;
+
       nextTimeA += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
   }
@@ -502,7 +499,7 @@
     notesSinceModulation = 0;
     
     // NEW SESSION STATE
-    phraseStep = 0; 
+    phraseStep = 15; // Initializes to 15, first loop tick wraps to 0 (Downbeat)
     motifPos = 0;
     pendingLTResolution = false; 
     isEndingNaturally = false; isApproachingEnd = false;
@@ -561,7 +558,7 @@
     let localIdx = patternIdxA;
     let localTime = 0;
     let localModCount = 0;
-    let localPhraseStep = 0;
+    let localPhraseStep = 15; // Initializes to 15, first loop wraps to 0
     let localMotifPos = 0; 
     let localPendingLT = false; 
 
@@ -580,16 +577,14 @@
           localModCount = 0;
        }
 
-       // Phrase Logic
-       localPhraseStep++;                 
-       let isCadence = false;
-       if (localPhraseStep >= 13) isCadence = true;
-       if (localPhraseStep >= 16) {
-           localPhraseStep = 0;
-           localPendingLT = false;
-       }
+       // --- PHRASE LOGIC ---
+       localPhraseStep = (localPhraseStep + 1) % 16;
+       if (localPhraseStep === 0) localPendingLT = false;
+       const isCadence = (localPhraseStep >= 13);
 
        let appliedDur = noteDur;
+       let clearPendingAfterNote = false;
+
        let slowProb = 0.0;
        if (localPhraseStep === 15) slowProb = 0.85;
        else if (localPhraseStep === 0) slowProb = 0.25;
@@ -657,7 +652,7 @@
                  if (deltaR < -3) deltaR += 7;
                  localIdx += deltaR;
              }
-             localPendingLT = false; // STRICT CLEANUP
+             clearPendingAfterNote = true;
          }
 
        } else {
@@ -705,6 +700,8 @@
        }
        
        localModCount++;
+       if (clearPendingAfterNote) localPendingLT = false;
+
        localTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
 
@@ -714,7 +711,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v88-${Date.now()}.wav`;
+    a.download = `open-final-v91-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
