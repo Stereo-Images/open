@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v73";
+  const STATE_KEY = "open_player_final_v74";
 
   // =========================
   // UTILITIES & UI
@@ -81,8 +81,9 @@
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
     
-    // v27 Gain Standard (Balanced Mix)
-    revGain.gain.value = 1.5; 
+    // DYNAMIC MIXING:
+    // Use the global variable set by the Session Lottery
+    revGain.gain.value = sessionReverbGain; 
     
     conv.connect(revGain);
     revGain.connect(destination);
@@ -205,8 +206,9 @@
   let notesSinceModulation = 0;
   let sessionStartTime = 0, timerInterval = null;
   
-  // v27 PACING VARIABLES
+  // SESSION VARIABLES
   let runDensity = 0.2; 
+  let sessionReverbGain = 1.5; // Default
 
   function ensureAudio() {
     if (audioContext) return;
@@ -256,9 +258,6 @@
     }
 
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    
-    // v27 JITTER LOGIC
-    // We do NOT use dynamic density. We use the locked runDensity from startFromUI.
     const noteDur = (1 / runDensity) * 2.5;
 
     while (nextTimeA < now + 0.5) {
@@ -305,7 +304,6 @@
       if (patternIdxA % 7 === 0) {
           if (Math.random() < 0.15) {
               freq = freq * 0.5; // 1 Octave Drop
-              // Increase duration for bass notes
               scheduleNote(audioContext, masterGain, freq, nextTimeA, 25.0, 0.4, liveReverbBuffer);
               console.log("Bass Toll");
           } else {
@@ -317,7 +315,7 @@
       
       notesSinceModulation++;
       
-      // v27 TIME JITTER
+      // TIME JITTER (Stochastic Rhythm)
       nextTimeA += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
   }
@@ -361,7 +359,7 @@
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     
-    // Natural End
+    // Natural End: Long Fade
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 20.0);
 
     setTimeout(() => {
@@ -385,9 +383,15 @@
 
     isEndingNaturally = false; isApproachingEnd = false;
     
-    // v27 RANDOM DENSITY GENERATOR
-    // This decides if the session is "Fast" or "Slow"
+    // 1. ROLL THE DICE (Session Density)
     runDensity = 0.05 + Math.random() * 0.375;
+    
+    // 2. ADAPT THE ROOM (Reverb Logic)
+    // If density < 0.18 (Slow), make it Foggy (2.0)
+    // If density >= 0.18 (Fast), make it Clean (1.5)
+    sessionReverbGain = (runDensity < 0.18) ? 2.0 : 1.5;
+    
+    console.log(`Session Started: Density ${runDensity.toFixed(3)} | Reverb ${sessionReverbGain}`);
 
     killImmediate();
     isPlaying = true;
@@ -415,8 +419,6 @@
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    
-    // Use the CURRENT density from the live session
     const noteDur = (1 / runDensity) * 2.5;
 
     let localCircle = circlePosition;
@@ -451,14 +453,20 @@
        if (localIdx > 10) localIdx = 10; if (localIdx < -8) localIdx = -8;
 
        let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
-       let localDur = noteDur;
-       let appliedDur = localDur;
+       let appliedDur = noteDur;
 
        if (localIdx % 7 === 0 && Math.random() < 0.15) {
            freq = freq * 0.5;
-           appliedDur = 25.0; // Bass notes get long sustain
+           appliedDur = 25.0; 
        }
 
+       // Use sessionReverbGain for consistency in export
+       // We must simulate the Reverb gain manually here if we want it exact
+       // But `scheduleNote` applies it. We need to pass it or handle it.
+       // NOTE: The `scheduleNote` function uses the global `sessionReverbGain`.
+       // However, in Offline Context, we need to ensure that global is set correctly.
+       // It is set by startFromUI, so it should be fine.
+       
        scheduleNote(offlineCtx, offlineMaster, freq, localTime, appliedDur, 0.4, offlineReverbBuffer);
        localModCount++;
        localTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
@@ -470,7 +478,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v73-${Date.now()}.wav`;
+    a.download = `open-final-v74-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
