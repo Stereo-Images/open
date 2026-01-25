@@ -5,7 +5,7 @@
 body {
   margin: 0;
   padding: 0;
-  font-family: “Helvetica Neue”, Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   background-color: #fff;
   color: #000;
   overflow-x: hidden;
@@ -21,7 +21,7 @@ main {
    TEXT PARITY: TITLE & HERO BUTTON
    ========================= */
 #popoutTitle, .secondary-btn {
-  font-family: “Helvetica Neue”, Helvetica, Arial, sans-serif;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   text-transform: uppercase;
   font-weight: normal;
   
@@ -63,7 +63,7 @@ main {
 /* =========================
    FIX: VISIBLE SLIDER
    ========================= */
-input[type=“range”] {
+input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   width: 50%;
@@ -75,7 +75,7 @@ input[type=“range”] {
   cursor: pointer;
 }
 
-input[type=“range”]::-webkit-slider-thumb {
+input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 12px;
   height: 12px;
@@ -84,7 +84,7 @@ input[type=“range”]::-webkit-slider-thumb {
   border: none;
 }
 
-input[type=“range”]::-moz-range-thumb {
+input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
   background: #000;
@@ -93,7 +93,7 @@ input[type=“range”]::-moz-range-thumb {
 }
 
 /* =========================
-   PIXEL ANCHOR
+   PIXEL ANCHOR (Wake Lock)
    ========================= */
 video {
   pointer-events: none;
@@ -150,16 +150,16 @@ button.filled {
 }
 
 /* =========================
-   FOOTER & SEPARATOR (UPDATED)
+   FOOTER & SEPARATOR
    ========================= */
 .separator {
-  margin-top: 2rem; /* Reduced from 4rem for tighter spacing */
+  margin-top: 2rem; 
   border: 0;
   border-top: 1px solid #000;
 }
 
 #credits {
-  margin-top: 1rem; /* Reduced from 1.5rem */
+  margin-top: 1rem; 
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -169,19 +169,23 @@ button.filled {
 /* =========================
    MODE SWITCHING
    ========================= */
+/* Hide player controls by default */
 #controls, #credits, .separator, #popoutTitle { 
   display: none; 
 }
 
+/* Show player controls in popout/mobile mode */
 body.popout #controls, body.popout #credits, body.popout .separator, body.popout #popoutTitle,
 body.mobile-player #controls, body.mobile-player #credits, body.mobile-player .separator, body.mobile-player #popoutTitle {
   display: block;
 }
 
+/* Hide launch button in popout/mobile mode */
 body.popout #launchOnly, body.mobile-player #launchOnly {
   display: none;
 }
 
+/* Tighter margins for popout window */
 body.popout main {
   margin: 2rem auto;
   max-width: 460px;
