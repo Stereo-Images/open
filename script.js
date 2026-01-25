@@ -38,7 +38,8 @@
     let toneVal = 110;
     if (state?.tone != null) {
       const n = Number(state.tone);
-      if (Number.isFinite(n)) toneVal = Math.max(30, Math.min(200, n));
+      // FIX: Clamp minimum to 55 Hz
+      if (Number.isFinite(n)) toneVal = Math.max(55, Math.min(220, n));
     }
 
     if (tone) tone.value = String(toneVal);
@@ -358,7 +359,7 @@
     setupKeyboardShortcuts();
   }
 
-  // --- UPGRADED: TIMBRE IDENTITY (v27 Resurrection) ---
+  // --- IDENTITY: TIMBRE (v27 Resurrection) ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tension = 0) {
     const numVoices = 2; 
     let totalAmp = 0;
@@ -366,7 +367,6 @@
     const isFractured = (tension > 0.75);
     const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415]; 
     
-    // v27: Continuous, wide range for metallic shimmer
     const ratioFuzz = isFractured ? 0.08 : 0.0; 
 
     const voices = Array.from({length: numVoices}, () => {
@@ -375,7 +375,7 @@
           mRatio = FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)];
           mRatio += (rand() - 0.5) * ratioFuzz;
       } else {
-          // v27: 1.5 to 4.0 continuous
+          // v27: 1.5 to 4.0 continuous (The "Bell")
           mRatio = 1.5 + rand() * 2.5;
       }
 
@@ -403,7 +403,7 @@
       modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
       
       ampGain.gain.setValueAtTime(0.0001, time);
-      // v27: 10ms Attack (Sharp)
+      // v27: 10ms Attack (Sharp Strike)
       const atk = isFractured ? 0.005 : 0.01;
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + atk);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
@@ -511,13 +511,16 @@
       if (elapsed >= targetDuration) isApproachingEnd = true;
     }
     
+    // FIX: 55Hz safety floor
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
-    baseFreq = Math.max(30, Math.min(200, baseFreq));
+    baseFreq = Math.max(55, Math.min(220, baseFreq));
     
     const noteDur = (1 / runDensity) * 2.5;
 
     // --- CONTINUOUS SPACE (Pre-Loop) ---
+    // Update space even when note loop isn't firing
+    // Skip during Shadow Arc to prevent fighting
     if (reverbSend && arcPos !== arcClimaxAt - 1) {
         let tickPressure = Math.min(1.0, notesSinceModulation / 48.0);
         if (arcPos === arcClimaxAt) tickPressure *= 2.5;
@@ -756,7 +759,7 @@
 
     runDensity = 0.05 + rand() * 0.375;
     
-    // v27: 0.65 Baseline
+    // FIX: Dry Start ($0.30 - 0.05)
     const normDensity = clamp01((runDensity - 0.05) / 0.375);
     const initSend = 0.65 - (0.25 * normDensity);
     reverbSend.gain.setValueAtTime(initSend, audioContext.currentTime);
@@ -832,9 +835,10 @@
     const dummyMotif = generateSessionMotif(); 
     const localMotif = [...sessionSnapshot.motif]; 
 
+    // FIX: 55 Hz min
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
-    baseFreq = Math.max(30, Math.min(200, baseFreq));
+    baseFreq = Math.max(55, Math.min(220, baseFreq));
 
     const noteDur = (1 / exportDensity) * 2.5;
     let localCircle = 0; let localMinor = false; let localIdx = 0;
@@ -1072,7 +1076,7 @@
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v125-${Date.now()}.wav`;
+    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v126-${Date.now()}.wav`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
   }
