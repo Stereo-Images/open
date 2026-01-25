@@ -38,7 +38,7 @@
     let toneVal = 110;
     if (state?.tone != null) {
       const n = Number(state.tone);
-      // FIX: Clamp minimum to 55 Hz
+      // FIX: Clamp minimum to 55 Hz (A1)
       if (Number.isFinite(n)) toneVal = Math.max(55, Math.min(220, n));
     }
 
@@ -176,7 +176,7 @@
   
   let streamDest = null;
 
-  // CONSTANTS: v27 Intensity
+  // CONSTANTS: v27 Intensity (High Return)
   const REVERB_RETURN_LEVEL = 0.9; 
 
   // Playback State
@@ -212,7 +212,7 @@
 
   // --- HELPERS (Audio) ---
   function createImpulseResponse(ctx) {
-    // v27: Short, fast, dense
+    // v27: Short (5s), fast decay (1.5)
     const duration = 5.0; 
     const decay = 1.5; 
     const rate = ctx.sampleRate;
@@ -313,7 +313,7 @@
     streamDest = audioContext.createMediaStreamDestination();
     masterGain.connect(streamDest);
 
-    // v27: Instant Pre-Delay
+    // v27: Instant Pre-Delay (0.01)
     reverbPreDelay = audioContext.createDelay(0.1);
     reverbPreDelay.delayTime.value = 0.01; 
 
@@ -332,6 +332,7 @@
     reverbReturn = audioContext.createGain();
     reverbReturn.gain.value = REVERB_RETURN_LEVEL; 
 
+    // Chain: Send -> PreDelay -> Reverb -> LP -> Return -> Master
     reverbSend.connect(reverbPreDelay);
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
@@ -359,9 +360,10 @@
     setupKeyboardShortcuts();
   }
 
-  // --- IDENTITY: TIMBRE (v27 Resurrection) ---
+  // --- UPGRADED: TIMBRE IDENTITY (v27 + Physics) ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tension = 0) {
-    const numVoices = 2; 
+    // FIX 1: Restore density (2 or 3 voices)
+    const numVoices = 2 + Math.floor(rand() * 2); 
     let totalAmp = 0;
     
     const isFractured = (tension > 0.75);
@@ -375,12 +377,12 @@
           mRatio = FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)];
           mRatio += (rand() - 0.5) * ratioFuzz;
       } else {
-          // v27: 1.5 to 4.0 continuous (The "Bell")
+          // v27: Continuous 1.5 to 4.0 (The Bell)
           mRatio = 1.5 + rand() * 2.5;
       }
 
-      // v27: Index 1-5 range
-      const mIndex = 1.0 + (tension * 2.0) + (rand() * 2.0);
+      // v27: High Index range (1-5)
+      const mIndex = 1.0 + (tension * 2.0) + (rand() * 3.0);
       const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
       totalAmp += v.amp;
       return v;
@@ -399,8 +401,10 @@
       carrier.frequency.value = freq + drift;
       modulator.frequency.value = freq * voice.modRatio;
       
+      // FIX 2: PHYSICS DECAY
+      // Brightness decays faster than volume (Bell physics)
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.7)); 
       
       ampGain.gain.setValueAtTime(0.0001, time);
       // v27: 10ms Attack (Sharp Strike)
