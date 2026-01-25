@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v70_2";
+  const STATE_KEY = "open_player_final_v70_3";
 
   // =========================
   // UTILITIES & UI
@@ -61,7 +61,7 @@
   }
 
   // =========================
-  // AUDIO ENGINE (v27 Logic / Balanced Mix)
+  // AUDIO ENGINE (v27 / Monophonic / Foggy Mix)
   // =========================
   function createReverbBuffer(ctx) {
     const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
@@ -81,8 +81,8 @@
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
     
-    // RESTORED TO 1.5: Tail is quieter than new notes (Depth)
-    revGain.gain.value = 1.5; 
+    // THE GOLDEN MEAN: 2.0 (Thicker than v27, clearer than v70.1)
+    revGain.gain.value = 2.0; 
     
     conv.connect(revGain);
     revGain.connect(destination);
@@ -265,7 +265,7 @@
 
     while (nextTimeA < now + 0.5) {
       if (isApproachingEnd && !isEndingNaturally) {
-        // SNAPSHOT ENDING
+        // ENDING LOGIC (SNAPSHOT)
         const isRootNote = (patternIdxA % 7 === 0);
 
         if (isRootNote) {
@@ -340,6 +340,7 @@
 
     if (timerInterval) clearInterval(timerInterval);
 
+    // Phantom Hand Stop
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
@@ -356,6 +357,8 @@
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
+    
+    // Natural End: Long Fade
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 20.0);
 
     setTimeout(() => {
@@ -458,7 +461,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v70_2-${Date.now()}.wav`;
+    a.download = `open-final-v70_3-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
