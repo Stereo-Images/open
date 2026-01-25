@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v74";
+  const STATE_KEY = "open_player_final_v76";
 
   // =========================
   // UTILITIES & UI
@@ -61,7 +61,7 @@
   }
 
   // =========================
-  // AUDIO ENGINE (v27 / Monophonic)
+  // AUDIO ENGINE (v27 / Monophonic / High Efficiency)
   // =========================
   function createReverbBuffer(ctx) {
     const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
@@ -74,15 +74,16 @@
   }
 
   function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
-    const numVoices = 2 + Math.floor(Math.random() * 2);
+    // OPTIMIZATION: Locked to 2 Voices (4 Oscillators total)
+    // Previously: 2 + Math.floor(Math.random() * 2) -> (2 or 3)
+    const numVoices = 2; 
     let totalAmp = 0;
     
     const conv = ctx.createConvolver();
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
     
-    // DYNAMIC MIXING:
-    // Use the global variable set by the Session Lottery
+    // SLIDING SCALE MIX (Adaptive)
     revGain.gain.value = sessionReverbGain; 
     
     conv.connect(revGain);
@@ -208,7 +209,12 @@
   
   // SESSION VARIABLES
   let runDensity = 0.2; 
-  let sessionReverbGain = 1.5; // Default
+  let sessionReverbGain = 1.5; 
+
+  // --- MAP HELPER ---
+  function mapRange(value, inMin, inMax, outMin, outMax) {
+      return outMin + (outMax - outMin) * ((value - inMin) / (inMax - inMin));
+  }
 
   function ensureAudio() {
     if (audioContext) return;
@@ -384,14 +390,15 @@
     isEndingNaturally = false; isApproachingEnd = false;
     
     // 1. ROLL THE DICE (Session Density)
+    // Range: 0.05 (Slow) to ~0.425 (Fast)
     runDensity = 0.05 + Math.random() * 0.375;
     
-    // 2. ADAPT THE ROOM (Reverb Logic)
-    // If density < 0.18 (Slow), make it Foggy (2.0)
-    // If density >= 0.18 (Fast), make it Clean (1.5)
-    sessionReverbGain = (runDensity < 0.18) ? 2.0 : 1.5;
-    
-    console.log(`Session Started: Density ${runDensity.toFixed(3)} | Reverb ${sessionReverbGain}`);
+    // 2. SLIDING SCALE MIX (Linear Interpolation)
+    // Map Density (0.05 -> 0.425) to Gain (2.0 -> 1.5)
+    sessionReverbGain = mapRange(runDensity, 0.05, 0.425, 2.0, 1.5);
+    sessionReverbGain = Math.max(1.5, Math.min(2.0, sessionReverbGain));
+
+    console.log(`Session Started: Density ${runDensity.toFixed(3)} | Reverb ${sessionReverbGain.toFixed(2)}`);
 
     killImmediate();
     isPlaying = true;
@@ -460,13 +467,6 @@
            appliedDur = 25.0; 
        }
 
-       // Use sessionReverbGain for consistency in export
-       // We must simulate the Reverb gain manually here if we want it exact
-       // But `scheduleNote` applies it. We need to pass it or handle it.
-       // NOTE: The `scheduleNote` function uses the global `sessionReverbGain`.
-       // However, in Offline Context, we need to ensure that global is set correctly.
-       // It is set by startFromUI, so it should be fine.
-       
        scheduleNote(offlineCtx, offlineMaster, freq, localTime, appliedDur, 0.4, offlineReverbBuffer);
        localModCount++;
        localTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
@@ -478,7 +478,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v74-${Date.now()}.wav`;
+    a.download = `open-final-v76-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
