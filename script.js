@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v76";
+  const STATE_KEY = "open_player_final_v77";
 
   // =========================
   // UTILITIES & UI
@@ -75,7 +75,6 @@
 
   function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
     // OPTIMIZATION: Locked to 2 Voices (4 Oscillators total)
-    // Previously: 2 + Math.floor(Math.random() * 2) -> (2 or 3)
     const numVoices = 2; 
     let totalAmp = 0;
     
@@ -332,8 +331,9 @@
   function killImmediate() {
     if (timerInterval) clearInterval(timerInterval);
     if (masterGain) { 
+        // FIX: Remove 'setValueAtTime(1)' to prevent click.
+        // Leave gain at 0.001 until next Play.
         masterGain.gain.cancelScheduledValues(audioContext.currentTime); 
-        masterGain.gain.setValueAtTime(1, audioContext.currentTime); 
     }
     isPlaying = false;
   }
@@ -347,7 +347,7 @@
 
     if (timerInterval) clearInterval(timerInterval);
 
-    // Phantom Hand Stop
+    // Fade to Silence
     const now = audioContext.currentTime;
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
@@ -378,6 +378,7 @@
     ensureAudio();
     if (audioContext.state === "suspended") await audioContext.resume();
 
+    // FIX: Reset Gain to 1 HERE, at start of new session.
     masterGain.gain.cancelScheduledValues(audioContext.currentTime);
     masterGain.gain.setValueAtTime(1, audioContext.currentTime);
 
@@ -390,11 +391,9 @@
     isEndingNaturally = false; isApproachingEnd = false;
     
     // 1. ROLL THE DICE (Session Density)
-    // Range: 0.05 (Slow) to ~0.425 (Fast)
     runDensity = 0.05 + Math.random() * 0.375;
     
     // 2. SLIDING SCALE MIX (Linear Interpolation)
-    // Map Density (0.05 -> 0.425) to Gain (2.0 -> 1.5)
     sessionReverbGain = mapRange(runDensity, 0.05, 0.425, 2.0, 1.5);
     sessionReverbGain = Math.max(1.5, Math.min(2.0, sessionReverbGain));
 
@@ -478,7 +477,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v76-${Date.now()}.wav`;
+    a.download = `open-final-v77-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
