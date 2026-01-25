@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v77";
+  const STATE_KEY = "open_player_v78_composer";
 
   // =========================
   // UTILITIES & UI
@@ -11,9 +11,7 @@
   }
 
   function loadState() {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (!raw) return null;
-    try { return JSON.parse(raw); } catch { return null; }
+    try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; }
   }
   function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
 
@@ -32,16 +30,15 @@
 
     if (sd) {
       const allowed = new Set(["60", "300", "600", "1800", "infinite"]);
-      const v = state?.songDuration != null ? String(state.songDuration) : "60";
+      const v = state?.songDuration ? String(state.songDuration) : "60";
       sd.value = allowed.has(v) ? v : "60";
     }
 
     let toneVal = 110;
-    if (state?.tone != null) {
+    if (state?.tone) {
       const n = Number(state.tone);
-      if (Number.isFinite(n)) toneVal = n;
+      if (Number.isFinite(n)) toneVal = Math.max(30, Math.min(200, n));
     }
-    toneVal = Math.max(30, Math.min(200, toneVal));
 
     if (tone) tone.value = String(toneVal);
     if (hzReadout) hzReadout.textContent = String(toneVal);
@@ -52,502 +49,375 @@
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
 
-    if (!playBtn || !stopBtn) return;
-
-    playBtn.classList.toggle("filled", state === "playing");
-    stopBtn.classList.toggle("filled", state !== "playing");
-
+    if (playBtn) playBtn.classList.toggle("filled", state === "playing");
+    if (stopBtn) stopBtn.classList.toggle("filled", state !== "playing");
     if (toneInput) toneInput.disabled = (state === "playing");
   }
 
   // =========================
-  // AUDIO ENGINE (v27 / Monophonic / High Efficiency)
+  // GLOBAL AUDIO GRAPH
   // =========================
-  function createReverbBuffer(ctx) {
-    const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
-    const impulse = ctx.createBuffer(2, length, rate);
-    for (let ch = 0; ch < 2; ch++) {
-      const data = impulse.getChannelData(ch);
-      for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / length, decay);
+  let ctx = null;
+  let masterGain = null;
+  let reverbNode = null;
+  let reverbGain = null; // The "Return" track
+  let isPlaying = false;
+  let schedulerTimer = null;
+  
+  // Session State
+  let sessionStartTime = 0;
+  let nextEventTime = 0;
+  let sessionDensity = 0.2; // Notes per second (approx)
+  
+  // COMPOSITIONAL STATE
+  let currentKey = { circlePos: 0, isMinor: false };
+  let phraseStep = 0; // 0-15 (16 step phrases)
+  let phraseLength = 16;
+  let scaleIndex = 0; // Current walker position
+  let sessionMotif = []; // Array of relative intervals (e.g. [0, 2, 4])
+
+  function initAudio() {
+    if (ctx) return;
+    const CtxClass = window.AudioContext || window.webkitAudioContext;
+    ctx = new CtxClass();
+    
+    // MASTER BUS (Headroom: 0.3)
+    masterGain = ctx.createGain();
+    masterGain.gain.value = 0.3; 
+    masterGain.connect(ctx.destination);
+
+    // REVERB BUS (Global Instance)
+    reverbNode = ctx.createConvolver();
+    reverbNode.buffer = createImpulseResponse(ctx);
+    
+    reverbGain = ctx.createGain();
+    reverbGain.gain.value = 0.7; // Return level (Wet Mix)
+    
+    reverbNode.connect(reverbGain);
+    reverbGain.connect(masterGain);
+
+    // Wake Lock
+    const silent = ctx.createBuffer(1, 1, 22050);
+    const source = ctx.createBufferSource();
+    source.buffer = silent;
+    source.loop = true;
+    source.start();
+    source.connect(ctx.destination);
+  }
+
+  function createImpulseResponse(context) {
+    // 6.0s Tail, slightly darker decay
+    const duration = 6.0;
+    const decay = 2.0;
+    const len = context.sampleRate * duration;
+    const buffer = context.createBuffer(2, len, context.sampleRate);
+    
+    for (let c = 0; c < 2; c++) {
+      const channel = buffer.getChannelData(c);
+      for (let i = 0; i < len; i++) {
+        // Standard white noise with exponential decay
+        channel[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
+      }
     }
-    return impulse;
-  }
-
-  function scheduleNote(ctx, destination, freq, time, duration, volume, reverbBuffer) {
-    // OPTIMIZATION: Locked to 2 Voices (4 Oscillators total)
-    const numVoices = 2; 
-    let totalAmp = 0;
-    
-    const conv = ctx.createConvolver();
-    conv.buffer = reverbBuffer;
-    const revGain = ctx.createGain();
-    
-    // SLIDING SCALE MIX (Adaptive)
-    revGain.gain.value = sessionReverbGain; 
-    
-    conv.connect(revGain);
-    revGain.connect(destination);
-
-    const voices = Array.from({length: numVoices}, () => {
-      const v = { 
-          modRatio: 1.5 + Math.random() * 2.5, 
-          modIndex: 1 + Math.random() * 4, 
-          amp: Math.random() 
-      };
-      totalAmp += v.amp;
-      return v;
-    });
-
-    voices.forEach(voice => {
-      const carrier = ctx.createOscillator();
-      const modulator = ctx.createOscillator();
-      const modGain = ctx.createGain();
-      const ampGain = ctx.createGain();
-
-      carrier.type = 'sine';
-      modulator.type = 'sine';
-
-      carrier.frequency.value = freq + (Math.random() - 0.5) * 2;
-      modulator.frequency.value = freq * voice.modRatio;
-
-      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.5, time + duration);
-
-      ampGain.gain.setValueAtTime(0.0001, time);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
-
-      modulator.connect(modGain); 
-      modGain.connect(carrier.frequency);
-      
-      carrier.connect(ampGain); 
-      ampGain.connect(conv); 
-      ampGain.connect(destination);
-
-      modulator.start(time); carrier.start(time);
-      modulator.stop(time + duration); carrier.stop(time + duration);
-    });
+    return buffer;
   }
 
   // =========================
-  // HARMONIC ENGINE
+  // COMPOSITION ENGINE
   // =========================
-  let circlePosition = 0; 
-  let isMinor = false; 
+  function generateSessionMotif() {
+    // Create a 3-5 note "Seed" that we will recall later
+    const len = 3 + Math.floor(Math.random() * 3);
+    const motif = [0]; // Always start on root relative
+    let walker = 0;
+    for (let i=1; i<len; i++) {
+        // Simple steps: +/- 1 or 2 scale degrees
+        walker += (Math.random() < 0.5 ? 1 : -1) * (Math.random() < 0.3 ? 2 : 1);
+        motif.push(walker);
+    }
+    return motif;
+  }
 
-  function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode) {
-    let pos = circlePos % 12;
+  function getScaleFreq(baseFreq, index, keyState) {
+    // 1. Determine Root from Circle of Fifths
+    let pos = keyState.circlePos % 12;
     if (pos < 0) pos += 12;
-
-    let semitones = (pos * 7) % 12;
-    let rootOffset = semitones;
+    let semitones = (pos * 7) % 12; 
     
-    if (minorMode) {
-        rootOffset = (semitones + 9) % 12; 
-    }
+    // 2. Adjust for Minor
+    let rootOffset = keyState.isMinor ? (semitones + 9) % 12 : semitones;
 
-    const intervals = minorMode 
-        ? [0, 2, 3, 5, 7, 8, 10] 
-        : [0, 2, 4, 5, 7, 9, 11];
+    // 3. Select Scale Intervals
+    const intervals = keyState.isMinor 
+        ? [0, 2, 3, 5, 7, 8, 10] // Natural Minor
+        : [0, 2, 4, 5, 7, 9, 11]; // Major
 
+    // 4. Calculate Note
     const len = intervals.length;
-    const octave = Math.floor(scaleIndex / len);
-    const degree = ((scaleIndex % len) + len) % len;
+    const octave = Math.floor(index / len);
+    const degree = ((index % len) + len) % len;
     
-    const noteValue = rootOffset + intervals[degree] + (octave * 12);
-    return baseFreq * Math.pow(2, noteValue / 12);
+    const midiValue = rootOffset + intervals[degree] + (octave * 12);
+    
+    // 5. Convert to Hz (Equal Temperament)
+    return baseFreq * Math.pow(2, midiValue / 12);
   }
 
-  function updateHarmonyState(durationInput) {
+  function updateGlobalHarmony(elapsed, totalDuration) {
+      if (totalDuration <= 60) return; // Static for short runs
+
       const r = Math.random();
-      let totalSeconds = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
-
-      if (totalSeconds <= 60) return; 
-
-      if (totalSeconds <= 300) { 
-          if (r < 0.2) { 
-              isMinor = !isMinor;
-              console.log(`Modulating (5m): ${isMinor ? 'Relative Minor' : 'Relative Major'}`);
+      
+      // 5 Minutes: Pivot Mode (Relative Minor/Major)
+      if (totalDuration <= 300) {
+          if (r < 0.05) { 
+              currentKey.isMinor = !currentKey.isMinor; 
+              console.log("Harmony: Pivot");
           }
           return;
       }
 
-      if (totalSeconds <= 1800) { 
-          if (r < 0.4) {
-              isMinor = !isMinor; 
-          } else {
-              const dir = Math.random() < 0.7 ? 1 : -1; 
-              circlePosition += dir;
-              console.log(`Modulating (Drift): Circle ${circlePosition}`);
-          }
-          return;
-      }
-
-      if (durationInput === "infinite") {
-          if (!isMinor) {
-              if (r < 0.7) isMinor = true; 
-              else circlePosition += (Math.random() < 0.9 ? 1 : -1);
-          } else {
-              if (r < 0.3) isMinor = false; 
-              else circlePosition += (Math.random() < 0.9 ? 1 : -1);
-          }
-          console.log(`Modulating (Shadow): Circle ${circlePosition}, Minor: ${isMinor}`);
+      // 30m / Infinite: The Traveler
+      // Move around Circle of Fifths
+      if (r < 0.02) {
+          // 20% chance to flip mode, 80% chance to move circle
+          if (Math.random() < 0.2) currentKey.isMinor = !currentKey.isMinor;
+          else currentKey.circlePos += (Math.random() < 0.6 ? 1 : -1);
+          console.log(`Harmony: Move to ${currentKey.circlePos} ${currentKey.isMinor ? 'm' : ''}`);
       }
   }
 
   // =========================
   // SCHEDULER
   // =========================
-  let audioContext = null, masterGain = null, streamDest = null;
-  let liveReverbBuffer = null;
-  let isPlaying = false, isEndingNaturally = false, isApproachingEnd = false;
-  let nextTimeA = 0;
-  let patternIdxA = 0; 
-  let notesSinceModulation = 0;
-  let sessionStartTime = 0, timerInterval = null;
-  
-  // SESSION VARIABLES
-  let runDensity = 0.2; 
-  let sessionReverbGain = 1.5; 
+  function scheduleNoteEvent(time) {
+    // 1. DYNAMICS & PHRASING
+    // Where are we in the phrase?
+    phraseStep++;
+    if (phraseStep >= phraseLength) phraseStep = 0;
 
-  // --- MAP HELPER ---
-  function mapRange(value, inMin, inMax, outMin, outMax) {
-      return outMin + (outMax - outMin) * ((value - inMin) / (inMax - inMin));
-  }
+    const isStartOfPhrase = (phraseStep === 0);
+    const isEndOfPhrase = (phraseStep > 12);
+    
+    // Velocity: Loudest at start, quietest in middle
+    let velocity = 0.3 + Math.random() * 0.4; 
+    if (isStartOfPhrase) velocity = 0.8;
+    if (isEndOfPhrase) velocity = 0.2; // Fade out
 
-  function ensureAudio() {
-    if (audioContext) return;
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    streamDest = audioContext.createMediaStreamDestination();
-    masterGain = audioContext.createGain();
-
-    masterGain.connect(streamDest);
-    masterGain.connect(audioContext.destination);
-
-    const silentBuffer = audioContext.createBuffer(1, 1, audioContext.sampleRate);
-    const heartbeat = audioContext.createBufferSource();
-    heartbeat.buffer = silentBuffer;
-    heartbeat.loop = true;
-    heartbeat.start();
-    heartbeat.connect(audioContext.destination);
-
-    liveReverbBuffer = createReverbBuffer(audioContext);
-
-    let videoWakeLock = document.querySelector('video');
-    if (!videoWakeLock) {
-      videoWakeLock = document.createElement('video');
-      Object.assign(videoWakeLock.style, {
-        position: 'fixed', bottom: '0', right: '0',
-        width: '1px', height: '1px',
-        opacity: '0.01', pointerEvents: 'none', zIndex: '-1'
-      });
-      videoWakeLock.setAttribute('playsinline', '');
-      videoWakeLock.setAttribute('muted', '');
-      document.body.appendChild(videoWakeLock);
-    }
-    videoWakeLock.srcObject = streamDest.stream;
-    videoWakeLock.play().catch(() => {});
-
-    setupKeyboardShortcuts();
-  }
-
-  function scheduler() {
-    if (!isPlaying) return;
-    const durationInput = document.getElementById("songDuration")?.value ?? "60";
-    const now = audioContext.currentTime;
-    const elapsed = now - sessionStartTime;
-
-    if (durationInput !== "infinite") {
-      const targetDuration = parseFloat(durationInput);
-      if (elapsed >= targetDuration) isApproachingEnd = true;
-    }
-
+    // 2. NOTE SELECTION
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    const noteDur = (1 / runDensity) * 2.5;
+    let targetIndex = scaleIndex;
+    let isMotif = false;
 
-    while (nextTimeA < now + 0.5) {
-      if (isApproachingEnd && !isEndingNaturally) {
-        // SNAPSHOT ENDING
-        const isRootNote = (patternIdxA % 7 === 0);
+    // A. MOTIF INJECTION (20% chance, but mostly in middle of phrase)
+    if (!isStartOfPhrase && !isEndOfPhrase && Math.random() < 0.2) {
+        // Pick a note from our seed motif
+        const motifNote = sessionMotif[Math.floor(Math.random() * sessionMotif.length)];
+        // Transpose it to where we are roughly
+        targetIndex = scaleIndex + motifNote;
+        isMotif = true;
+    } 
+    // B. CADENCE LOGIC (End of phrase)
+    else if (isEndOfPhrase) {
+        // Gravitate towards Root (0) or Fifth (4)
+        const target = (Math.random() < 0.7) ? 0 : 4;
+        // Move scaleIndex closer to that target relative to current octave
+        const currentMod = scaleIndex % 7;
+        const diff = target - currentMod;
+        targetIndex = scaleIndex + diff;
+    }
+    // C. RANDOM WALK (Standard)
+    else {
+        const step = (Math.random() < 0.5 ? 1 : -1) * (Math.random() < 0.3 ? 2 : 1);
+        targetIndex = scaleIndex + step;
+    }
+    
+    // Bounds Check
+    if (targetIndex > 14) targetIndex -= 7;
+    if (targetIndex < -14) targetIndex += 7;
+    scaleIndex = targetIndex;
 
-        if (isRootNote) {
-           const freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-           scheduleNote(audioContext, masterGain, freq * 0.5, nextTimeA, 25.0, 0.5, liveReverbBuffer);
-           beginNaturalEnd();
-           return;
-        }
-      }
+    const freq = getScaleFreq(baseFreq, scaleIndex, currentKey);
+    const dur = isEndOfPhrase ? 4.0 : (1.5 + Math.random()); // Longer notes at cadence
 
-      // MODULATION CHECK
-      if (!isApproachingEnd) {
-          let modChance = 0.10; 
-          const totalSecs = parseFloat(durationInput);
-          if (durationInput !== "infinite" && totalSecs > 300) {
-              modChance = 0.40; 
-          }
+    // 3. SYNTHESIS (2-Voice FM)
+    const voiceCount = 2;
+    // Attack: Fast for start of phrase, Slow/Swell for end
+    const attack = isStartOfPhrase ? 0.02 : (0.5 + Math.random()); 
 
-          if (notesSinceModulation > 16 && Math.random() < modChance) {
-              updateHarmonyState(durationInput);
-              notesSinceModulation = 0;
-          }
-      }
+    for (let i = 0; i < voiceCount; i++) {
+        const osc = ctx.createOscillator();
+        const mod = ctx.createOscillator();
+        const modGain = ctx.createGain();
+        
+        // MIXING: DRY vs WET
+        // Each note has its own path to Master (Dry) and Reverb (Wet)
+        const dryNode = ctx.createGain();
+        const sendNode = ctx.createGain();
 
-      // MELODY WALKER
-      const r = Math.random();
-      let shift = 0;
-      if (r < 0.4) shift = 1;
-      else if (r < 0.8) shift = -1;
-      else shift = (Math.random() < 0.5 ? 2 : -2);
-      
-      patternIdxA += shift;
-      if (patternIdxA > 10) patternIdxA = 10;
-      if (patternIdxA < -8) patternIdxA = -8;
+        // FM Setup
+        const ratio = (i === 0) ? 1.0 : (1.0 + Math.random() * 0.02); // Detune 2nd voice slightly
+        const modIdx = 2 + Math.random() * 3;
 
-      let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-      
-      // BASS TOLL LOGIC
-      if (patternIdxA % 7 === 0) {
-          if (Math.random() < 0.15) {
-              freq = freq * 0.5; // 1 Octave Drop
-              scheduleNote(audioContext, masterGain, freq, nextTimeA, 25.0, 0.4, liveReverbBuffer);
-              console.log("Bass Toll");
-          } else {
-              scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
-          }
-      } else {
-          scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
-      }
-      
-      notesSinceModulation++;
-      
-      // TIME JITTER (Stochastic Rhythm)
-      nextTimeA += (1 / runDensity) * (0.95 + Math.random() * 0.1);
+        osc.frequency.value = freq * ratio;
+        mod.frequency.value = freq * ratio * (1 + Math.floor(Math.random() * 3)); // Integer ratios
+
+        modGain.gain.value = freq * modIdx;
+        
+        mod.connect(modGain);
+        modGain.connect(osc.frequency);
+        osc.connect(dryNode);
+        osc.connect(sendNode);
+
+        // ENVELOPES
+        const now = time;
+        
+        // Amplitude Envelope
+        dryNode.gain.setValueAtTime(0, now);
+        dryNode.gain.linearRampToValueAtTime(velocity * (0.8 / voiceCount), now + attack);
+        dryNode.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+        // Send Envelope (More reverb on quiet/end notes)
+        const sendAmt = isEndOfPhrase ? 0.8 : 0.4;
+        sendNode.gain.setValueAtTime(0, now);
+        sendNode.gain.linearRampToValueAtTime(sendAmt * (1.0 / voiceCount), now + attack);
+        sendNode.gain.exponentialRampToValueAtTime(0.001, now + dur);
+
+        // ROUTING
+        dryNode.connect(masterGain);
+        sendNode.connect(reverbNode); // Connect to Global Reverb
+
+        // START/STOP
+        osc.start(now);
+        mod.start(now);
+        osc.stop(now + dur + 1);
+        mod.stop(now + dur + 1);
+        
+        // Garbage collect nodes after stop
+        setTimeout(() => {
+            osc.disconnect(); mod.disconnect(); 
+            dryNode.disconnect(); sendNode.disconnect();
+        }, (dur + 1.5) * 1000);
     }
   }
 
-  // =========================
-  // STOP / KILL LOGIC
-  // =========================
-  function killImmediate() {
-    if (timerInterval) clearInterval(timerInterval);
-    if (masterGain) { 
-        // FIX: Remove 'setValueAtTime(1)' to prevent click.
-        // Leave gain at 0.001 until next Play.
-        masterGain.gain.cancelScheduledValues(audioContext.currentTime); 
+  function runScheduler() {
+    const lookahead = 0.1;
+    const durationInput = document.getElementById("songDuration")?.value ?? "60";
+    const totalDuration = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
+
+    if (!isPlaying) return;
+
+    // Check End of Song
+    if (durationInput !== "infinite" && (ctx.currentTime - sessionStartTime) > totalDuration) {
+        stopPlayback();
+        return;
     }
-    isPlaying = false;
+
+    // Schedule Events
+    while (nextEventTime < ctx.currentTime + lookahead) {
+        scheduleNoteEvent(nextEventTime);
+        
+        // Update Harmony for next time
+        updateGlobalHarmony(ctx.currentTime - sessionStartTime, totalDuration);
+
+        // Next time logic (Stochastic)
+        // Fast in middle of phrase, Slow at end
+        let stepTime = (1 / sessionDensity); 
+        if (phraseStep > 12) stepTime *= 1.5; // Slow down cadence
+        
+        nextEventTime += stepTime * (0.8 + Math.random() * 0.4);
+    }
+    
+    schedulerTimer = requestAnimationFrame(runScheduler);
   }
 
-  function stopAllManual() {
-    setButtonState("stopped");
-    if (!audioContext) { isPlaying = false; return; }
+  // =========================
+  // CONTROL LOGIC
+  // =========================
+  function startPlayback() {
+    initAudio();
+    if (ctx.state === "suspended") ctx.resume();
 
-    isPlaying = false;
-    isEndingNaturally = false;
-
-    if (timerInterval) clearInterval(timerInterval);
-
-    // Fade to Silence
-    const now = audioContext.currentTime;
-    masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-
-    setTimeout(killImmediate, 120);
-  }
-
-  function beginNaturalEnd() {
-    if (isEndingNaturally) return;
-    isEndingNaturally = true; isPlaying = false;
-    if (timerInterval) clearInterval(timerInterval);
+    // Reset State
+    sessionStartTime = ctx.currentTime;
+    nextEventTime = ctx.currentTime + 0.1;
+    phraseStep = 0;
+    scaleIndex = 0;
+    currentKey = { circlePos: 0, isMinor: false };
     
-    const now = audioContext.currentTime;
-    masterGain.gain.cancelScheduledValues(now);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    
-    // Natural End: Long Fade
-    masterGain.gain.exponentialRampToValueAtTime(0.001, now + 20.0);
+    // 1. Session Variables (Density & Motif)
+    sessionDensity = 0.15 + Math.random() * 0.25; // 0.15 to 0.4 notes/sec
+    sessionMotif = generateSessionMotif();
+    console.log("Session Motif:", sessionMotif);
 
-    setTimeout(() => {
-      killImmediate();
-      setButtonState("stopped");
-    }, 20100);
-  }
+    // 2. Master Fade In (Smooth)
+    masterGain.gain.cancelScheduledValues(ctx.currentTime);
+    masterGain.gain.setValueAtTime(0, ctx.currentTime);
+    masterGain.gain.linearRampToValueAtTime(0.3, ctx.currentTime + 2.0);
 
-  async function startFromUI() {
-    ensureAudio();
-    if (audioContext.state === "suspended") await audioContext.resume();
-
-    // FIX: Reset Gain to 1 HERE, at start of new session.
-    masterGain.gain.cancelScheduledValues(audioContext.currentTime);
-    masterGain.gain.setValueAtTime(1, audioContext.currentTime);
-
-    nextTimeA = audioContext.currentTime;
-    patternIdxA = 0; 
-    circlePosition = 0; 
-    isMinor = false; 
-    notesSinceModulation = 0;
-
-    isEndingNaturally = false; isApproachingEnd = false;
-    
-    // 1. ROLL THE DICE (Session Density)
-    runDensity = 0.05 + Math.random() * 0.375;
-    
-    // 2. SLIDING SCALE MIX (Linear Interpolation)
-    sessionReverbGain = mapRange(runDensity, 0.05, 0.425, 2.0, 1.5);
-    sessionReverbGain = Math.max(1.5, Math.min(2.0, sessionReverbGain));
-
-    console.log(`Session Started: Density ${runDensity.toFixed(3)} | Reverb ${sessionReverbGain.toFixed(2)}`);
-
-    killImmediate();
     isPlaying = true;
     setButtonState("playing");
-    sessionStartTime = audioContext.currentTime;
+    runScheduler();
+  }
 
-    timerInterval = setInterval(scheduler, 100);
+  function stopPlayback() {
+    if (!isPlaying || !ctx) return;
+    isPlaying = false;
+    cancelAnimationFrame(schedulerTimer);
+    setButtonState("stopped");
+
+    // THE ANTI-CLICK STOP
+    // 1. Cancel any future automation
+    masterGain.gain.cancelScheduledValues(ctx.currentTime);
+    
+    // 2. Set Target to 0 (Analog Discharge Curve)
+    // This is mathematically strictly continuous (no jumps)
+    masterGain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
+
+    // 3. Suspend context after fade is likely complete (1s)
+    // We do NOT disconnect the graph, we just pause the time.
+    setTimeout(() => {
+        // Optional: ctx.suspend(); 
+        // We keep it running usually for Reverb tail, but since we zeroed Master, it's silent.
+    }, 1000);
   }
 
   // =========================
-  // WAV EXPORT
+  // INIT
   // =========================
-  async function renderWavExport() {
-    if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
-
-    console.log("Rendering Studio Export...");
-    const sampleRate = 44100;
-    const duration = 75;
-    const offlineCtx = new OfflineAudioContext(2, sampleRate * duration, sampleRate);
-    const offlineMaster = offlineCtx.createGain();
-    offlineMaster.connect(offlineCtx.destination);
-    const offlineReverbBuffer = createReverbBuffer(offlineCtx);
-
-    const durationInput = document.getElementById("songDuration")?.value ?? "60";
-    const now = audioContext.currentTime;
-    const elapsed = now - sessionStartTime;
-    const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    const noteDur = (1 / runDensity) * 2.5;
-
-    let localCircle = circlePosition;
-    let localMinor = isMinor;
-    let localIdx = patternIdxA;
-    let localTime = 0;
-    let localModCount = 0;
-    let totalSeconds = (durationInput === "infinite") ? 99999 : parseFloat(durationInput);
-
-    while (localTime < 60) {
-       let modChance = (durationInput !== "infinite" && totalSeconds > 300) ? 0.40 : 0.10;
-
-       if (localModCount > 16 && Math.random() < modChance) {
-          const r = Math.random();
-          if (totalSeconds <= 60) { }
-          else if (totalSeconds <= 300) { if (r < 0.2) localMinor = !localMinor; }
-          else if (totalSeconds <= 1800) {
-              if (r < 0.4) localMinor = !localMinor;
-              else localCircle += (Math.random() < 0.7 ? 1 : -1);
-          } else {
-              // Infinite
-              if (!localMinor) { if (r < 0.7) localMinor = true; else localCircle += (Math.random() < 0.9 ? 1 : -1); }
-              else { if (r < 0.3) localMinor = false; else localCircle += (Math.random() < 0.9 ? 1 : -1); }
-          }
-          localModCount = 0;
-       }
-
-       const r = Math.random();
-       let shift = 0;
-       if (r < 0.4) shift = 1; else if (r < 0.8) shift = -1; else shift = (Math.random() < 0.5 ? 2 : -2);
-       localIdx += shift;
-       if (localIdx > 10) localIdx = 10; if (localIdx < -8) localIdx = -8;
-
-       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
-       let appliedDur = noteDur;
-
-       if (localIdx % 7 === 0 && Math.random() < 0.15) {
-           freq = freq * 0.5;
-           appliedDur = 25.0; 
-       }
-
-       scheduleNote(offlineCtx, offlineMaster, freq, localTime, appliedDur, 0.4, offlineReverbBuffer);
-       localModCount++;
-       localTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
-    }
-
-    const renderedBuffer = await offlineCtx.startRendering();
-    const wavBlob = bufferToWave(renderedBuffer, duration * sampleRate);
-    const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a');
-    a.style.display = 'none';
-    a.href = url;
-    a.download = `open-final-v77-${Date.now()}.wav`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
-  }
-
-  function bufferToWave(abuffer, len) {
-    const numOfChan = abuffer.numberOfChannels, length = len * numOfChan * 2 + 44, buffer = new ArrayBuffer(length), view = new DataView(buffer), channels = [], sampleRate = abuffer.sampleRate;
-    let offset = 0, pos = 0;
-    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
-    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
-    setUint32(0x46464952); setUint32(length - 8); setUint32(0x45564157); setUint32(0x20746d66); setUint32(16); setUint16(1); setUint16(numOfChan); setUint32(sampleRate); setUint32(sampleRate * 2 * numOfChan); setUint16(numOfChan * 2); setUint16(16); setUint32(0x61746164); setUint32(length - pos - 4);
-    for (let i = 0; i < abuffer.numberOfChannels; i++) channels.push(abuffer.getChannelData(i));
-    while (pos < length) {
-      for (let i = 0; i < numOfChan; i++) {
-        let sample = Math.max(-1, Math.min(1, channels[i][offset]));
-        sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
-        view.setInt16(pos, sample, true); pos += 2;
-      }
-      offset++;
-    }
-    return new Blob([buffer], { type: "audio/wav" });
-  }
-
-  function setupKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'r') { renderWavExport(); }
-    });
-  }
-
   document.addEventListener("DOMContentLoaded", () => {
     if (isPopoutMode()) {
-      document.body.classList.add("popout");
-      applyControls(loadState());
-
-      document.getElementById("tone")?.addEventListener("input", (e) => {
-        document.getElementById("hzReadout").textContent = e.target.value;
-        saveState(readControls());
-      });
-
-      document.getElementById("songDuration")?.addEventListener("change", () => saveState(readControls()));
-
-      document.getElementById("playNow").onclick = startFromUI;
-      document.getElementById("stop").onclick = stopAllManual;
-
-      setButtonState("stopped");
-    }
-
-    document.getElementById("launchPlayer")?.addEventListener("click", () => {
-      if (!isPopoutMode() && isMobileDevice()) {
-        document.body.classList.add("mobile-player");
+        document.body.classList.add("popout");
         applyControls(loadState());
-
+        
         document.getElementById("tone")?.addEventListener("input", (e) => {
-          document.getElementById("hzReadout").textContent = e.target.value;
-          saveState(readControls());
+            const ro = document.getElementById("hzReadout");
+            if (ro) ro.textContent = e.target.value;
+            saveState(readControls());
         });
 
         document.getElementById("songDuration")?.addEventListener("change", () => saveState(readControls()));
-
-        document.getElementById("playNow").onclick = startFromUI;
-        document.getElementById("stop").onclick = stopAllManual;
-
+        
+        document.getElementById("playNow").onclick = startPlayback;
+        document.getElementById("stop").onclick = stopPlayback;
+        
         setButtonState("stopped");
-      } else {
-        window.open(
-          `${window.location.href.split("#")[0]}#popout`,
-          "open_player",
-          "width=500,height=680,resizable=yes"
-        );
-      }
-    });
+    }
+
+    const launchBtn = document.getElementById("launchPlayer");
+    if (launchBtn) {
+        launchBtn.addEventListener("click", () => {
+            if (!isPopoutMode() && isMobileDevice()) {
+                document.body.classList.add("mobile-player");
+                applyControls(loadState());
+                // Attach listeners similarly for mobile mode...
+                document.getElementById("playNow").onclick = startPlayback;
+                document.getElementById("stop").onclick = stopPlayback;
+            } else {
+                window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", "width=500,height=680,resizable=yes");
+            }
+        });
+    }
   });
 })();
