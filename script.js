@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_final_v70_3";
+  const STATE_KEY = "open_player_final_v73";
 
   // =========================
   // UTILITIES & UI
@@ -61,7 +61,7 @@
   }
 
   // =========================
-  // AUDIO ENGINE (v27 / Monophonic / Foggy Mix)
+  // AUDIO ENGINE (v27 / Monophonic)
   // =========================
   function createReverbBuffer(ctx) {
     const duration = 5.0, decay = 1.5, rate = ctx.sampleRate, length = Math.floor(rate * duration);
@@ -81,8 +81,8 @@
     conv.buffer = reverbBuffer;
     const revGain = ctx.createGain();
     
-    // THE GOLDEN MEAN: 2.0 (Thicker than v27, clearer than v70.1)
-    revGain.gain.value = 2.0; 
+    // v27 Gain Standard (Balanced Mix)
+    revGain.gain.value = 1.5; 
     
     conv.connect(revGain);
     revGain.connect(destination);
@@ -194,13 +194,6 @@
       }
   }
 
-  function getDynamicDensity(elapsed) {
-      const period = 60; 
-      const sine = Math.sin((elapsed / period) * 2 * Math.PI);
-      const normalized = (sine + 1) / 2; 
-      return 0.08 + (normalized * 0.12);
-  }
-
   // =========================
   // SCHEDULER
   // =========================
@@ -211,6 +204,9 @@
   let patternIdxA = 0; 
   let notesSinceModulation = 0;
   let sessionStartTime = 0, timerInterval = null;
+  
+  // v27 PACING VARIABLES
+  let runDensity = 0.2; 
 
   function ensureAudio() {
     if (audioContext) return;
@@ -260,12 +256,14 @@
     }
 
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    const density = getDynamicDensity(elapsed);
-    let noteDur = (1 / density) * 2.5;
+    
+    // v27 JITTER LOGIC
+    // We do NOT use dynamic density. We use the locked runDensity from startFromUI.
+    const noteDur = (1 / runDensity) * 2.5;
 
     while (nextTimeA < now + 0.5) {
       if (isApproachingEnd && !isEndingNaturally) {
-        // ENDING LOGIC (SNAPSHOT)
+        // SNAPSHOT ENDING
         const isRootNote = (patternIdxA % 7 === 0);
 
         if (isRootNote) {
@@ -307,15 +305,20 @@
       if (patternIdxA % 7 === 0) {
           if (Math.random() < 0.15) {
               freq = freq * 0.5; // 1 Octave Drop
-              noteDur = 25.0; 
+              // Increase duration for bass notes
+              scheduleNote(audioContext, masterGain, freq, nextTimeA, 25.0, 0.4, liveReverbBuffer);
               console.log("Bass Toll");
+          } else {
+              scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
           }
+      } else {
+          scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
       }
       
-      scheduleNote(audioContext, masterGain, freq, nextTimeA, noteDur, 0.4, liveReverbBuffer);
-      
       notesSinceModulation++;
-      nextTimeA += (1 / density);
+      
+      // v27 TIME JITTER
+      nextTimeA += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
   }
 
@@ -358,7 +361,7 @@
     masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
     
-    // Natural End: Long Fade
+    // Natural End
     masterGain.gain.exponentialRampToValueAtTime(0.001, now + 20.0);
 
     setTimeout(() => {
@@ -381,6 +384,10 @@
     notesSinceModulation = 0;
 
     isEndingNaturally = false; isApproachingEnd = false;
+    
+    // v27 RANDOM DENSITY GENERATOR
+    // This decides if the session is "Fast" or "Slow"
+    runDensity = 0.05 + Math.random() * 0.375;
 
     killImmediate();
     isPlaying = true;
@@ -408,8 +415,9 @@
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
     const baseFreq = parseFloat(document.getElementById("tone")?.value ?? "110");
-    const density = getDynamicDensity(elapsed);
-    const noteDur = (1 / density) * 2.5;
+    
+    // Use the CURRENT density from the live session
+    const noteDur = (1 / runDensity) * 2.5;
 
     let localCircle = circlePosition;
     let localMinor = isMinor;
@@ -444,15 +452,16 @@
 
        let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
        let localDur = noteDur;
+       let appliedDur = localDur;
 
        if (localIdx % 7 === 0 && Math.random() < 0.15) {
            freq = freq * 0.5;
-           localDur = 25.0;
+           appliedDur = 25.0; // Bass notes get long sustain
        }
 
-       scheduleNote(offlineCtx, offlineMaster, freq, localTime, localDur, 0.4, offlineReverbBuffer);
+       scheduleNote(offlineCtx, offlineMaster, freq, localTime, appliedDur, 0.4, offlineReverbBuffer);
        localModCount++;
-       localTime += (1 / density);
+       localTime += (1 / runDensity) * (0.95 + Math.random() * 0.1);
     }
 
     const renderedBuffer = await offlineCtx.startRendering();
@@ -461,7 +470,7 @@
     const a = document.createElement('a');
     a.style.display = 'none';
     a.href = url;
-    a.download = `open-final-v70_3-${Date.now()}.wav`;
+    a.download = `open-final-v73-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
