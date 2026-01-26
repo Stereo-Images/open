@@ -1,12 +1,12 @@
 # Open
 
-This piece began after I heard bells through an open window. There’s a cathedral not too far from where I used to live. The sound belonged in that room, and I felt its absence when I later moved. That memory became the wellspring for this piece.
+This piece began after I heard bells through an open window. There’s a cathedral not too far from where I used to live. The sound belonged in that room, and I felt its absence when I later moved. That memory inspired this piece.
 
-Instead of recording bells, I went in the opposite direction: a “window” that’s blank on purpose: a browser window. No particular scene, no particular place, just a clean space for sound to travel through. This music is my way of experiencing what can come through that digital window, and what I can build inside it.
+Instead of recording bells, I went in the opposite direction: a browser window. No particular scene, no particular place, just a sparse frame for sound to travel through. This music is my way of exploring what can come through that digital window, and what I can build inside it.
 
-The page makes low, synthetic bell tones. They are tuned to a clear musical grid, yet their internal harmonics are chaotic, creating a tension between the stability of the melody and the ambiguity of the bell itself* Each time it runs, it creates a different sequence of sounds. They are quiet and move slowly, drifting slightly over time so that nothing ever repeats exactly. Notes appear, fade out, and leave space.
+The page makes low, synthetic bell tones. They’re tuned to a clear set of notes, but their internal harmonics are messy, creating tension between a steady melody and an ambiguous bell. Each time it runs, it creates a different sequence of sounds. They are quiet and move slowly, drifting slightly over time so that nothing ever repeats exactly. Notes appear, fade out, and leave space.
 
-The pacing is slow. The sounds do not ask for your attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
+The pacing is slow. The sounds do not ask for your attention. They sit alongside and maybe enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
 
 The piece is meant to run quietly in the background with minimal fuss: no logins and no saved settings. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
 
