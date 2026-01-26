@@ -38,7 +38,6 @@
     let toneVal = 110;
     if (state?.tone != null) {
       const n = Number(state.tone);
-      // FIX: Clamp minimum to 55 Hz (A1)
       if (Number.isFinite(n)) toneVal = Math.max(55, Math.min(220, n));
     }
 
@@ -176,8 +175,8 @@
   
   let streamDest = null;
 
-  // CONSTANTS: v27 Intensity (High Return)
-  const REVERB_RETURN_LEVEL = 0.9; 
+  // CONSTANTS: SATURATED BUS (The Happy Medium)
+  const REVERB_RETURN_LEVEL = 1.1; 
 
   // Playback State
   let isPlaying = false;
@@ -212,7 +211,7 @@
 
   // --- HELPERS (Audio) ---
   function createImpulseResponse(ctx) {
-    // v27: Short (5s), fast decay (1.5)
+    // v27 Density: 5s, 1.5 decay
     const duration = 5.0; 
     const decay = 1.5; 
     const rate = ctx.sampleRate;
@@ -313,17 +312,17 @@
     streamDest = audioContext.createMediaStreamDestination();
     masterGain.connect(streamDest);
 
-    // v27: Instant Pre-Delay (0.01)
+    // THICKENER: 20ms Pre-Delay (Separation + Glue)
     reverbPreDelay = audioContext.createDelay(0.1);
-    reverbPreDelay.delayTime.value = 0.01; 
+    reverbPreDelay.delayTime.value = 0.02; 
 
     reverbNode = audioContext.createConvolver();
     reverbNode.buffer = createImpulseResponse(audioContext);
     
-    // v27: Bright / Open Filter (15kHz)
+    // OPEN AIR: 16.5kHz Lowpass (Shimmer without Aliasing)
     reverbLP = audioContext.createBiquadFilter();
     reverbLP.type = "lowpass";
-    reverbLP.frequency.value = 15000;
+    reverbLP.frequency.value = 16500;
     reverbLP.Q.value = 0.5;
 
     reverbSend = audioContext.createGain();
@@ -360,9 +359,9 @@
     setupKeyboardShortcuts();
   }
 
-  // --- UPGRADED: TIMBRE IDENTITY (v27 + Physics) ---
+  // --- IDENTITY: TRUE BELL PHYSICS ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tension = 0) {
-    // FIX 1: Restore density (2 or 3 voices)
+    // 2 or 3 voices for cluster density
     const numVoices = 2 + Math.floor(rand() * 2); 
     let totalAmp = 0;
     
@@ -377,11 +376,11 @@
           mRatio = FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)];
           mRatio += (rand() - 0.5) * ratioFuzz;
       } else {
-          // v27: Continuous 1.5 to 4.0 (The Bell)
+          // v27: Continuous 1.5 to 4.0
           mRatio = 1.5 + rand() * 2.5;
       }
 
-      // v27: High Index range (1-5)
+      // v27: High Index
       const mIndex = 1.0 + (tension * 2.0) + (rand() * 3.0);
       const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
       totalAmp += v.amp;
@@ -401,13 +400,12 @@
       carrier.frequency.value = freq + drift;
       modulator.frequency.value = freq * voice.modRatio;
       
-      // FIX 2: PHYSICS DECAY
-      // Brightness decays faster than volume (Bell physics)
+      // PHYSICS DECAY: Brightness fades before volume
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
       modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.7)); 
       
       ampGain.gain.setValueAtTime(0.0001, time);
-      // v27: 10ms Attack (Sharp Strike)
+      // v27: 10ms Attack
       const atk = isFractured ? 0.005 : 0.01;
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + atk);
       ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
@@ -515,16 +513,15 @@
       if (elapsed >= targetDuration) isApproachingEnd = true;
     }
     
-    // FIX: 55Hz safety floor
+    // 55 Hz safety floor
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(55, Math.min(220, baseFreq));
     
     const noteDur = (1 / runDensity) * 2.5;
 
-    // --- CONTINUOUS SPACE (Pre-Loop) ---
-    // Update space even when note loop isn't firing
-    // Skip during Shadow Arc to prevent fighting
+    // --- CONTINUOUS SPACE (Lazy Dynamics) ---
+    // 2.5s time constant = Breathing Room, not Compression
     if (reverbSend && arcPos !== arcClimaxAt - 1) {
         let tickPressure = Math.min(1.0, notesSinceModulation / 48.0);
         if (arcPos === arcClimaxAt) tickPressure *= 2.5;
@@ -536,13 +533,13 @@
         const normTension = clamp01(tension);
         const normPressure = clamp01(tickPressure);
 
-        // v27: 0.65 Baseline Send
+        // v27: 0.65 Baseline
         let targetSend = 0.65 - (0.25 * normDensity); 
         targetSend += (normTension * 0.55);
         targetSend -= (0.10 * normPressure);
         
         targetSend = Math.max(0, Math.min(0.95, targetSend));
-        reverbSend.gain.setTargetAtTime(targetSend, now, 0.6);
+        reverbSend.gain.setTargetAtTime(targetSend, now, 2.5); // LAZY RELEASE
     }
 
     while (nextTimeA < now + 0.5) {
@@ -579,17 +576,16 @@
       // --- THE SHADOW & THE EXHALE ---
       if (reverbSend && arcPos === arcClimaxAt - 1) {
           if (phraseStep === 13) {
-              // Vacuum: Slam shut
+              // Vacuum
               reverbSend.gain.cancelScheduledValues(nextTimeA);
               reverbSend.gain.setValueAtTime(reverbSend.gain.value, nextTimeA);
               reverbSend.gain.setTargetAtTime(0.0, nextTimeA, 0.02);
           } else if (phraseStep === 14) {
-              // Exhale: Gentle return (Account for Pressure)
+              // Exhale
               const normDensity = clamp01((runDensity - 0.05) / 0.375);
               const normTension = clamp01(tension);
               const normPressure = clamp01(pressure); 
               
-              // v27: 0.65 Baseline
               let base = 0.65 - (0.25 * normDensity) + (normTension * 0.55);
               base -= (0.10 * normPressure);
               base = Math.max(0, Math.min(0.95, base));
@@ -793,15 +789,15 @@
     
     // v27: 0.01 Pre
     const offlinePreDelay = offlineCtx.createDelay(0.1);
-    offlinePreDelay.delayTime.value = 0.01;
+    offlinePreDelay.delayTime.value = 0.02;
     
     const offlineReverb = offlineCtx.createConvolver(); 
     offlineReverb.buffer = createImpulseResponse(offlineCtx);
     
-    // v27: Open Filter
+    // Open Air: 16.5kHz
     const offlineReverbLP = offlineCtx.createBiquadFilter();
     offlineReverbLP.type = "lowpass";
-    offlineReverbLP.frequency.value = 15000;
+    offlineReverbLP.frequency.value = 16500;
     offlineReverbLP.Q.value = 0.5;
 
     const offlineSend = offlineCtx.createGain(); 
@@ -1080,7 +1076,7 @@
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v126-${Date.now()}.wav`;
+    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v128-${Date.now()}.wav`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
   }
