@@ -6,7 +6,7 @@
 
 Instead of recording bells, I went in the opposite direction: a browser window. No particular scene, no particular place, just a sparse frame for sound to travel through. This music is my way of exploring what can come through that digital window, and what I can build inside it.
 
-The piece makes low, synthetic bell tones. While they’re tuned to a clear set of notes, their internal harmonics are messy, creating tension between a steady melody and an ambiguous bell. Each time it runs, it creates a different sequence of sounds. They are quiet, move slowly, and do not repeat exactly. Notes appear, fade out, and leave space.
+The piece makes low, synthetic bell tones. While they’re tuned to a clear set of notes, their internal harmonics are messy, creating tension between a steady melody and an ambiguous bell. Every time it runs, it creates a different sequence of sounds. They are quiet, move slowly, and do not repeat exactly. Notes appear, fade out, and leave space.
 
 The sounds do not ask for your attention. They sit alongside and maybe enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
 
