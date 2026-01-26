@@ -15,7 +15,7 @@ The piece is meant to run quietly in the background with minimal fuss: no logins
 ### "Infinite" Mode and Structure
 When set to "Infinite," the piece creates a non-repeating journey using specific harmonic logic:
 
-* **Circle of Fifths:** The system navigates through related keys (e.g., C Major → G Major → E Minor), creating a procession through different harmonic colors.
+* **Circle of Fifths:** Moves by fifths through closely related keys, with intermittent toggles into the relative minor.
 * **Contour:** The melody is not random; it uses a constrained random walk. A "gravity" system pulls notes toward a central register, preventing the melody from drifting too high or too low while ensuring no two phrases are identical.
 * **Tension:** As the harmony moves away from the root, the bell timbre becomes brighter and the intervals more complex. When it resolves, the tone returns to a simpler, duller hum.
 
