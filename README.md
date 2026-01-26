@@ -16,7 +16,7 @@ The sounds do not ask for your attention. They sit alongside and maybe enhance w
 When set to "Infinite," the piece creates a non-repeating journey using specific harmonic logic:
 
 * **Circle of Fifths:** Slowly moves by fifths through closely related keys, with intermittent toggles into the relative minor.
-* **Contour:** The melody is not random; it uses a constrained random walk. A "gravity" system pulls notes toward a central register, preventing the melody from drifting too high or too low while ensuring no two phrases are identical.
+* **Contour:** The melody is not random; it uses a constrained random walk. A "gravity" system pulls notes toward a central register, preventing the melody from reaching too high or too low while ensuring no two phrases are identical.
 * **Tension:** As the harmony moves away from the root, the bell timbre becomes brighter and the intervals more complex. When it resolves, the tone returns to a simpler, duller hum.
 
 ### Technical Architecture
