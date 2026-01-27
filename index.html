@@ -1,51 +1,53 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Open</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <main>
+    <section id="launchOnly">
+      <div class="launch-actions">
+        <button type="button" id="launchPlayer" class="secondary-btn">Open</button>
+      </div>
+    </section>
 
-  <div id="landing-view" class="view-container">
-    <button id="enterBtn" class="clean-link">Open</button>
-  </div>
+    <h1 id="popoutTitle">Open</h1>
 
-  <div id="player-view" class="view-container hidden">
-    <div class="container">
-      <header>
-        <h1>Open</h1>
-      </header>
-
-      <main class="controls">
-        <div class="control-group">
-          <label for="tone">Tone <span id="hzReadout">110</span>Hz</label>
-          <input type="range" id="tone" min="100" max="250" value="110" step="1">
-        </div>
-
-        <div class="control-group">
-          <label for="songDuration">Duration</label>
-          <select id="songDuration">
-            <option value="60">1 Minute</option>
-            <option value="300">5 Minutes</option>
-            <option value="600">10 Minutes</option>
-            <option value="1800">30 Minutes</option>
-            <option value="infinite" selected>Infinite</option>
+    <section id="controls">
+      <form id="songForm">
+        <div class="form-group">
+          <label for="songDuration">Duration:</label>
+          <select id="songDuration" name="songDuration">
+            <option value="60" selected>1 minute</option>
+            <option value="300">5 minutes</option>
+            <option value="600">10 minutes</option>
+            <option value="1800">30 minutes</option>
+            <option value="infinite">Infinite</option>
           </select>
         </div>
 
-        <div class="buttons">
-          <button id="playNow">Play</button>
-          <button id="stop">Stop</button>
+        <div class="form-group">
+          <label for="tone">Root Tone: <span id="hzReadout">110</span> Hz</label>
+          <input type="range" id="tone" min="100" max="250" step="1" value="110" />
         </div>
-        
-        <div class="meta-controls">
-          <button id="record">Record</button>
+
+        <div class="form-actions">
+          <button type="button" id="playNow">Play</button>
+          <button type="button" id="stop">Stop</button>
         </div>
-      </main>
-    </div>
-  </div>
+      </form>
+    </section>
+
+    <hr class="separator" />
+
+    <footer id="credits">
+      <div class="credit-line">By Aaron Koppel</div>
+      <div class="credit-line">Stereo Images, 2026</div>
+    </footer>
+  </main>
 
   <script src="script.js"></script>
 </body>
