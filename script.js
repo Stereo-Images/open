@@ -501,7 +501,6 @@
       if (elapsed >= targetDuration) isApproachingEnd = true;
     }
     
-    // 55 Hz safety floor
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(55, Math.min(220, baseFreq));
@@ -520,7 +519,6 @@
         const normTension = clamp01(tension);
         const normPressure = clamp01(tickPressure);
 
-        // CATHEDRAL: 0.65 Baseline
         let targetSend = 0.65 - (0.25 * normDensity); 
         targetSend += (normTension * 0.55);
         targetSend -= (0.10 * normPressure);
@@ -563,12 +561,12 @@
       // --- THE SHADOW & THE EXHALE ---
       if (reverbSend && arcPos === arcClimaxAt - 1) {
           if (phraseStep === 13) {
-              // Vacuum: Slam shut
+              // Vacuum
               reverbSend.gain.cancelScheduledValues(nextTimeA);
               reverbSend.gain.setValueAtTime(reverbSend.gain.value, nextTimeA);
               reverbSend.gain.setTargetAtTime(0.0, nextTimeA, 0.02);
           } else if (phraseStep === 14) {
-              // Exhale: Gentle return (Account for Pressure)
+              // Exhale
               const normDensity = clamp01((runDensity - 0.05) / 0.375);
               const normTension = clamp01(tension);
               const normPressure = clamp01(pressure); 
@@ -658,15 +656,13 @@
           } else {
               const r = rand();
               let shift = 0;
-              // UPLIFTING CONTOUR BIAS
-              if (r < 0.50) shift = 1;         // 50% Up
-              else if (r < 0.82) shift = -1;   // 32% Down
-              else shift = chance(0.65) ? 2 : -2; // 18% Jump
+              if (r < 0.50) shift = 1;
+              else if (r < 0.82) shift = -1;
+              else shift = chance(0.65) ? 2 : -2;
               patternIdxA += shift;
           }
       }
       
-      // REGISTER GRAVITY (Center Anchor)
       if (!isCadence) {
           const anchor = 1; 
           const reg = Math.floor(patternIdxA / 7);
@@ -707,7 +703,6 @@
         scheduleBassPedal(audioContext, masterGain, reverbSend, pedalFreq, t0, pedalDur, 0.18);
       }
 
-      // Climax Double
       if (isCadence && arcPos === arcClimaxAt && phraseStep === 15) {
           scheduleNote(audioContext, masterGain, reverbSend, freq * 2.0, nextTimeA, appliedDur, 0.35, pressure, tension);
       }
@@ -720,30 +715,36 @@
     }
   }
 
+  function resetMusicalStateForPlay() {
+    patternIdxA = 0; circlePosition = 0; isMinor = false;
+    notesSinceModulation = 0; motifPos = 0; pendingLTResolution = false;
+    phraseStep = 0; phraseCount = 0;
+    arcLen = 6; arcPos = 0; arcClimaxAt = 4; tension = 0.0;
+    lastCadenceType = "none"; currentCadenceType = "none";
+    isEndingNaturally = false; isApproachingEnd = false;
+  }
+
   function startFromUI() {
+    // 1. If currently playing, stop seamlessly so we can restart
+    if (isPlaying) stopAllManual();
+
     initAudio();
     if (audioContext.state === "suspended") audioContext.resume?.();
 
-    if (!sessionSnapshot) {
-      const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
-      setSeed(seed);
-      runDensity = 0.05 + rand() * 0.375;
-      sessionMotif = generateSessionMotif();
-      sessionSnapshot = { seed, density: runDensity, motif: [...sessionMotif] };
-      motifPos = 0;
-    } else {
-      setSeed(sessionSnapshot.seed);
-      runDensity = sessionSnapshot.density;
-      sessionMotif = [...sessionSnapshot.motif];
-    }
+    // 2. ALWAYS generate a fresh seed (New Performance)
+    const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
+    setSeed(seed);
+    runDensity = 0.05 + rand() * 0.375;
+    sessionMotif = generateSessionMotif();
+    sessionSnapshot = { seed, density: runDensity, motif: [...sessionMotif] };
+    motifPos = 0;
+
+    resetMusicalStateForPlay();
 
     isPlaying = true;
-    isEndingNaturally = false;
-    isApproachingEnd = false;
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
-    phraseStep = 0;
-    notesSinceModulation = 0;
+
     setButtonState("playing");
 
     if (timerInterval) clearInterval(timerInterval);
@@ -802,6 +803,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
+    // FIXED: Variables initialized to match Live State at Time 0
     let localPhraseCount = 0;
     let localArcLen = 6;
     let localArcPos = 0;
@@ -816,10 +818,10 @@
       localArcPos = 0;
       localTension = Math.max(0, Math.min(1, localTension * 0.4 + 0.05));
     }
-    localStartNewArc(); 
+    // FIXED: Do NOT call localStartNewArc() here. Live waits until phraseStep wraps.
 
     const exportDensity = sessionSnapshot.density; 
-    const dummyMotif = generateSessionMotif(); 
+    // FIXED: Removed dummyMotif to prevent RNG drift
     const localMotif = [...sessionSnapshot.motif]; 
 
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
@@ -828,14 +830,14 @@
 
     const noteDur = (1 / exportDensity) * 2.5;
     let localCircle = 0; let localMinor = false; let localIdx = 0;
-    let localTime = 0; let localModCount = 0; let localPhraseStep = 15;
+    let localTime = 0; let localModCount = 0; 
+    let localPhraseStep = 0; // FIXED: Start at 0 to match Live
     let localMotifPos = 0; let localPendingLT = false;
     
     function localCadenceRepeatPenalty(type){ if (type !== localLastCadence) return 0.0; if (type === "authentic") return 0.30; return 0.18; }
     function localPickCadenceType(){
       const nearClimax = (localArcPos === localArcClimaxAt); const lateArc = (localArcPos >= localArcLen - 2);
       let w = { evaded:0.20, half:0.28, plagal:0.12, deceptive:0.18, authentic:0.22 };
-      
       if (localArcPos < localArcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
       w.authentic += localTension * 0.25; w.deceptive += localTension * 0.10; w.evaded -= localTension * 0.18; w.half -= localTension * 0.08;
       if (nearClimax) { w.authentic+=0.25; w.deceptive+=0.10; w.evaded-=0.20; w.half-=0.10; }
@@ -1047,7 +1049,7 @@
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v138-${Date.now()}.wav`;
+    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v140-${Date.now()}.wav`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
   }
@@ -1080,15 +1082,12 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
-    // 1. ALWAYS Bind controls if they exist (Desktop / Mobile Main)
-    // This fixes the "buttons don't work on desktop" issue
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     
     if (playBtn) playBtn.addEventListener("click", startFromUI);
     if (stopBtn) stopBtn.addEventListener("click", stopAllManual);
 
-    // 2. Load State & Set UI
     applyControls(loadState());
     
     document.getElementById("tone")?.addEventListener("input", (e) => {
@@ -1099,13 +1098,11 @@
     const recBtn = document.getElementById("record");
     if (recBtn) recBtn.onclick = toggleRecording;
 
-    // 3. Handle Popout Logic
     if (isPopoutMode()) {
       document.body.classList.add("popout");
       setButtonState("stopped");
     }
 
-    // 4. Handle Launch Logic
     document.getElementById("launchPlayer")?.addEventListener("click", () => {
       if (!isPopoutMode() && isMobileDevice()) {
         document.body.classList.add("mobile-player");
