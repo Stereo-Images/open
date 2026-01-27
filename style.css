@@ -1,192 +1,130 @@
-/* style.css — Open (v17 Pro) Final Parity + Tighter Footer */
-
-* { box-sizing: border-box; }
+:root {
+  --bg-color: #ffffff;
+  --text-color: #111111;
+  --accent-color: #333333;
+  --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
 
 body {
   margin: 0;
   padding: 0;
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  background-color: #fff;
-  color: #000;
-  overflow-x: hidden;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: var(--font-family);
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
 }
 
-main {
-  max-width: 520px;
-  margin: 15vh auto;
-  padding: 0 2rem;
-}
-
-/* =========================
-   TEXT PARITY: TITLE & HERO BUTTON
-   ========================= */
-#popoutTitle, .secondary-btn {
-  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-  text-transform: uppercase;
-  font-weight: normal;
-  
-  font-size: 1.5rem;         
-  letter-spacing: 1.8rem;    
-  text-indent: 1.8rem;
-  line-height: 1.2;
-}
-
-#popoutTitle {
-  display: none;
-  border-bottom: 1px solid #000;
-  padding-bottom: 1.5rem;
-  margin: 0 0 2rem 0;
+.container {
   text-align: center;
-  user-select: none;
-}
-
-/* =========================
-   MAIN PAGE HERO BUTTON
-   ========================= */
-.secondary-btn {
-  background-color: #fff !important;
-  color: #000 !important;
-  border: 1px solid #000;
-  padding: 2rem 0;
   width: 100%;
-  display: block;
-  text-align: center;
-  cursor: pointer;
-  transition: background-color 0.1s ease, color 0.1s ease;
+  max-width: 320px;
+  padding: 20px;
 }
 
-.secondary-btn:hover {
-  background-color: #000 !important;
-  color: #fff !important;
+h1 {
+  font-weight: 400;
+  letter-spacing: -0.5px;
+  margin-bottom: 40px;
+  font-size: 24px;
 }
 
-/* =========================
-   FIX: VISIBLE SLIDER
-   ========================= */
-input[type="range"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 50%;
-  height: 2px;
-  background: #000; 
-  outline: none;
-  margin: 0;
-  padding: 0;
-  cursor: pointer;
+.controls {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
-input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 12px;
-  height: 12px;
-  background: #000;
-  cursor: pointer;
-  border: none;
+.control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+  font-size: 14px;
+  color: #666;
 }
 
-input[type="range"]::-moz-range-thumb {
-  width: 12px;
-  height: 12px;
-  background: #000;
-  cursor: pointer;
-  border: none;
-}
-
-/* =========================
-   PIXEL ANCHOR (Wake Lock)
-   ========================= */
-video {
-  pointer-events: none;
-  position: fixed;
-  bottom: 0;
-  right: 0;
-  width: 1px;
-  height: 1px;
-  opacity: 0.01;
-  z-index: -1;
-}
-
-/* =========================
-   PLAYER UI ELEMENTS
-   ========================= */
-.form-group {
+label {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 1.5rem;
 }
 
-input, select, button {
-  background-color: #fff !important;
-  color: #000 !important;
-  border: 1px solid #000;
-  padding: 0.5rem;
+input[type="range"] {
+  width: 100%;
+  cursor: pointer;
+}
+
+select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
   font-family: inherit;
-  font-size: 1rem;
-  border-radius: 0;
-  outline: none;
+  font-size: 14px;
+  cursor: pointer;
 }
 
-.form-actions {
+.buttons {
   display: flex;
-  gap: 1rem;
-  margin-top: 2rem;
+  gap: 10px;
+  margin-top: 10px;
 }
 
-/* PLAYER BUTTONS */
 button {
   flex: 1;
+  padding: 12px;
+  border: 1px solid #111;
+  background: transparent;
+  color: #111;
+  font-family: inherit;
+  font-size: 14px;
   cursor: pointer;
-  text-transform: uppercase;
-  font-weight: normal;
-  letter-spacing: 0.2rem;
-  text-indent: 0.2rem;
-  transition: background-color 0.1s ease, color 0.1s ease;
+  transition: all 0.2s ease;
+  border-radius: 4px;
+}
+
+button:hover {
+  background: #f5f5f5;
+}
+
+button:active {
+  transform: translateY(1px);
 }
 
 button.filled {
-  background-color: #000 !important;
-  color: #fff !important;
+  background: #111;
+  color: white;
 }
 
-/* =========================
-   FOOTER & SEPARATOR
-   ========================= */
-.separator {
-  margin-top: 2rem; 
-  border: 0;
-  border-top: 1px solid #000;
+.meta-controls {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  opacity: 0.5;
+  transition: opacity 0.2s;
 }
 
-#credits {
-  margin-top: 1rem; 
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  opacity: 0.75;
+.meta-controls:hover {
+  opacity: 1;
 }
 
-/* =========================
-   MODE SWITCHING
-   ========================= */
-/* Hide player controls by default */
-#controls, #credits, .separator, #popoutTitle { 
-  display: none; 
+.meta-controls button {
+  font-size: 12px;
+  padding: 8px;
+  border-color: #ccc;
+  color: #666;
 }
 
-/* Show player controls in popout/mobile mode */
-body.popout #controls, body.popout #credits, body.popout .separator, body.popout #popoutTitle,
-body.mobile-player #controls, body.mobile-player #credits, body.mobile-player .separator, body.mobile-player #popoutTitle {
-  display: block;
-}
-
-/* Hide launch button in popout/mobile mode */
-body.popout #launchOnly, body.mobile-player #launchOnly {
+/* Popout Mode Styles */
+body.popout .meta-controls #launchPlayer {
   display: none;
 }
 
-/* Tighter margins for popout window */
-body.popout main {
-  margin: 2rem auto;
-  max-width: 460px;
+body.popout {
+  align-items: flex-start;
+  padding-top: 40px;
 }
