@@ -51,8 +51,12 @@
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
 
-    if (playBtn) playBtn.classList.toggle("filled", state === "playing");
-    if (stopBtn) stopBtn.classList.toggle("filled", state !== "playing");
+    // "Filled" indicates the PRIMARY ACTION to take.
+    // If Playing: Primary action is STOP.
+    // If Stopped: Primary action is PLAY.
+    if (playBtn) playBtn.classList.toggle("filled", state !== "playing");
+    if (stopBtn) stopBtn.classList.toggle("filled", state === "playing");
+    
     if (toneInput) toneInput.disabled = (state === "playing");
   }
 
@@ -616,17 +620,12 @@
     initAudio();
     if (audioContext.state === "suspended") audioContext.resume?.();
 
-    if (!sessionSnapshot) {
-      const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
-      setSeed(seed);
-      runDensity = 0.05 + rand() * 0.375;
-      sessionMotif = generateSessionMotif();
-      sessionSnapshot = { seed, density: runDensity, motif: [...sessionMotif] };
-    } else {
-      setSeed(sessionSnapshot.seed);
-      runDensity = sessionSnapshot.density;
-      sessionMotif = [...sessionSnapshot.motif];
-    }
+    // ALWAYS generate a fresh run for a new "session"
+    const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
+    setSeed(seed);
+    runDensity = 0.05 + rand() * 0.375;
+    sessionMotif = generateSessionMotif();
+    sessionSnapshot = { seed, density: runDensity, motif: [...sessionMotif] };
 
     resetMusicalStateForPlay();
     isPlaying = true;
@@ -918,7 +917,7 @@
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v140-${Date.now()}.wav`;
+    const a = document.createElement('a'); a.style.display = 'none'; a.href = url; a.download = `open-final-v141-${Date.now()}.wav`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
   }
