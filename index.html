@@ -8,20 +8,18 @@
 </head>
 <body>
   <main>
-    <!-- HOME (default): launch-only UI -->
+    <!-- LANDING: launch-only UI -->
     <section id="launchOnly">
       <div class="launch-actions">
-        <button type="button" id="launchPlayer" class="secondary-btn" aria-label="Open player">
-          Open
-        </button>
+        <button type="button" id="launchPlayer" class="secondary-btn">Open</button>
       </div>
     </section>
 
-    <!-- PLAYER (popout/mobile): title -->
+    <!-- POPOUT / MOBILE PLAYER TITLE -->
     <h1 id="popoutTitle">Open</h1>
 
-    <!-- PLAYER (popout/mobile): controls -->
-    <section id="controls" aria-label="Player controls">
+    <!-- PLAYER CONTROLS (hidden unless popout/mobile-player) -->
+    <section id="controls" aria-label="Open player controls">
       <form id="songForm">
         <div class="form-group">
           <label for="songDuration">Duration:</label>
