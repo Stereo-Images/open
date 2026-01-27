@@ -3,59 +3,52 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Open</title>
+  <title>OPEN</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <main>
-    <!-- MAIN TAB: launch-only UI -->
-    <section id="launchOnly">
-      <div class="launch-actions">
-        <button type="button" id="launchPlayer" class="secondary-btn filled">Open</button>
-      </div>
-      <p class="hint">
-        Desktop: opens a popout player.<br/>
-        Mobile: opens the player in-page.
-      </p>
-    </section>
+    <h1 class="main-title">O P E N</h1>
+    <hr class="divider" />
 
-    <!-- POPOUT / PLAYER TITLE -->
-    <h1 id="popoutTitle">Open</h1>
-
-    <!-- PLAYER CONTROLS -->
     <section id="controls">
       <form id="songForm" autocomplete="off">
-        <div class="form-group">
-          <label for="songDuration">Duration</label>
+        
+        <div class="control-row">
+          <label for="songDuration">Duration:</label>
           <select id="songDuration" name="songDuration">
-            <option value="60">1 min</option>
-            <option value="300">5 min</option>
-            <option value="600">10 min</option>
-            <option value="1800">30 min</option>
+            <option value="60">1 minute</option>
+            <option value="300">5 minutes</option>
+            <option value="600">10 minutes</option>
+            <option value="1800">30 minutes</option>
             <option value="infinite">Infinite</option>
           </select>
         </div>
 
-        <div class="form-group">
-          <label for="tone">Tone (Hz)</label>
-          <div class="tone-row">
-            <input id="tone" type="range" min="100" max="250" step="1" value="110" />
-            <div class="readout"><span id="hzReadout">110</span> Hz</div>
-          </div>
+        <div class="control-row">
+          <label for="tone">Root Tone: <span id="hzReadout">110</span> Hz</label>
+          <input id="tone" type="range" min="100" max="250" step="1" value="110" />
         </div>
 
         <div class="actions">
-          <button type="button" id="playNow" class="primary-btn filled">Play</button>
-          <button type="button" id="stop" class="secondary-btn">Stop</button>
-          <button type="button" id="exportWav" class="secondary-btn">Export WAV</button>
+          <button type="button" id="playNow" class="btn play-btn">PLAY</button>
+          <button type="button" id="stop" class="btn stop-btn">STOP</button>
         </div>
 
-        <div class="hotkeys">
-          <div><strong>Hotkeys:</strong> <kbd>R</kbd> = start/stop live recording (WebM), <kbd>Space</kbd> = play/stop</div>
-          <div id="recordStatus" class="record-status">Recording: off</div>
+        <div style="display:none;">
+           <button type="button" id="exportWav">Export</button>
+           <button type="button" id="launchPlayer">Launch</button>
         </div>
+
       </form>
     </section>
+
+    <hr class="divider" />
+
+    <footer class="footer-text">
+      BY AARON KOPPEL<br/>
+      STEREO IMAGES, 2026
+    </footer>
   </main>
 
   <script src="script.js"></script>
