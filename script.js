@@ -849,6 +849,58 @@
   // =========================
   // WAV EXPORT (Offline Render)
   // =========================
+  function audioBufferToWavBlob(buffer) {
+    // 16-bit PCM WAV
+    const numCh = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const length = buffer.length;
+
+    const bytesPerSample = 2;
+    const blockAlign = numCh * bytesPerSample;
+    const byteRate = sampleRate * blockAlign;
+    const dataSize = length * blockAlign;
+
+    const buf = new ArrayBuffer(44 + dataSize);
+    const view = new DataView(buf);
+
+    function writeString(off, s) {
+      for (let i = 0; i < s.length; i++) view.setUint8(off + i, s.charCodeAt(i));
+    }
+
+    let off = 0;
+    writeString(off, "RIFF"); off += 4;
+    view.setUint32(off, 36 + dataSize, true); off += 4;
+    writeString(off, "WAVE"); off += 4;
+
+    writeString(off, "fmt "); off += 4;
+    view.setUint32(off, 16, true); off += 4;              // PCM chunk size
+    view.setUint16(off, 1, true); off += 2;               // PCM
+    view.setUint16(off, numCh, true); off += 2;
+    view.setUint32(off, sampleRate, true); off += 4;
+    view.setUint32(off, byteRate, true); off += 4;
+    view.setUint16(off, blockAlign, true); off += 2;
+    view.setUint16(off, 16, true); off += 2;              // bits
+
+    writeString(off, "data"); off += 4;
+    view.setUint32(off, dataSize, true); off += 4;
+
+    // Interleave + clamp
+    const chans = [];
+    for (let c = 0; c < numCh; c++) chans.push(buffer.getChannelData(c));
+
+    let idx = 0;
+    for (let i = 0; i < length; i++) {
+      for (let c = 0; c < numCh; c++) {
+        let s = chans[c][i];
+        s = Math.max(-1, Math.min(1, s));
+        view.setInt16(44 + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        idx += 2;
+      }
+    }
+
+    return new Blob([buf], { type: "audio/wav" });
+  }
+
   async function renderWavExport() {
     if (!audioContext) { alert("Press Play once first."); return; }
     if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
@@ -899,10 +951,10 @@
 
     const noteDur = (1 / exportDensity) * 2.5;
 
+    // Local musical state
     let localCircle = 0;
     let localMinor = false;
     let localIdx = 0;
-    let localTime = 0;
     let localModCount = 0;
 
     let localArcLen = 6;
@@ -920,7 +972,7 @@
       localArcLen = 4 + Math.floor(rand() * 5);
       localArcClimaxAt = Math.max(2, localArcLen - 2 - Math.floor(rand() * 2));
       localArcPos = 0;
-      localTension = Math.max(0, Math.min(1, localTension * 0.4 + 0.05));
+      localTension = clamp01(localTension * 0.4 + 0.05);
     }
     localStartNewArc();
 
@@ -943,7 +995,6 @@
       if (localMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
 
       for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - localCadenceRepeatPenalty(k));
-
       const keys = Object.keys(w);
       const sum = keys.reduce((a,k)=>a+w[k],0);
       let r = rand() * sum;
@@ -962,8 +1013,8 @@
       }
     }
 
-    function localUpdateHarmonyState(durationInput) {
-      const r0 = rand();
+    function localUpdateHarmonyState(isApproachingEnd){
+      const r = rand();
       let pressure = Math.min(1.0, localModCount / 48.0);
       if (localArcPos === localArcClimaxAt) pressure *= 2.5;
       if (localArcPos <= 1) pressure *= 0.2;
@@ -971,14 +1022,17 @@
       pressure = Math.min(1.0, pressure);
 
       const modChance = pressure * 0.35;
-      if (r0 < modChance) {
+      if (r < modChance) {
         if (localArcPos === localArcClimaxAt && chance(0.6)) {
           if (!localMinor) localMinor = true;
           else localCircle += (chance(0.5) ? 1 : -1);
+        } else if (isApproachingEnd) {
+          if (localCircle > 0) localCircle--;
+          else if (localCircle < 0) localCircle++;
+          else if (localMinor && chance(0.6)) localMinor = false;
         } else {
-          const isJourneyMode = (durationInput === "infinite");
           const dist = Math.abs(localCircle);
-          if (!isJourneyMode && dist > 3 && chance(0.8)) {
+          if (dist > 3 && chance(0.6)) {
             localCircle += (localCircle > 0 ? -1 : 1);
           } else {
             if (chance(0.3)) localMinor = !localMinor;
@@ -989,39 +1043,16 @@
       }
     }
 
-    function getScaleNoteLocal(base, idx, circlePos, minorMode, opts = {}) {
-      let pos = circlePos % 12; if (pos < 0) pos += 12;
-      const semitones = (pos * 7) % 12;
-      let rootOffset = semitones;
-      if (minorMode) rootOffset = (semitones + 9) % 12;
+    // Render loop
+    let t = 0;
+    let localTime = 0;
+    let isApproachingEnd = false;
+    let isEnded = false;
 
-      const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
-      const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
+    while (t < exportDuration && !isEnded) {
+      if (durationInput !== "infinite" && t >= exportDuration) isApproachingEnd = true;
 
-      const len = 7;
-      const octave = Math.floor(idx / len);
-      const degree = ((idx % len) + len) % len;
-
-      let intervals = minorMode ? minorIntervals : majorIntervals;
-      if (minorMode && opts.raiseLeadingTone && degree === 6) {
-        intervals = minorIntervals.slice();
-        intervals[6] = 11;
-      }
-
-      const noteValue = rootOffset + intervals[degree] + (octave * 12);
-      return base * Math.pow(2, noteValue / 12);
-    }
-
-    function clampIdx(i){ return Math.max(-4, Math.min(10, i)); }
-
-    // Render loop (phrase logic mirrors live scheduler)
-    const durationInput = document.getElementById("songDuration")?.value ?? "60";
-
-    while (localTime < exportDuration) {
-      let appliedDur = noteDur;
-      let clearPendingAfter = false;
-
-      // phrase + arc
+      // mimic phrase steps
       localPhraseStep = (localPhraseStep + 1) % 16;
       if (localPhraseStep === 0) {
         localPendingLT = false;
@@ -1032,18 +1063,16 @@
 
       const isCadence = (localPhraseStep >= 13);
 
-      // harmony drift
-      localUpdateHarmonyState(durationInput);
-
-      // very rough “pressure” proxy for export-only timbral variation
       let pressure = Math.min(1.0, localModCount / 48.0);
       if (localArcPos === localArcClimaxAt) pressure *= 2.5;
       if (localArcPos <= 1) pressure *= 0.2;
       if (localTension > 0.6) pressure *= 1.5;
       pressure = Math.min(1.0, pressure);
 
-      // send level (approx; export scheduler is not time-sliced like live)
-      if (offlineSend) {
+      localUpdateHarmonyState(isApproachingEnd);
+
+      // reverb send automation (approx)
+      if (offlineSend && localArcPos !== localArcClimaxAt - 1) {
         const normDensity = clamp01((exportDensity - 0.05) / 0.375);
         const normTension = clamp01(localTension);
         const normPressure = clamp01(pressure);
@@ -1052,10 +1081,11 @@
         targetSend += (normTension * 0.55);
         targetSend -= (0.10 * normPressure);
         targetSend = Math.max(0, Math.min(0.95, targetSend));
-        offlineSend.gain.setTargetAtTime(targetSend, localTime, 2.5);
+
+        offlineSend.gain.setTargetAtTime(targetSend, t, 2.5);
       }
 
-      // cadence steering
+      // cadence logic (simplified mirror of live)
       if (isCadence) {
         const targets = [0, 2, 4];
         const currentOctave = Math.floor(localIdx / 7) * 7;
@@ -1065,9 +1095,8 @@
         let best = targets[0];
         let bestD = circDist(deg, best);
         for (let i = 1; i < targets.length; i++) {
-          const t = targets[i];
-          const d = circDist(deg, t);
-          if (d < bestD || (d === bestD && chance(0.5))) { best = t; bestD = d; }
+          const d = circDist(deg, targets[i]);
+          if (d < bestD || (d === bestD && chance(0.5))) { best = targets[i]; bestD = d; }
         }
 
         const landProb = (localPhraseStep >= 15) ? 0.85 : 0.55;
@@ -1136,10 +1165,9 @@
           else if (ct === "authentic") localTension = clamp01(localTension - 0.22);
 
           localLastCadence = ct;
-          clearPendingAfter = true;
+          localPendingLT = false;
         }
       } else {
-        // motif vs random walk
         const useMotif = chance(0.25);
         if (useMotif && localMotif.length > 0) {
           const motifInterval = localMotif[localMotifPos];
@@ -1156,37 +1184,37 @@
         }
       }
 
-      // register gravity + clamp
-      if (!isCadence) {
-        const anchor = 1;
-        const reg = Math.floor(localIdx / 7);
-        if (reg < anchor && chance(0.22)) localIdx += 1;
-        else if (reg > anchor && chance(0.22)) localIdx -= 1;
-      }
-      localIdx = clampIdx(localIdx);
+      // clamp register
+      if (localIdx > 10) localIdx = 10;
+      if (localIdx < -4) localIdx = -4;
 
-      // leading tone raising when needed
       const degNow = ((localIdx - Math.floor(localIdx / 7) * 7) % 7 + 7) % 7;
       const wantLT = localCadenceTargets(localCadenceType).wantLT;
       const raiseLT = isCadence && wantLT && degNow === 6 && (localPhraseStep === 13 || localPhraseStep === 14 || localPendingLT);
 
-      const freq = getScaleNoteLocal(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
+      const freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
 
-      // schedule note (plus optional shimmer)
-      scheduleNote(offlineCtx, offlineMaster, offlineSend, freq, localTime, appliedDur, 0.4, pressure, localTension);
+      // schedule note
+      const appliedDur = noteDur * (chance(localPhraseStep === 15 ? 0.85 : 0.15) ? (1.20 + rand() * 0.20) : 1.0);
+      scheduleNote(offlineCtx, offlineMaster, offlineSend, freq, t, appliedDur, 0.4, pressure, localTension);
 
+      // octave shimmer at climax cadence end
       if (isCadence && localArcPos === localArcClimaxAt && localPhraseStep === 15) {
-        scheduleNote(offlineCtx, offlineMaster, offlineSend, freq * 2.0, localTime, appliedDur, 0.35, pressure, localTension);
+        scheduleNote(offlineCtx, offlineMaster, offlineSend, freq * 2.0, t, appliedDur, 0.35, pressure, localTension);
+      }
+
+      // natural end attempt (export): if we reach near end, bias to tonic and stop
+      if ((t > exportDuration - 5) && (localIdx % 7 === 0) && chance(0.35)) {
+        isEnded = true;
       }
 
       localModCount++;
-      if (clearPendingAfter) localPendingLT = false;
-
-      localTime += (1 / exportDensity) * (0.95 + rand() * 0.1);
+      t += (1 / exportDensity) * (0.95 + rand() * 0.1);
+      localTime = t;
     }
 
     const rendered = await offlineCtx.startRendering();
-    const wavBlob = bufferToWavBlob(rendered);
+    const wavBlob = audioBufferToWavBlob(rendered);
     const url = URL.createObjectURL(wavBlob);
 
     const a = document.createElement("a");
@@ -1197,111 +1225,92 @@
     setTimeout(() => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
-    }, 100);
-  }
-
-  // --- WAV helper ---
-  function bufferToWavBlob(buffer) {
-    const numChannels = buffer.numberOfChannels;
-    const sampleRate = buffer.sampleRate;
-    const length = buffer.length;
-    const bytesPerSample = 2;
-    const blockAlign = numChannels * bytesPerSample;
-    const byteRate = sampleRate * blockAlign;
-    const dataSize = length * blockAlign;
-    const bufferSize = 44 + dataSize;
-
-    const ab = new ArrayBuffer(bufferSize);
-    const view = new DataView(ab);
-
-    function writeString(offset, str) {
-      for (let i = 0; i < str.length; i++) view.setUint8(offset + i, str.charCodeAt(i));
-    }
-
-    let offset = 0;
-    writeString(offset, "RIFF"); offset += 4;
-    view.setUint32(offset, 36 + dataSize, true); offset += 4;
-    writeString(offset, "WAVE"); offset += 4;
-
-    writeString(offset, "fmt "); offset += 4;
-    view.setUint32(offset, 16, true); offset += 4;          // PCM chunk size
-    view.setUint16(offset, 1, true); offset += 2;           // PCM format
-    view.setUint16(offset, numChannels, true); offset += 2;
-    view.setUint32(offset, sampleRate, true); offset += 4;
-    view.setUint32(offset, byteRate, true); offset += 4;
-    view.setUint16(offset, blockAlign, true); offset += 2;
-    view.setUint16(offset, 16, true); offset += 2;          // bits per sample
-
-    writeString(offset, "data"); offset += 4;
-    view.setUint32(offset, dataSize, true); offset += 4;
-
-    // interleave
-    const channels = [];
-    for (let ch = 0; ch < numChannels; ch++) channels.push(buffer.getChannelData(ch));
-
-    let idx = 0;
-    for (let i = 0; i < length; i++) {
-      for (let ch = 0; ch < numChannels; ch++) {
-        let s = channels[ch][i];
-        s = Math.max(-1, Math.min(1, s));
-        view.setInt16(offset + idx, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-        idx += 2;
-      }
-    }
-
-    return new Blob([ab], { type: "audio/wav" });
+    }, 250);
   }
 
   // =========================
-  // UI HOOKUP
+  // HOTKEYS & UI WIRING
   // =========================
-  function bindUI() {
+  function onKeyDown(e) {
+    if (e.repeat) return;
+
+    // Don’t steal keys while typing
+    const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
+    const isTyping = (tag === "input" || tag === "textarea" || tag === "select" || e.target?.isContentEditable);
+    if (isTyping) return;
+
+    // R toggles recording (WebM/Opus)
+    if (e.key === "r" || e.key === "R") {
+      e.preventDefault();
+      toggleRecording();
+      return;
+    }
+
+    // E exports WAV (offline render)
+    if (e.key === "e" || e.key === "E") {
+      e.preventDefault();
+      renderWavExport();
+      return;
+    }
+
+    // Space toggles play/stop
+    if (e.code === "Space") {
+      e.preventDefault();
+      if (isPlaying) stopAllManual();
+      else startFromUI();
+    }
+  }
+
+  function wireUI() {
     applyModeClasses();
 
-    // Restore saved control values (if any)
-    const saved = loadState();
-    if (saved) applyControls(saved);
-
-    // Persist on changes
-    const tone = document.getElementById("tone");
-    const sd = document.getElementById("songDuration");
-    const hzReadout = document.getElementById("hzReadout");
-
-    if (tone) {
-      tone.addEventListener("input", () => {
-        if (hzReadout) hzReadout.textContent = String(tone.value);
-        saveState(readControls());
-      });
-      tone.addEventListener("change", () => saveState(readControls()));
-    }
-
-    if (sd) sd.addEventListener("change", () => saveState(readControls()));
-
-    // Buttons
-    document.getElementById("launchPlayer")?.addEventListener("click", launchPlayer);
-    document.getElementById("playNow")?.addEventListener("click", startFromUI);
-    document.getElementById("stop")?.addEventListener("click", stopAllManual);
-    document.getElementById("exportWav")?.addEventListener("click", renderWavExport);
-
-    // Hotkey: R toggles recording (WebM/Opus)
-    window.addEventListener("keydown", (e) => {
-      if (e.repeat) return;
-      const tag = (e.target && (e.target.tagName || "")).toLowerCase();
-      const typing = tag === "input" || tag === "textarea" || e.target?.isContentEditable;
-      if (typing) return;
-
-      if (e.key === "r" || e.key === "R") {
-        e.preventDefault();
-        initAudio();
-        if (audioContext?.state === "suspended") audioContext.resume?.();
-        toggleRecording();
-      }
+    // Landing launch button
+    document.getElementById("launchPlayer")?.addEventListener("click", () => {
+      launchPlayer();
     });
+
+    // Player controls
+    document.getElementById("playNow")?.addEventListener("click", () => {
+      if (isPlaying) return;
+      startFromUI();
+    });
+
+    document.getElementById("stop")?.addEventListener("click", () => {
+      if (!isPlaying && !isEndingNaturally) return;
+      stopAllManual();
+    });
+
+    // optional export button if you have it in HTML
+    document.getElementById("exportWav")?.addEventListener("click", () => {
+      renderWavExport();
+    });
+
+    // Tone slider readout + persist
+    document.getElementById("tone")?.addEventListener("input", () => {
+      const hzReadout = document.getElementById("hzReadout");
+      const v = document.getElementById("tone")?.value ?? "110";
+      if (hzReadout) hzReadout.textContent = String(v);
+      saveState({ ...(loadState() || {}), ...readControls() });
+    });
+
+    document.getElementById("songDuration")?.addEventListener("change", () => {
+      saveState({ ...(loadState() || {}), ...readControls() });
+    });
+
+    // Restore saved state
+    const st = loadState();
+    applyControls(st);
+
+    // Global hotkeys
+    window.addEventListener("keydown", onKeyDown);
+
+    // If we arrive in popout, ensure correct button state
+    setButtonState("stopped");
   }
 
   if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", bindUI);
+    document.addEventListener("DOMContentLoaded", wireUI);
   } else {
-    bindUI();
+    wireUI();
   }
 })();
