@@ -38,7 +38,6 @@
     let toneVal = 110;
     if (state?.tone != null) {
       const n = Number(state.tone);
-      // UPDATED: 100-250 range
       if (Number.isFinite(n)) toneVal = Math.max(100, Math.min(250, n));
     }
 
@@ -46,12 +45,13 @@
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
 
-  // UPDATED: Logic inverted. Stop is filled when playing. Play is filled when stopped.
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
 
+    // "Stop" is filled when playing (active state)
+    // "Play" is filled when stopped (call to action)
     if (playBtn) playBtn.classList.toggle("filled", state !== "playing");
     if (stopBtn) stopBtn.classList.toggle("filled", state === "playing");
     if (toneInput) toneInput.disabled = (state === "playing");
@@ -750,6 +750,13 @@
     initAudio();
     if (audioContext.state === "suspended") audioContext.resume?.();
 
+    // UPDATED: Gain Reset Logic
+    if (masterGain && audioContext) {
+      const t = audioContext.currentTime;
+      masterGain.gain.cancelScheduledValues(t);
+      masterGain.gain.setValueAtTime(0.3, t);
+    }
+
     // UPDATED: ALWAYS New Seed on Play
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
     setSeed(seed);
@@ -771,6 +778,7 @@
     timerInterval = setInterval(scheduler, 50);
   }
 
+  // UPDATED: Only fades down, does NOT schedule fade up
   function stopAllManual() {
     isPlaying = false;
     isEndingNaturally = false;
@@ -780,7 +788,6 @@
       const t = audioContext.currentTime;
       masterGain.gain.cancelScheduledValues(t);
       masterGain.gain.setTargetAtTime(0.0001, t, 0.02);
-      masterGain.gain.setTargetAtTime(0.3, t + 0.05, 0.05); 
     }
     setButtonState("stopped");
   }
