@@ -41,13 +41,12 @@ main {
 }
 
 /* =========================
-   MAIN PAGE HERO BUTTON
+   MAIN PAGE HERO BUTTON (Open)
    ========================= */
 .secondary-btn {
-  /* UPDATED: Black background, White text by default */
-  background-color: #000 !important;
-  color: #fff !important;
-  
+  /* Default: White Background, Black Text */
+  background-color: #fff !important;
+  color: #000 !important;
   border: 1px solid #000;
   padding: 2rem 0;
   width: 100%;
@@ -57,11 +56,11 @@ main {
   transition: background-color 0.1s ease, color 0.1s ease;
 }
 
-/* UPDATED: Turns White background, Black text when pressed or hovered */
-.secondary-btn:hover, 
+/* Active/Hover: Black Background, White Text */
+.secondary-btn:hover,
 .secondary-btn:active {
-  background-color: #fff !important;
-  color: #000 !important;
+  background-color: #000 !important;
+  color: #fff !important;
 }
 
 /* =========================
@@ -148,6 +147,7 @@ button {
   transition: background-color 0.1s ease, color 0.1s ease;
 }
 
+/* The ".filled" class turns the button Black (Active State) */
 button.filled {
   background-color: #000 !important;
   color: #fff !important;
