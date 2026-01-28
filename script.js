@@ -40,9 +40,7 @@
   function loadState() {
     try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; }
   }
-  function saveState(state) {
-    try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {}
-  }
+  function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
 
   function readControls() {
     return {
@@ -66,7 +64,7 @@
     let toneVal = 110;
     if (state?.tone != null) {
       const n = Number(state.tone);
-      // UPDATED: Logic matches HTML range (100-200)
+      // Ensure logic matches HTML range (100-200)
       if (Number.isFinite(n)) toneVal = Math.max(100, Math.min(200, n));
     }
 
@@ -79,8 +77,9 @@
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
 
-    if (playBtn) playBtn.classList.toggle("filled", state !== "playing");
-    if (stopBtn) stopBtn.classList.toggle("filled", state === "playing");
+    // "Filled" (Black) means Active State
+    if (playBtn) playBtn.classList.toggle("filled", state === "playing");
+    if (stopBtn) stopBtn.classList.toggle("filled", state !== "playing");
 
     if (toneInput) toneInput.disabled = (state === "playing");
   }
@@ -112,7 +111,6 @@
 
     recordedChunks = [];
     const mimeType = pickRecordingMimeType();
-
     try {
       mediaRecorder = new MediaRecorder(streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
@@ -128,16 +126,12 @@
       const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
       const url = URL.createObjectURL(blob);
       const ext = blob.type.includes("ogg") ? "ogg" : "webm";
-
       const a = document.createElement("a");
       a.href = url;
       a.download = `open-live-${Date.now()}.${ext}`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => {
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-      }, 100);
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
     };
 
     mediaRecorder.start(250);
@@ -173,7 +167,7 @@
   // DETERMINISTIC RNG
   // =========================
   let sessionSeed = 0;
-  let rng = Math.random;
+  let rng = Math.random; 
 
   function mulberry32(seed) {
     let a = seed >>> 0;
@@ -193,7 +187,7 @@
   let sessionSnapshot = null;
 
   // =========================
-  // AUDIO GRAPH & STATE
+  // AUDIO GRAPH
   // =========================
   let audioContext = null;
   let masterGain = null;
@@ -404,7 +398,7 @@
     });
   }
 
-  // --- UPDATED BASS PEDAL (Polished FM) ---
+  // --- BASS PEDAL (With FM Swell) ---
   function scheduleBassPedal(ctx, destination, wetSend, freq, time, duration, volume) {
     const isDrone = (duration > 20.0);
 
@@ -429,7 +423,7 @@
     }
 
     if (isDrone) {
-      // FM BLOOM: Reduced intensity
+      // FM BLOOM
       modGain.gain.setValueAtTime(0, time);
       modGain.gain.linearRampToValueAtTime(freq * 0.6, time + (duration * 0.5));
       modGain.gain.linearRampToValueAtTime(0, time + duration);
@@ -545,11 +539,10 @@
       if (elapsed >= targetDuration) isApproachingEnd = true;
     }
 
-    // --- FREQUENCY CLAMP (MATCHES HTML 100-200) ---
+    // --- FREQUENCY CLAMP (100-200) ---
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
-    // ----------------------------------------------
 
     const noteDur = (1 / runDensity) * 2.5;
 
@@ -622,7 +615,6 @@
       else if (phraseStep === 13) slowProb = 0.20;
       if (chance(slowProb)) appliedDur *= (1.20 + rand() * 0.20);
 
-      // --- MELODY LOGIC (With Drone Solo Check) ---
       if (isCadence) {
         const targets = [0, 2, 4];
         const currentOctave = Math.floor(patternIdxA / 7) * 7;
@@ -723,7 +715,7 @@
       // --- SIGNPOST & DRONE LOGIC ---
       const isArcStart = (arcPos === 0 && phraseStep === 0);
       const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
-      const isDroneSolo = (arcPos === 0 && phraseStep < 12); // Mute bells at start of Arc
+      const isDroneSolo = (arcPos === 0 && phraseStep < 12); 
 
       const atPhraseStart = (phraseStep === 0 || phraseStep === 1);
       const atCadenceZone = (phraseStep >= 13);
@@ -768,7 +760,7 @@
         scheduleBassPedal(audioContext, masterGain, reverbSend, pedalFreq, t0, pedalDur, vol);
       }
 
-      // --- SCHEDULE MELODY (unless in Solo Mode) ---
+      // --- MELODY LOGIC (With Drone Solo) ---
       if (!isDroneSolo) {
           if (isCadence && arcPos === arcClimaxAt && phraseStep === 15) {
             scheduleNote(audioContext, masterGain, reverbSend, freq * 2.0, nextTimeA, appliedDur, 0.35, pressure, tension);
@@ -1104,7 +1096,7 @@
 
       const freq = getScaleNoteLocal(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
 
-      // --- DRONE EXPORT ---
+      // --- DRONE LOGIC FOR EXPORT ---
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
       const isClimax = (localArcPos === localArcClimaxAt && localPhraseStep === 0);
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12); 
@@ -1143,7 +1135,7 @@
         scheduleBassPedal(offlineCtx, offlineMaster, offlineSend, pedalFreq, t0, pedalDur, vol);
       }
 
-      // --- MELODY EXPORT ---
+      // --- MELODY LOGIC (Export Solo) ---
       if (!isDroneSolo) {
           if (isCadence && localArcPos === localArcClimaxAt && localPhraseStep === 15) {
             scheduleNote(offlineCtx, offlineMaster, offlineSend, freq * 2.0, localTime, appliedDur, 0.35, pressure, localTension);
