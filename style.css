@@ -1,4 +1,4 @@
-/* style.css — Open (v17 Pro) Final Parity + Tighter Footer */
+/* style.css — Open (Wide "O P E N" Style) */
 
 * { box-sizing: border-box; }
 
@@ -18,16 +18,22 @@ main {
 }
 
 /* =========================
-   TEXT PARITY
+   TYPOGRAPHY: WIDE "O P E N" STYLE
    ========================= */
 #popoutTitle, .secondary-btn {
   font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
   text-transform: uppercase;
-  font-weight: normal;
+  font-weight: 400; /* Normal weight */
+  
+  /* WIDE SPACING */
   font-size: 1.5rem;         
-  letter-spacing: 1.8rem;    
-  text-indent: 1.8rem;
+  letter-spacing: 1.5rem;    
+  
+  /* CRITICAL: text-indent matches letter-spacing to fix centering */
+  text-indent: 1.5rem; 
+  
   line-height: 1.2;
+  text-align: center;
 }
 
 #popoutTitle {
@@ -35,38 +41,30 @@ main {
   border-bottom: 1px solid #000;
   padding-bottom: 1.5rem;
   margin: 0 0 2rem 0;
-  text-align: center;
   user-select: none;
 }
 
 /* =========================
-   BUTTON STYLES (INVERTED LOGIC)
+   BUTTON STYLES
    ========================= */
 
-/* DEFAULT STATE (Not Pressed): Black Background, White Text */
+/* DEFAULT STATE: Black Background, White Text */
 button, .secondary-btn {
   background-color: #000 !important;
   color: #fff !important;
   border: 1px solid #000;
-  padding: 2rem 0; /* Tall for Open button */
+  padding: 2rem 0; /* Tall button for the home page */
   width: 100%;
   display: block;
-  text-align: center;
   cursor: pointer;
   transition: background-color 0.1s ease, color 0.1s ease;
   
-  /* Text Styles */
+  /* Inherit the wide typography defined above */
   text-transform: uppercase;
-  font-weight: normal;
-  letter-spacing: 0.2rem;
-  text-indent: 0.2rem;
+  font-weight: 400;
 }
 
-/* ACTIVE / FILLED STATE (Pressed): White Background, Black Text */
-/* This handles:
-   1. The Launch button while hovering/clicking
-   2. The Play/Stop buttons when they have the .filled class
-*/
+/* ACTIVE / FILLED STATE: White Background, Black Text */
 button.filled,
 .secondary-btn:hover,
 .secondary-btn:active {
@@ -74,11 +72,14 @@ button.filled,
   color: #000 !important;
 }
 
-/* Reset height for standard player buttons (Play/Stop) */
+/* RESET: Standard Player Buttons (Play/Stop) need normal spacing */
 .form-actions button {
   padding: 0.5rem;
   font-size: 1rem;
   flex: 1;
+  /* Reset the wide spacing for these small buttons */
+  letter-spacing: 0.2rem;
+  text-indent: 0.2rem;
 }
 
 /* =========================
