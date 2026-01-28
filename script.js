@@ -1,5 +1,5 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v130_fix";
+  const STATE_KEY = "open_player_settings_v130_fix_drone";
 
   // =========================
   // VIEW & STATE
@@ -77,8 +77,6 @@
     const toneInput = document.getElementById("tone");
 
     // FILLED (White) = Active State
-    // If playing: Play is Filled (White), Stop is Black.
-    // If stopped: Stop is Filled (White), Play is Black.
     if (playBtn) playBtn.classList.toggle("filled", state === "playing");
     if (stopBtn) stopBtn.classList.toggle("filled", state !== "playing");
 
@@ -398,7 +396,7 @@
     });
   }
 
-  // --- UPDATED BASS PEDAL (Polished FM) ---
+  // --- UPDATED BASS PEDAL (LOUDER & AUDIBLE) ---
   function scheduleBassPedal(ctx, destination, wetSend, freq, time, duration, volume) {
     const isDrone = (duration > 20.0); 
 
@@ -412,7 +410,7 @@
     modulator.type = 'sine';
 
     if (isDrone) {
-      // DRONE: Fixed Octave (2.0) + Micro-detune
+      // DRONE: Pure Octave (2.0)
       carrier.frequency.value = freq;
       modulator.frequency.value = freq * 2.0; 
       modulator.detune.value = (rand() - 0.5) * 6; 
@@ -423,9 +421,9 @@
     }
 
     if (isDrone) {
-      // FM BLOOM: Reduced intensity
+      // FM BLOOM: Increased intensity (1.0) to make it buzzier/audible
       modGain.gain.setValueAtTime(0, time);
-      modGain.gain.linearRampToValueAtTime(freq * 0.6, time + (duration * 0.5));
+      modGain.gain.linearRampToValueAtTime(freq * 1.0, time + (duration * 0.5));
       modGain.gain.linearRampToValueAtTime(0, time + duration);
     } else {
       // PLUCK
@@ -435,7 +433,7 @@
 
     ampGain.gain.setValueAtTime(0.0001, time);
     if (isDrone) {
-        ampGain.gain.exponentialRampToValueAtTime(volume, time + 2.0); // Faster attack (was 4.0)
+        ampGain.gain.exponentialRampToValueAtTime(volume, time + 2.0); // Fast attack (2s)
     } else {
         ampGain.gain.exponentialRampToValueAtTime(volume, time + 0.15);
     }
@@ -443,7 +441,7 @@
 
     lp.type = 'lowpass'; 
     if (isDrone) {
-        lp.frequency.setValueAtTime(350, time); 
+        lp.frequency.setValueAtTime(450, time); // Open up more (was 350)
         lp.Q.value = 0.5; 
     } else {
         lp.frequency.setValueAtTime(220 + rand() * 80, time); 
@@ -528,7 +526,7 @@
       if (elapsed >= targetDuration) isApproachingEnd = true;
     }
     
-    // Range: 100-200
+    // UPDATED: 100 Hz floor
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
@@ -610,7 +608,6 @@
       else if (phraseStep === 13) slowProb = 0.20;
       if (chance(slowProb)) appliedDur *= (1.20 + rand() * 0.20);
 
-      // --- MELODY LOGIC (With Drone Solo) ---
       if (isCadence) {
           const targets = [0, 2, 4];
           const currentOctave = Math.floor(patternIdxA / 7) * 7;
@@ -696,7 +693,7 @@
       const raiseLT = isCadence && wantLT && degNow === 6 && (phraseStep === 13 || phraseStep === 14 || pendingLTResolution);
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
 
-      // --- SIGNPOST & DRONE LOGIC ---
+      // --- SIGNPOST & DRONE LOGIC (LOUDER) ---
       const isArcStart = (arcPos === 0 && phraseStep === 0);
       const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
       
@@ -729,8 +726,8 @@
         let pedalFreq = getScaleNote(baseFreq, pedalIdx, circlePosition, isMinor);
         
         if (isArcStart) {
-           // FIXED: Ensure drone isn't too low (85Hz floor instead of 65Hz)
-           while (pedalFreq > 85) pedalFreq *= 0.5; 
+           // FIXED: Ensure drone isn't too low (180Hz ceiling)
+           while (pedalFreq > 180) pedalFreq *= 0.5; 
         } else {
            while (pedalFreq < 50) pedalFreq *= 2; 
            while (pedalFreq > 110) pedalFreq *= 0.5;
@@ -742,7 +739,8 @@
         if (isArcStart) pedalDur = 32.0; 
         if (isClimax) pedalDur = 24.0;
 
-        const vol = (isArcStart || isClimax) ? 0.25 : 0.18;
+        // FIXED: Higher Volume for Drones (0.35)
+        const vol = (isArcStart || isClimax) ? 0.35 : 0.18;
 
         scheduleBassPedal(audioContext, masterGain, reverbSend, pedalFreq, t0, pedalDur, vol);
       }
@@ -780,12 +778,10 @@
     motifPos = 0;
 
     isPlaying = true;
-    isEndingNaturally = false;
-    isApproachingEnd = false;
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
     phraseStep = 0;
-    phraseCount = 0; // Reset phrase count so intro plays melody
+    phraseCount = 0; 
     notesSinceModulation = 0;
     setButtonState("playing");
 
@@ -864,7 +860,7 @@
     const dummyMotif = generateSessionMotif(); 
     const localMotif = [...sessionSnapshot.motif]; 
 
-    // Range: 100-200
+    // UPDATED: 100 Hz floor
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
@@ -1081,14 +1077,14 @@
          const pedalIdx = pedalOct * 7 + pedalDegree;
          let pedalFreq = getScaleNote(baseFreq, pedalIdx, localCircle, localMinor);
          
-         if (isArcStart) { while (pedalFreq > 85) pedalFreq *= 0.5; }
+         if (isArcStart) { while (pedalFreq > 180) pedalFreq *= 0.5; }
          else { while (pedalFreq < 50) pedalFreq *= 2; while (pedalFreq > 110) pedalFreq *= 0.5; }
          
          const t0 = Math.max(localTime - 0.05, 0);
          let pedalDur = atPhraseStart ? 16.0 : (atCadenceZone ? 12.0 : 7.0);
          if (isArcStart) pedalDur = 32.0; 
          if (isClimax) pedalDur = 24.0;
-         const vol = (isArcStart || isClimax) ? 0.25 : 0.18;
+         const vol = (isArcStart || isClimax) ? 0.35 : 0.18;
          
          scheduleBassPedal(offlineCtx, offlineMaster, offlineSend, pedalFreq, t0, pedalDur, vol);
        }
