@@ -1,4 +1,4 @@
-/* style.css — Open (v130 Logic) */
+/* style.css — Open (v130 Logic + Launch Button Fix) */
 
 * { box-sizing: border-box; }
 
@@ -43,12 +43,12 @@ main {
    BUTTON STYLES (INVERTED LOGIC)
    ========================= */
 
-/* DEFAULT STATE: Black Background, White Text */
+/* DEFAULT STATE (Not Pressed): Black Background, White Text */
 button, .secondary-btn {
   background-color: #000 !important;
   color: #fff !important;
   border: 1px solid #000;
-  padding: 2rem 0; /* Tall for Open button, overridden for controls */
+  padding: 2rem 0; /* Tall for Open button */
   width: 100%;
   display: block;
   text-align: center;
@@ -62,10 +62,10 @@ button, .secondary-btn {
   text-indent: 0.2rem;
 }
 
-/* ACTIVE / FILLED STATE: White Background, Black Text */
-/* This applies to:
-   1. The .filled class (Active Play/Stop)
-   2. Hover/Active states on the Open button
+/* ACTIVE / FILLED STATE (Pressed): White Background, Black Text */
+/* This handles:
+   1. The Launch button while hovering/clicking
+   2. The Play/Stop buttons when they have the .filled class
 */
 button.filled,
 .secondary-btn:hover,
@@ -74,7 +74,7 @@ button.filled,
   color: #000 !important;
 }
 
-/* Reset height for standard player buttons */
+/* Reset height for standard player buttons (Play/Stop) */
 .form-actions button {
   padding: 0.5rem;
   font-size: 1rem;
