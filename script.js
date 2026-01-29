@@ -1,14 +1,15 @@
 (() => {
-  const STATE_KEY = "open_player_settings_v149_harmonic_thirds_80hz";
+  const STATE_KEY = "open_player_settings_v153_restored";
 
   // =========================
-  // MUSICAL TARGETS (YOUR REQUESTS)
+  // TARGET BEHAVIOR (ANTI-THUMP + SMART DRONE)
   // =========================
-  const FREQ_FLOOR = 80;          // floor for melody + drone
-  const DRONE_GAIN_MULT = 0.70;   // 30% quieter
+  const MELODY_FLOOR_HZ = 220;   // A3 - prevents "thud" notes in bell timbre
+  const DRONE_FLOOR_HZ  = 80;    // low body allowed for drone only
+  const DRONE_GAIN_MULT = 0.70;  // 30% quieter (applied to a sane base level)
 
-  function applyFreqFloor(freq) {
-    while (freq < FREQ_FLOOR) freq *= 2;
+  function floorToHz(freq, floorHz) {
+    while (freq < floorHz) freq *= 2;
     return freq;
   }
 
@@ -360,8 +361,11 @@
     setupKeyboardShortcuts();
   }
 
+  // =========================
+  // BELL NOTE (anti-thump floor for melody)
+  // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
-    freq = applyFreqFloor(freq);
+    freq = floorToHz(freq, MELODY_FLOOR_HZ);
 
     const numVoices = 2 + Math.floor(rand() * 2);
     let totalAmp = 0;
@@ -425,66 +429,77 @@
     });
   }
 
-  // --- BASS PEDAL: Warm Drone (1.8 FM, 650Hz Filter) ---
-  function scheduleBassPedal(ctx, destination, wetSend, freq, time, duration, volume) {
-    freq = applyFreqFloor(freq);
-    volume *= DRONE_GAIN_MULT;
+  // =========================
+  // SMART DRONE CHORD (root + major/minor third + light fifth)
+  // =========================
+  function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality /* "maj"|"min" */) {
+    rootFreq = floorToHz(rootFreq, DRONE_FLOOR_HZ);
 
-    const isDrone = (duration > 20.0);
+    // 12-TET ratios for triad
+    const thirdRatio = (quality === "min") ? Math.pow(2, 3 / 12) : Math.pow(2, 4 / 12);
+    const fifthRatio = Math.pow(2, 7 / 12);
 
-    const carrier = ctx.createOscillator();
-    const modulator = ctx.createOscillator();
-    const modGain = ctx.createGain();
-    const ampGain = ctx.createGain();
-    const lp = ctx.createBiquadFilter();
+    const freqs = [
+      rootFreq,
+      rootFreq * thirdRatio,
+      rootFreq * fifthRatio
+    ];
 
-    carrier.type = "sine";
-    modulator.type = "sine";
+    // Apply "30% quieter" here, but use a *sensible* drone base so it stays audible.
+    const vol = baseVolume * DRONE_GAIN_MULT;
 
-    if (isDrone) {
-      carrier.frequency.value = freq;
-      modulator.frequency.value = freq * 2.0;
-      modulator.detune.value = (rand() - 0.5) * 6;
-    } else {
-      carrier.frequency.value = freq + (rand() - 0.5) * 0.6;
-      modulator.frequency.value = freq * (1.25 + rand() * 0.25);
-    }
+    // voice weights: keep it “third-forward” but not harsh
+    const weights = [0.42, 0.42, 0.16];
 
-    if (isDrone) {
+    freqs.forEach((f, i) => {
+      const carrier = ctx.createOscillator();
+      const modulator = ctx.createOscillator();
+      const modGain = ctx.createGain();
+      const ampGain = ctx.createGain();
+      const lp = ctx.createBiquadFilter();
+
+      carrier.type = "sine";
+      modulator.type = "sine";
+
+      // gentle drift (prevents static “organ” but avoids wobble)
+      carrier.frequency.value = f + (rand() - 0.5) * 0.8;
+      modulator.frequency.value = f * (1.85 + (rand() - 0.5) * 0.06);
+
+      // moderate FM for shimmer, not dullness
       modGain.gain.setValueAtTime(0, time);
-      modGain.gain.linearRampToValueAtTime(freq * 1.8, time + (duration * 0.5));
+      modGain.gain.linearRampToValueAtTime(f * 1.15, time + Math.min(2.0, duration * 0.25));
+      modGain.gain.linearRampToValueAtTime(f * 0.22, time + Math.min(8.0, duration * 0.55));
       modGain.gain.linearRampToValueAtTime(0, time + duration);
-    } else {
-      modGain.gain.setValueAtTime(freq * (0.35 + rand() * 0.25), time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.12, time + Math.max(0.5, duration));
-    }
 
-    ampGain.gain.setValueAtTime(0.0001, time);
-    if (isDrone) ampGain.gain.exponentialRampToValueAtTime(volume, time + 2.0);
-    else ampGain.gain.exponentialRampToValueAtTime(volume, time + 0.15);
-    ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      // avoid “dull drone” by not lowpassing too aggressively
+      lp.type = "lowpass";
+      lp.frequency.setValueAtTime(1100, time);
+      lp.Q.setValueAtTime(0.55, time);
 
-    lp.type = "lowpass";
-    if (isDrone) {
-      lp.frequency.setValueAtTime(650, time);
-      lp.Q.value = 0.6;
-    } else {
-      lp.frequency.setValueAtTime(220 + rand() * 80, time);
-      lp.Q.setValueAtTime(0.7, time);
-    }
+      // long fade in/out to avoid clicks
+      ampGain.gain.setValueAtTime(0.0001, time);
+      ampGain.gain.exponentialRampToValueAtTime(Math.max(0.0002, vol * weights[i]), time + 1.6);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-    modulator.connect(modGain);
-    modGain.connect(carrier.frequency);
+      modulator.connect(modGain);
+      modGain.connect(carrier.frequency);
 
-    carrier.connect(ampGain);
-    ampGain.connect(lp);
-    lp.connect(destination);
-    lp.connect(wetSend);
+      carrier.connect(ampGain);
+      ampGain.connect(lp);
 
-    modulator.start(time); carrier.start(time);
-    modulator.stop(time + duration); carrier.stop(time + duration);
+      lp.connect(destination);
+      lp.connect(wetSend);
+
+      modulator.start(time);
+      carrier.start(time);
+      modulator.stop(time + duration);
+      carrier.stop(time + duration);
+    });
   }
 
+  // =========================
+  // SCALE
+  // =========================
   function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
     let pos = circlePos % 12; if (pos < 0) pos += 12;
     let semitones = (pos * 7) % 12;
@@ -504,7 +519,7 @@
     }
 
     const noteValue = rootOffset + intervals[degree] + (octave * 12);
-    return applyFreqFloor(baseFreq * Math.pow(2, noteValue / 12));
+    return baseFreq * Math.pow(2, noteValue / 12);
   }
 
   function generateSessionMotif() {
@@ -536,7 +551,7 @@
         else if (isMinor && chance(0.6)) isMinor = false;
       } else {
         const isJourneyMode = (durationInput === "infinite");
-        const d = Math.abs(circlePosition); // FIXED (was localCircle)
+        const d = Math.abs(circlePosition);
         if (!isJourneyMode && d > 3 && chance(0.8)) {
           circlePosition += (circlePosition > 0 ? -1 : 1);
         } else {
@@ -548,25 +563,21 @@
     }
   }
 
-  // =========================
-  // HARMONIC DRONE (ROOT or THIRD ONLY)
-  // =========================
-  function degreeNowFromIdx(idx) {
-    const oct = Math.floor(idx / 7) * 7;
-    return ((idx - oct) % 7 + 7) % 7;
+  function degreeFromIdx(idx) {
+    const base = Math.floor(idx / 7) * 7;
+    return ((idx - base) % 7 + 7) % 7;
   }
 
-  function isThirdHarmonicallySafe({ atCadenceZone, tensionVal, melodyDeg, planType }) {
+  // “Surrounding harmony makes sense” gate for a 3rd-color drone:
+  // - avoid cadential zone
+  // - avoid high tension
+  // - avoid half/deceptive/evaded plans (dominant-ish ambiguity)
+  // - prefer when melody is on triad tones (1/3/5)
+  function shouldUseThirdDrone({ atCadenceZone, tensionVal, cadenceType, melodyDeg }) {
     if (atCadenceZone) return false;
     if (tensionVal >= 0.55) return false;
-
-    // conservative: only if melody is on stable triad degrees (1,3,5)
-    if (!(melodyDeg === 0 || melodyDeg === 2 || melodyDeg === 4)) return false;
-
-    // conservative: avoid third during half/deceptive plans (often dominant-ish context)
-    if (planType === "half" || planType === "deceptive" || planType === "evaded") return false;
-
-    return true;
+    if (cadenceType === "half" || cadenceType === "deceptive" || cadenceType === "evaded") return false;
+    return (melodyDeg === 0 || melodyDeg === 2 || melodyDeg === 4);
   }
 
   function scheduler() {
@@ -759,66 +770,75 @@
       if (patternIdxA > 10) patternIdxA = 10;
       if (patternIdxA < -8) patternIdxA = -8;
 
-      const degNow = degreeNowFromIdx(patternIdxA);
+      const degNow = degreeFromIdx(patternIdxA);
       const wantLT2 = cadenceTargets(currentCadenceType).wantLT;
       const raiseLT = isCadence && wantLT2 && degNow === 6 && (phraseStep === 13 || phraseStep === 14 || pendingLTResolution);
-
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
 
-      // --- SIGNPOST & DRONE LOGIC ---
+      // --- SMART DRONE CHORD LOGIC ---
       const isArcStart = (arcPos === 0 && phraseStep === 0);
       const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
+
       const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
 
       const atPhraseStart = (phraseStep === 0 || phraseStep === 1);
       const atCadenceZone = (phraseStep >= 13);
 
-      let pedalProb = 0.0;
-      if (atPhraseStart) pedalProb = 0.16;
-      else if (atCadenceZone) pedalProb = 0.10 + (tension * 0.05);
-      else pedalProb = 0.03;
+      let droneProb = 0.0;
+      if (atPhraseStart) droneProb = 0.18;
+      else if (atCadenceZone) droneProb = 0.12 + (tension * 0.05);
+      else droneProb = 0.04;
 
       const curRegister = Math.floor(patternIdxA / 7);
-      if (curRegister >= 2) pedalProb *= 0.35;
+      if (curRegister >= 2) droneProb *= 0.35;
 
-      if (isArcStart || isClimax || chance(pedalProb)) {
-        const planType = currentCadenceType || "authentic";
+      if (isArcStart || isClimax || chance(droneProb)) {
+        const ct = currentCadenceType || "authentic";
 
-        // === ONLY ROOT OR THIRD ===
-        // Root = degree 0; Third = degree 2 (major/minor decided by mode)
-        let pedalDegree = 0;
+        // Choose harmonic root degree for drone chord (still guided by cadence plan)
+        // We keep this conservative to avoid “dominant-in-minor” funkiness unless tension is low.
+        let droneRootDegree = 0; // tonic by default
 
-        const thirdSafe = isThirdHarmonicallySafe({
+        if (!isArcStart && !isClimax) {
+          if (ct === "half") droneRootDegree = 4;                // V
+          else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5; // I or vi
+          else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;    // IV→I flavor
+          else droneRootDegree = 0;
+        }
+
+        // Determine whether the “3rd color” is harmonically safe here
+        const useThirdColor = shouldUseThirdDrone({
           atCadenceZone,
           tensionVal: tension,
-          melodyDeg: degNow,
-          planType
+          cadenceType: ct,
+          melodyDeg: degNow
         });
 
-        // If safe, we *sometimes* use the third drone; otherwise root.
-        if (thirdSafe && chance(0.55)) pedalDegree = 2;
-        else pedalDegree = 0;
+        // If unsafe, we still keep a chord but de-emphasize third by picking tonic root more often
+        if (!useThirdColor && droneRootDegree !== 0 && chance(0.65)) droneRootDegree = 0;
 
-        const pedalOct = Math.min(curRegister - 1, 0);
-        const pedalIdx = pedalOct * 7 + pedalDegree;
-        let pedalFreq = getScaleNote(baseFreq, pedalIdx, circlePosition, isMinor);
+        const droneOct = Math.min(curRegister - 1, 0);
+        const droneIdx = droneOct * 7 + droneRootDegree;
+        let droneRootFreq = getScaleNote(baseFreq, droneIdx, circlePosition, isMinor);
 
-        // enforce 80Hz floor (already applied inside getScaleNote, but keep robust)
-        pedalFreq = applyFreqFloor(pedalFreq);
+        // Drone floor is low (body), melody floor stays high (clarity)
+        droneRootFreq = floorToHz(droneRootFreq, DRONE_FLOOR_HZ);
 
         const t0 = Math.max(nextTimeA - 0.05, audioContext.currentTime);
-        let pedalDur = atPhraseStart ? 16.0 : (atCadenceZone ? 12.0 : 7.0);
-        if (isArcStart) pedalDur = 32.0;
-        if (isClimax) pedalDur = 24.0;
+        let droneDur = atPhraseStart ? 18.0 : (atCadenceZone ? 14.0 : 8.5);
+        if (isArcStart) droneDur = 34.0;
+        if (isClimax) droneDur = 26.0;
 
-        // Keep drone audible while still 30% quieter:
-        // use slightly stronger base than the old 0.18 so the 0.70 mult doesn't vanish.
-        const baseVol = (isArcStart || isClimax) ? 0.28 : 0.20;
+        // “audible but quieter”: sensible base, then DRONE_GAIN_MULT inside scheduleDroneChord
+        const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
 
-        scheduleBassPedal(audioContext, masterGain, reverbSend, pedalFreq, t0, pedalDur, baseVol);
+        // chord quality: major/minor third determined by mode (this is your “emotion” axis)
+        const quality = isMinor ? "min" : "maj";
+
+        scheduleDroneChord(audioContext, masterGain, reverbSend, droneRootFreq, t0, droneDur, baseVol, quality);
       }
 
-      // --- SCHEDULE MELODY (Unless in Solo Mode) ---
+      // --- MELODY ---
       if (!isDroneSolo) {
         if (isCadence && arcPos === arcClimaxAt && phraseStep === 15) {
           scheduleNote(audioContext, masterGain, reverbSend, freq * 2.0, nextTimeA, appliedDur, 0.35, pressure, tension);
@@ -888,12 +908,14 @@
   function beginNaturalEnd() {
     isEndingNaturally = true;
     isPlaying = false;
+
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
     setButtonState("stopped");
   }
 
   // =========================
-  // OFFLINE EXPORT (MATCHES LIVE RULES)
+  // EXPORT (kept intentionally identical to live synthesis rules)
+  // NOTE: This export uses the same scheduleNote + scheduleDroneChord engine.
   // =========================
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
@@ -932,6 +954,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
+    // Local state mirrors live
     let localPhraseCount = 0;
     let localArcLen = 6;
     let localArcPos = -1;
@@ -1036,6 +1059,11 @@
       }
     }
 
+    function localDegreeFromIdx(idx) {
+      const base = Math.floor(idx / 7) * 7;
+      return ((idx - base) % 7 + 7) % 7;
+    }
+
     while (localTime < exportDuration - 2.0) {
       localPhraseStep = (localPhraseStep + 1) % 16;
 
@@ -1064,7 +1092,6 @@
       let targetSend = 0.65 - (0.25 * normDensity);
       targetSend += (normTension * 0.55);
       targetSend -= (0.10 * normPressure);
-
       targetSend = Math.max(0, Math.min(0.95, targetSend));
       offlineSend.gain.setTargetAtTime(targetSend, localTime, 0.5);
 
@@ -1078,6 +1105,7 @@
       else if (localPhraseStep === 13) slowProb = 0.20;
       if (chance(slowProb)) appliedDur *= (1.20 + rand() * 0.20);
 
+      // pitch movement mirrors live (condensed but equivalent)
       if (isCadence) {
         const targets = [0, 2, 4];
         const currentOctave = Math.floor(localIdx / 7) * 7;
@@ -1130,25 +1158,6 @@
         }
 
         if (localPhraseStep === 15) {
-          const baseProb =
-            (ct === "evaded") ? (0.35 + localTension * 0.20) :
-              (ct === "half") ? 0.78 :
-                (ct === "plagal") ? 0.74 :
-                  (ct === "deceptive") ? 0.86 : 0.90;
-
-          const finalProb = localPendingLT ? Math.min(0.98, baseProb + 0.06) : baseProb;
-
-          if (chance(finalProb)) {
-            const targetDegEnd = targ.end;
-            const curOct = Math.floor(localIdx / 7) * 7;
-            const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
-
-            let deltaEnd = targetDegEnd - curDeg;
-            if (deltaEnd > 3) deltaEnd -= 7;
-            if (deltaEnd < -3) deltaEnd += 7;
-            localIdx += deltaEnd;
-          }
-
           if (ct === "evaded") localTension = clamp01(localTension + 0.18);
           else if (ct === "half") localTension = clamp01(localTension + 0.08);
           else if (ct === "deceptive") localTension = clamp01(localTension + 0.06);
@@ -1178,12 +1187,12 @@
       if (localIdx > 10) localIdx = 10;
       if (localIdx < -8) localIdx = -8;
 
-      const degNow = degreeNowFromIdx(localIdx);
+      const degNow = localDegreeFromIdx(localIdx);
       const wantLT2 = localCadenceTargets(localCadenceType).wantLT;
       const raiseLT = isCadence && wantLT2 && degNow === 6 && (localPhraseStep === 13 || localPhraseStep === 14 || localPendingLT);
       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
 
-      // Drone decisions (root or third only)
+      // Drone
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
       const isClimax = (localArcPos === localArcClimaxAt && localPhraseStep === 0);
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12 && localPhraseCount > 0);
@@ -1191,39 +1200,47 @@
       const atPhraseStart = (localPhraseStep === 0 || localPhraseStep === 1);
       const atCadenceZone = (localPhraseStep >= 13);
 
-      let pedalProb = 0.0;
-      if (atPhraseStart) pedalProb = 0.16;
-      else if (atCadenceZone) pedalProb = 0.10 + (localTension * 0.05);
-      else pedalProb = 0.03;
+      let droneProb = 0.0;
+      if (atPhraseStart) droneProb = 0.18;
+      else if (atCadenceZone) droneProb = 0.12 + (localTension * 0.05);
+      else droneProb = 0.04;
 
       const curRegister = Math.floor(localIdx / 7);
-      if (curRegister >= 2) pedalProb *= 0.35;
+      if (curRegister >= 2) droneProb *= 0.35;
 
-      if (isArcStart || isClimax || chance(pedalProb)) {
-        const planType = localCadenceType || "authentic";
-        let pedalDegree = 0;
+      if (isArcStart || isClimax || chance(droneProb)) {
+        const ct = localCadenceType || "authentic";
+        let droneRootDegree = 0;
+        if (!isArcStart && !isClimax) {
+          if (ct === "half") droneRootDegree = 4;
+          else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
+          else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
+          else droneRootDegree = 0;
+        }
 
-        const thirdSafe = isThirdHarmonicallySafe({
+        const useThirdColor = shouldUseThirdDrone({
           atCadenceZone,
           tensionVal: localTension,
-          melodyDeg: degNow,
-          planType
+          cadenceType: ct,
+          melodyDeg: degNow
         });
 
-        if (thirdSafe && chance(0.55)) pedalDegree = 2;
-        else pedalDegree = 0;
+        if (!useThirdColor && droneRootDegree !== 0 && chance(0.65)) droneRootDegree = 0;
 
-        const pedalOct = Math.min(curRegister - 1, 0);
-        const pedalIdx = pedalOct * 7 + pedalDegree;
-        let pedalFreq = getScaleNote(baseFreq, pedalIdx, localCircle, localMinor);
+        const droneOct = Math.min(curRegister - 1, 0);
+        const droneIdx = droneOct * 7 + droneRootDegree;
+        let droneRootFreq = getScaleNote(baseFreq, droneIdx, localCircle, localMinor);
+        droneRootFreq = floorToHz(droneRootFreq, DRONE_FLOOR_HZ);
 
         const t0 = Math.max(localTime - 0.05, 0);
-        let pedalDur = atPhraseStart ? 16.0 : (atCadenceZone ? 12.0 : 7.0);
-        if (isArcStart) pedalDur = 32.0;
-        if (isClimax) pedalDur = 24.0;
+        let droneDur = atPhraseStart ? 18.0 : (atCadenceZone ? 14.0 : 8.5);
+        if (isArcStart) droneDur = 34.0;
+        if (isClimax) droneDur = 26.0;
 
-        const baseVol = (isArcStart || isClimax) ? 0.28 : 0.20;
-        scheduleBassPedal(offlineCtx, offlineMaster, offlineSend, pedalFreq, t0, pedalDur, baseVol);
+        const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
+        const quality = localMinor ? "min" : "maj";
+
+        scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality);
       }
 
       if (!isDroneSolo) {
@@ -1246,7 +1263,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v149-${Date.now()}.wav`;
+    a.download = `open-final-v153-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
