@@ -12,7 +12,7 @@ The pacing is slow. The sounds do not ask for your attention. Rather, they sit a
 
 *Open* is meant to run quietly in the background with minimal fuss: no logins and no accounts—only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
 
-### "Infinite" Mode & Structure
+### "Infinite" Mode and Structure
 When set to "Infinite", the piece creates a non-repeating journey using specific harmonic logic:
 
 * **Circle of Fifths:** The system navigates through related keys (e.g., C Major → G Major → E Minor), creating a procession through different harmonic colors.
