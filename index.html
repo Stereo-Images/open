@@ -3,23 +3,180 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Open</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Open - Generative Audio Player</title>
+  <style>
+    :root {
+      --bg: #111;
+      --fg: #eee;
+      /* 508 FIX: Lightened text from #555 to #aaa for 4.5:1 contrast */
+      --dim: #aaa; 
+      --focus-ring: #4d90fe;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--fg);
+      font-family: var(--font);
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* 508 FIX: Explicit visible focus for keyboard navigation */
+    button:focus-visible, select:focus-visible, input:focus-visible {
+      outline: 2px solid var(--focus-ring);
+      outline-offset: 4px;
+    }
+
+    main {
+      width: 100%;
+      max-width: 400px; /* Slight constraint for readability */
+      padding: 20px;
+      text-align: center;
+    }
+
+    #popoutTitle {
+      font-weight: 300;
+      letter-spacing: 0.05em;
+      margin-bottom: 2rem;
+      opacity: 0.9;
+    }
+
+    .form-group {
+      margin-bottom: 1.5rem;
+      text-align: left;
+    }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    select, input[type="range"] {
+      width: 100%;
+      background: transparent;
+      border: 1px solid #666; /* 508 FIX: Higher contrast border */
+      color: var(--fg);
+      padding: 8px;
+      border-radius: 4px;
+      font-family: inherit;
+    }
+
+    input[type="range"] {
+      border: none;
+      padding: 0;
+      height: 4px;
+      background: #333;
+      margin-top: 10px;
+      -webkit-appearance: none;
+    }
+
+    /* 508 FIX: Minimum touch target size (24px) */
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 24px;
+      height: 24px;
+      background: var(--fg);
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid var(--bg);
+    }
+
+    .form-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 2rem;
+    }
+
+    /* New section for Record/Export tools */
+    .tools-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    button {
+      background: transparent;
+      border: 1px solid #666;
+      color: var(--fg);
+      padding: 12px 0;
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      border-radius: 4px;
+    }
+
+    button:hover {
+      background: #222;
+      border-color: #fff;
+    }
+
+    /* Active State styling (handled by JS toggling class "filled") */
+    button.filled {
+      background: var(--fg);
+      color: var(--bg);
+      font-weight: bold;
+    }
+    
+    button.recording-on {
+      border-color: #ff4444;
+      color: #ff4444;
+    }
+
+    .separator {
+      border: 0;
+      border-top: 1px solid #333;
+      margin: 2rem 0;
+    }
+
+    footer {
+      font-size: 0.75rem;
+      color: var(--dim);
+      line-height: 1.5;
+    }
+    
+    /* Popout & Launch Logic classes */
+    .hidden { display: none; }
+    body.popout #launchOnly { display: none; }
+    body:not(.popout) #controls, 
+    body:not(.popout) #popoutTitle, 
+    body:not(.popout) .separator, 
+    body:not(.popout) #credits { display: none; }
+    
+    /* On mobile, show everything inline */
+    body.mobile-player #launchOnly { display: none; }
+    body.mobile-player #controls, body.mobile-player #credits { display: block; }
+  </style>
 </head>
 <body>
-  <main>
-    <section id="launchOnly">
+  
+  <main aria-label="Audio Player">
+    
+    <section id="launchOnly" aria-label="Launch Player">
       <div class="launch-actions">
-        <button type="button" id="launchPlayer" class="secondary-btn">Open</button>
+        <button type="button" id="launchPlayer" class="secondary-btn">Open Player</button>
       </div>
     </section>
 
     <h1 id="popoutTitle">Open</h1>
 
-    <section id="controls">
-      <form id="songForm">
+    <section id="controls" aria-label="Audio Controls">
+      <form id="songForm" onsubmit="return false;">
+        
         <div class="form-group">
-          <label for="songDuration">Duration:</label>
+          <label for="songDuration">Duration</label>
           <select id="songDuration" name="songDuration">
             <option value="60" selected>1 minute</option>
             <option value="300">5 minutes</option>
@@ -30,20 +187,30 @@
         </div>
 
         <div class="form-group">
-          <label for="tone">Root Tone: <span id="hzReadout">110</span> Hz</label>
-          <input type="range" id="tone" min="100" max="200" step="1" value="110" />
+          <label id="toneLabel" for="tone">Root Tone: 
+            <output id="hzReadout" for="tone">110</output> <span aria-hidden="true">Hz</span>
+          </label>
+          <input type="range" id="tone" min="100" max="200" step="1" value="110" aria-labelledby="toneLabel" />
         </div>
 
         <div class="form-actions">
-          <button type="button" id="playNow">Play</button>
-          <button type="button" id="stop">Stop</button>
+          <button type="button" id="playNow" aria-pressed="false">Play</button>
+          <button type="button" id="stop" aria-pressed="true" class="filled">Stop</button>
         </div>
+
+        <div class="tools-actions">
+           <button type="button" id="record" aria-pressed="false">
+             <span id="recordStatus" aria-live="polite">Record</span>
+           </button>
+           <button type="button" id="export">Export WAV</button>
+        </div>
+
       </form>
     </section>
 
     <hr class="separator" />
 
-    <footer id="credits">
+    <footer id="credits" role="contentinfo">
       <div class="credit-line">By Aaron Koppel</div>
       <div class="credit-line">Stereo Images, 2026</div>
     </footer>
