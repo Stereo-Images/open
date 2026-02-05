@@ -1,17 +1,18 @@
 /* ============================================================
-   OPEN — v34 (Complete Hybrid)
+   OPEN — v35 (Complete Hybrid)
    - Audio: "True Drift" v171 (Drones, Arcs, Export, AirPlay)
-   - Fixes: Reverb Flush, Node Killing, iOS Suspend (UPDATED)
+   - Fixes: Reverb Flush, Node Killing, iOS Background/Foreground (NO "Stop lights up")
    - UI: Ghost Buttons, Open Animation, Mobile Fix
+   - NOTE: Export engine is kept UNTOUCHED.
    ============================================================ */
 
 (() => {
   const STATE_KEY = "open_player_settings_v34";
 
   // --- TUNING & CONSTANTS ---
-  const MELODY_FLOOR_HZ = 220;    
-  const DRONE_FLOOR_HZ  = 87.31;  
-  const DRONE_GAIN_MULT = 0.70;   
+  const MELODY_FLOOR_HZ = 220;
+  const DRONE_FLOOR_HZ  = 87.31;
+  const DRONE_GAIN_MULT = 0.70;
   const MASTER_VOL = 0.3;
   const REVERB_RETURN_LEVEL = 0.80;
 
@@ -61,7 +62,11 @@
     const width = 500, height = 680;
     const left = Math.max(0, (window.screen.width / 2) - (width / 2));
     const top = Math.max(0, (window.screen.height / 2) - (height / 2));
-    window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`);
+    window.open(
+      `${window.location.href.split("#")[0]}#popout`,
+      "open_player",
+      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
+    );
   }
 
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
@@ -94,23 +99,26 @@
   }
 
   // --- UI LOGIC (Ghost Buttons) ---
+  // States: "playing" | "stopped" | "paused"
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
-    const isPlaying = (state === "playing");
+
+    const isPlayingState = (state === "playing");
+    const isStoppedState = (state === "stopped"); // ONLY this lights Stop
 
     if (playBtn) {
-      if (isPlaying) playBtn.classList.add("filled");
-      else playBtn.classList.remove("filled");
-      playBtn.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+      playBtn.classList.toggle("filled", isPlayingState);
+      playBtn.setAttribute("aria-pressed", isPlayingState ? "true" : "false");
     }
+
     if (stopBtn) {
-      if (!isPlaying) stopBtn.classList.add("filled");
-      else stopBtn.classList.remove("filled");
-      stopBtn.setAttribute("aria-pressed", !isPlaying ? "true" : "false");
+      stopBtn.classList.toggle("filled", isStoppedState);
+      stopBtn.setAttribute("aria-pressed", isStoppedState ? "true" : "false");
     }
-    if (toneInput) toneInput.disabled = isPlaying;
+
+    if (toneInput) toneInput.disabled = isPlayingState;
   }
 
   // --- RECORDING ---
@@ -343,6 +351,12 @@
     masterGain.gain.linearRampToValueAtTime(target, t + seconds);
   }
 
+  // --- AirPlay detection (do not suspend when active) ---
+  function isAirPlayActive() {
+    const a = document.getElementById("open-airplay-audio");
+    return !!(a && a.webkitCurrentPlaybackTargetIsWireless);
+  }
+
   // --- MELODY SCHEDULING ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
@@ -496,8 +510,6 @@
     const now = audioContext.currentTime;
 
     // --- iOS APP SWITCH FIX (NO CATCH-UP BURST) ---
-    // If timers are throttled in background, nextTimeA can fall behind.
-    // Clamp it forward so we never "machine-gun" schedule on return.
     if (nextTimeA < now - 0.25) {
       nextTimeA = now + 0.05;
     }
@@ -571,11 +583,15 @@
           const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
           let deltaEnd = cadencePlan.end - curDeg;
           if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
-          if (chance(0.35)) patternIdxA += deltaEnd; else if (chance(0.25)) patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
-          if (ct === "authentic") tension = clamp01(tension - 0.22); else tension = clamp01(tension + 0.10);
+          if (chance(0.35)) patternIdxA += deltaEnd;
+          else if (chance(0.25)) patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
+          if (ct === "authentic") tension = clamp01(tension - 0.22);
+          else tension = clamp01(tension + 0.10);
           lastCadenceType = ct;
         }
-      } else { patternIdxA += (rand() < 0.5 ? 1 : -1); }
+      } else {
+        patternIdxA += (rand() < 0.5 ? 1 : -1);
+      }
 
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
       const wantLT = cadencePlan ? cadencePlan.wantLT : false;
@@ -600,7 +616,12 @@
           else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
         }
         const melodyDegNow = degreeFromIdx(patternIdxA);
-        const useThirdColor = shouldUseThirdDrone({ atCadenceZone: (phraseStep >= 13), tensionVal: tension, cadenceType: ct, melodyDeg: melodyDegNow });
+        const useThirdColor = shouldUseThirdDrone({
+          atCadenceZone: (phraseStep >= 13),
+          tensionVal: tension,
+          cadenceType: ct,
+          melodyDeg: melodyDegNow
+        });
         if (!useThirdColor && droneRootDegree !== 0 && chance(0.65)) droneRootDegree = 0;
         const curRegister = Math.floor(patternIdxA / 7);
         const droneOct = Math.min(curRegister - 1, 0);
@@ -622,7 +643,8 @@
         }
         scheduleNote(audioContext, masterGain, reverbSend, freq, nextTimeA, appliedDur, 0.4, pressure, tension);
       }
-      notesSinceModulation++; nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
+      notesSinceModulation++;
+      nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
     }
   }
 
@@ -665,7 +687,7 @@
   function stopAllManual() {
     isPlaying = false; isEndingNaturally = false; isApproachingEnd = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    
+
     killAllActiveNodes();
 
     if (masterGain && audioContext) {
@@ -684,10 +706,11 @@
   }
 
   // --- FULL EXPORT ENGINE ---
+  // (UNCHANGED)
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
     if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
-    
+
     setSeed(sessionSnapshot.seed);
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const exportDuration = (durationInput === "infinite") ? 180 : Math.min(180, parseFloat(durationInput));
@@ -919,8 +942,8 @@
     return new Blob([buffer], { type: "audio/wav" });
   }
 
-  // --- iOS BACKGROUND/FOREGROUND (REPLACES OLD visibilitychange) ---
-  // Goal: prevent timer-throttle "catch-up burst" and avoid audible glitches.
+  // --- iOS BACKGROUND/FOREGROUND ---
+  // Goal: prevent timer-throttle "catch-up burst" and avoid UI showing STOP as active.
   let wasPlayingBeforeHide = false;
   let pausedElapsed = 0;
 
@@ -939,22 +962,27 @@
     // Fade out quickly to avoid clicks
     fadeMasterTo(0.0, 0.10);
 
-    // Suspend after fade
+    // Suspend after fade — BUT DO NOT suspend if AirPlay is active
     setTimeout(() => {
+      if (isAirPlayActive()) return;
       try { if (audioContext && audioContext.state === "running") audioContext.suspend?.(); } catch {}
     }, 140);
 
-    setButtonState("stopped");
+    // IMPORTANT: do NOT light up Stop on background pause
+    setButtonState(wasPlayingBeforeHide ? "paused" : "stopped");
   }
 
   async function resumeFromBackground() {
     if (!audioContext) return;
 
+    // If AirPlay is active, we intentionally never suspended; resume() is harmless.
     try { await audioContext.resume?.(); } catch {}
 
-    // Hard cleanup to avoid stale nodes / tails after a background pause
-    killAllActiveNodes();
-    refreshReverb();
+    // Only hard-clean if we were actually playing (avoid “glitchy restart” feel)
+    if (wasPlayingBeforeHide) {
+      killAllActiveNodes();
+      refreshReverb();
+    }
 
     // Reset scheduling to "now" so we never burst-schedule missed time
     const now = audioContext.currentTime;
@@ -1003,6 +1031,7 @@
       saveState(readControls());
     });
     document.getElementById("songDuration")?.addEventListener("change", () => saveState(readControls()));
+
     const recBtn = document.getElementById("record");
     if (recBtn) recBtn.onclick = toggleRecording;
 
