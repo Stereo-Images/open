@@ -9,7 +9,7 @@
     :root {
       --bg: #ffffff;
       --fg: #000000;
-      --focus-blue: #005fcc; /* 508 Compliant Focus Color */
+      --focus-blue: #005fcc;
       --font: "Helvetica Neue", Helvetica, Arial, sans-serif;
     }
 
@@ -27,7 +27,7 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 508 FIX: High-visibility focus ring for keyboard navigation */
+    /* 508 FIX: Focus ring */
     button:focus-visible, select:focus-visible, input:focus-visible {
       outline: 3px solid var(--focus-blue);
       outline-offset: 3px;
@@ -39,26 +39,10 @@
       padding: 20px;
     }
 
-    /* HEADER: "O P E N" Style */
-    h1 {
-      font-weight: 400;
-      font-size: 1.5rem;
-      text-align: center;
-      letter-spacing: 0.4em;
-      margin: 0 0 2rem 0;
-      text-transform: uppercase;
-      padding-left: 0.4em; /* Visual offset for wide spacing */
-    }
-
-    #popoutTitle {
-      padding-bottom: 1.5rem;
-      border-bottom: 1px solid var(--fg); /* Separator Line */
-    }
-
     /* --- HOMEPAGE (Launch View) --- */
     #launchOnly {
       text-align: center;
-      padding-top: 2rem;
+      /* No padding needed, centered by Flexbox body */
     }
 
     #launchPlayer {
@@ -75,14 +59,27 @@
     }
     #launchPlayer:hover { background: #f0f0f0; }
 
-    /* --- PLAYER CONTROLS --- */
+    /* --- PLAYER VIEW (Popout) --- */
+    /* HEADER: "O P E N" Style */
+    h1#popoutTitle {
+      font-weight: 400;
+      font-size: 1.5rem;
+      text-align: center;
+      letter-spacing: 0.4em;
+      margin: 0 0 2rem 0;
+      text-transform: uppercase;
+      padding-left: 0.4em;
+      padding-bottom: 1.5rem;
+      border-bottom: 1px solid var(--fg);
+    }
+
+    /* CONTROLS */
     #controls {
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
     }
 
-    /* Split Row Layout */
     .form-group {
       display: flex;
       justify-content: space-between;
@@ -97,7 +94,6 @@
       margin-right: 1rem;
     }
 
-    /* INPUTS */
     select {
       background: #fff;
       border: 1px solid var(--fg);
@@ -112,7 +108,6 @@
       -webkit-appearance: none;
     }
 
-    /* SLIDER */
     input[type="range"] {
       -webkit-appearance: none;
       width: 140px;
@@ -129,10 +124,9 @@
       background: var(--fg);
       cursor: pointer;
       border: none;
-      box-shadow: 0 0 0 6px rgba(0,0,0,0.01); /* Touch target expansion */
+      box-shadow: 0 0 0 6px rgba(0,0,0,0.01); 
     }
 
-    /* BUTTONS */
     .form-actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -152,16 +146,13 @@
       transition: all 0.1s;
     }
 
-    /* PLAY: White with Black Border */
     #playNow { background: #fff; color: var(--fg); }
     #playNow:hover { background: #f0f0f0; }
-    #playNow.filled { background: #ddd; } /* Active State */
+    #playNow.filled { background: #ddd; }
 
-    /* STOP: Black with White Text */
     #stop { background: var(--fg); color: var(--bg); }
     #stop:hover { opacity: 0.8; }
 
-    /* FOOTER */
     .separator {
       border: 0;
       border-top: 1px solid var(--fg);
@@ -176,7 +167,7 @@
       letter-spacing: 0.05em;
     }
 
-    /* UTILITY: Screen Reader Only (Hidden visually, read by VoiceOver) */
+    /* UTILITIES */
     .sr-only {
       position: absolute;
       width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -185,21 +176,22 @@
 
     /* --- STATE MANAGEMENT --- */
     
-    /* HOMEPAGE STATE (Default) */
+    /* HOMEPAGE STATE */
     body:not(.popout) #controls,
     body:not(.popout) #popoutTitle,
     body:not(.popout) .separator,
     body:not(.popout) #credits { display: none; }
 
-    /* POPOUT STATE (Player) */
+    /* POPOUT STATE */
     body.popout #launchOnly { display: none; }
     
-    /* MOBILE FALLBACK */
+    /* MOBILE STATE */
     body.mobile-player #launchOnly { display: none; }
     body.mobile-player #controls, 
     body.mobile-player #popoutTitle,
     body.mobile-player #credits,
     body.mobile-player .separator { display: block; }
+
   </style>
 </head>
 <body>
@@ -207,9 +199,10 @@
   <main aria-label="Audio Instrument">
     
     <section id="launchOnly">
-      <h1>O P E N</h1>
+      <h1 class="sr-only">Open Audio Player</h1>
+      
       <div class="launch-actions">
-        <button type="button" id="launchPlayer" aria-label="Open Player in new window">Open</button>
+        <button type="button" id="launchPlayer" aria-label="Open Player">Open</button>
       </div>
     </section>
 
