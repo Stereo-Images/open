@@ -1,13 +1,14 @@
 /* ============================================================
-   OPEN — v35 (Complete Hybrid)
+   OPEN — v35 (Complete Hybrid) — iOS Glitch Guard Integrated
    - Audio: "True Drift" v171 (Drones, Arcs, Export, AirPlay)
    - Fixes: Reverb Flush, Node Killing, iOS Background/Foreground (NO "Stop lights up")
+   - FIX v35.1: iOS duplicate lifecycle events + late-suspend cancellation (idempotent pause/resume)
    - UI: Ghost Buttons, Open Animation, Mobile Fix
    - NOTE: Export engine is kept UNTOUCHED.
    ============================================================ */
 
 (() => {
-  const STATE_KEY = "open_player_settings_v34";
+  const STATE_KEY = "open_player_settings_v35";
 
   // --- TUNING & CONSTANTS ---
   const MELODY_FLOOR_HZ = 220;
@@ -315,7 +316,13 @@
     if (!a) {
       a = document.createElement("audio");
       a.id = "open-airplay-audio";
-      a.style.display = "none";
+      // iOS: avoid display:none; keep effectively invisible but "real" to media stack
+      a.style.position = "fixed";
+      a.style.left = "-9999px";
+      a.style.width = "1px";
+      a.style.height = "1px";
+      a.style.opacity = "0.01";
+      a.style.pointerEvents = "none";
       a.autoplay = true;
       a.playsInline = true;
       document.body.appendChild(a);
@@ -916,7 +923,7 @@
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
     const a = document.createElement("a");
-    a.style.display = "none"; a.href = url; a.download = `open-final-v34-${Date.now()}.wav`;
+    a.style.display = "none"; a.href = url; a.download = `open-final-v35-${Date.now()}.wav`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
   }
@@ -942,13 +949,29 @@
     return new Blob([buffer], { type: "audio/wav" });
   }
 
-  // --- iOS BACKGROUND/FOREGROUND ---
-  // Goal: prevent timer-throttle "catch-up burst" and avoid UI showing STOP as active.
+  // --- iOS BACKGROUND/FOREGROUND (IDEMPOTENT + LATE-SUSPEND CANCEL) ---
+  // Fixes iOS Safari double-fire (visibilitychange + pagehide/pageshow) and "late suspend" after resume.
   let wasPlayingBeforeHide = false;
   let pausedElapsed = 0;
 
-  function pauseForBackground() {
+  let bgState = "visible";     // "visible" | "hidden"
+  let suspendTimer = null;
+  let bgEpoch = 0;
+
+  function clearSuspendTimer() {
+    if (suspendTimer) {
+      clearTimeout(suspendTimer);
+      suspendTimer = null;
+    }
+  }
+
+  function pauseForBackground(reason = "unknown") {
     if (!audioContext) return;
+    if (bgState === "hidden") return; // idempotent
+
+    bgState = "hidden";
+    bgEpoch++;
+    const myEpoch = bgEpoch;
 
     wasPlayingBeforeHide = isPlaying;
     if (wasPlayingBeforeHide) {
@@ -960,33 +983,39 @@
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
     // Fade out quickly to avoid clicks
-    fadeMasterTo(0.0, 0.10);
+    fadeMasterTo(0.0, 0.12);
 
-    // Suspend after fade — BUT DO NOT suspend if AirPlay is active
-    setTimeout(() => {
+    // Cancel any previous pending suspend, then schedule a guarded suspend
+    clearSuspendTimer();
+    suspendTimer = setTimeout(() => {
+      if (bgState !== "hidden") return;
+      if (bgEpoch !== myEpoch) return; // prevents "late suspend" after resume
       if (isAirPlayActive()) return;
       try { if (audioContext && audioContext.state === "running") audioContext.suspend?.(); } catch {}
-    }, 140);
+    }, 220);
 
     // IMPORTANT: do NOT light up Stop on background pause
     setButtonState(wasPlayingBeforeHide ? "paused" : "stopped");
   }
 
-  async function resumeFromBackground() {
+  async function resumeFromBackground(reason = "unknown") {
     if (!audioContext) return;
+    if (bgState === "visible") return; // idempotent
 
-    // If AirPlay is active, we intentionally never suspended; resume() is harmless.
+    bgState = "visible";
+    bgEpoch++; // invalidates any pending suspend
+    clearSuspendTimer();
+
     try { await audioContext.resume?.(); } catch {}
 
-    // Only hard-clean if we were actually playing (avoid “glitchy restart” feel)
     if (wasPlayingBeforeHide) {
       killAllActiveNodes();
       refreshReverb();
     }
 
-    // Reset scheduling to "now" so we never burst-schedule missed time
+    // Reset scheduling horizon to avoid burst scheduling
     const now = audioContext.currentTime;
-    nextTimeA = now + 0.05;
+    nextTimeA = now + 0.10; // slightly larger helps iOS
 
     // Preserve elapsed time for fixed-duration mode
     if (wasPlayingBeforeHide) {
@@ -994,7 +1023,7 @@
     }
 
     // Fade back in
-    fadeMasterTo(MASTER_VOL, 0.15);
+    fadeMasterTo(MASTER_VOL, 0.18);
 
     if (wasPlayingBeforeHide) {
       isPlaying = true;
@@ -1005,13 +1034,12 @@
   }
 
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) pauseForBackground();
-    else resumeFromBackground();
+    if (document.hidden) pauseForBackground("visibilitychange");
+    else resumeFromBackground("visibilitychange");
   });
 
-  // iOS Safari is more reliable with these in addition to visibilitychange
-  window.addEventListener("pagehide", pauseForBackground);
-  window.addEventListener("pageshow", resumeFromBackground);
+  window.addEventListener("pagehide", () => pauseForBackground("pagehide"));
+  window.addEventListener("pageshow", (e) => resumeFromBackground(e?.persisted ? "pageshow(bfcache)" : "pageshow"));
 
   document.addEventListener("DOMContentLoaded", () => {
     applyModeClasses();
