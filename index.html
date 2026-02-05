@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Open</title>
   <style>
-    /* --- DESIGN SYSTEM: Minimalist Black & White --- */
+    /* --- DESIGN SYSTEM: Helvetica / Black / White --- */
     :root {
       --bg: #ffffff;
       --fg: #000000;
@@ -27,7 +27,7 @@
       -webkit-font-smoothing: antialiased;
     }
 
-    /* 508 FIX: Focus ring */
+    /* 508 FIX: High-visibility focus ring */
     button:focus-visible, select:focus-visible, input:focus-visible {
       outline: 3px solid var(--focus-blue);
       outline-offset: 3px;
@@ -35,49 +35,67 @@
 
     main {
       width: 100%;
-      max-width: 380px; 
+      max-width: 380px; /* Original "Dimensions" constraint */
       padding: 20px;
     }
 
+    /* --- TYPOGRAPHY SHARED STYLES --- */
+    /* This class ensures the Button and the Title match exactly */
+    .title-style {
+      font-family: inherit;
+      font-weight: 400;
+      font-size: 2rem;
+      text-transform: uppercase;
+      letter-spacing: 0.3em;
+      color: var(--fg);
+      text-align: center;
+      padding-left: 0.3em; /* Optical centering for wide spacing */
+    }
+
     /* --- HOMEPAGE (Launch View) --- */
-    #launchOnly { text-align: center; }
+    #launchOnly { 
+      text-align: center; 
+      /* Center vertically in the viewport space */
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 200px; 
+    }
 
     .launch-actions {
       display: flex;
       justify-content: center;
     }
 
+    /* THE LAUNCH BUTTON */
     #launchPlayer {
       background: #fff;
       border: 1px solid var(--fg);
-      color: var(--fg);
-      font-family: inherit;
-      font-size: 1.1rem; /* Slightly larger for "Main Button" feel */
-      padding: 18px 50px;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
       cursor: pointer;
       border-radius: 0;
+      padding: 25px 50px; /* Big touch target */
+      transition: background 0.1s;
+      
+      /* Matching the Title Typography */
+      font-size: 2rem;
+      font-weight: 400;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      padding-left: calc(50px + 0.3em); /* Optical centering */
     }
     #launchPlayer:hover { background: #f0f0f0; }
 
     /* --- PLAYER VIEW (Popout) --- */
     h1#popoutTitle {
-      font-weight: 400;
-      font-size: 2em; /* Restored to standard H1 size */
-      text-align: center;
-      letter-spacing: 0.3em;
-      margin: 0 0 1.5em 0;
-      text-transform: uppercase;
-      padding-left: 0.3em;
-      padding-bottom: 1em;
+      margin: 0 0 1.5rem 0;
+      padding-bottom: 1rem;
       border-bottom: 1px solid var(--fg);
     }
 
     #controls {
       display: flex;
       flex-direction: column;
-      gap: 1.25em; /* Standard sizing gap */
+      gap: 1.5rem;
     }
 
     .form-group {
@@ -88,7 +106,7 @@
     }
 
     label {
-      font-size: 1rem; /* Standard 16px body size */
+      font-size: 1rem;
       color: var(--fg);
       white-space: nowrap;
       margin-right: 1rem;
@@ -98,13 +116,13 @@
       background: #fff;
       border: 1px solid var(--fg);
       color: var(--fg);
-      padding: 6px 10px;
+      padding: 8px 12px;
       font-family: inherit;
-      font-size: 1rem; /* Standard 16px to prevent iOS zoom */
+      font-size: 1rem;
       border-radius: 0;
       cursor: pointer;
       text-align: right;
-      min-width: 140px;
+      min-width: 120px;
       -webkit-appearance: none;
     }
 
@@ -131,13 +149,13 @@
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 15px;
-      margin-top: 1.5rem;
+      margin-top: 1rem;
     }
 
-    /* BUTTONS */
-    button {
+    /* PLAYER BUTTONS */
+    #playNow, #stop {
       font-family: inherit;
-      font-size: 0.9rem; /* Slightly smaller than body for UI controls */
+      font-size: 0.9rem;
       text-transform: uppercase;
       letter-spacing: 0.1em;
       padding: 15px 0;
@@ -145,31 +163,35 @@
       border: 1px solid var(--fg);
       border-radius: 0;
       transition: all 0.1s;
-      
-      /* Default Hollow */
-      background: #fff;
-      color: var(--fg);
     }
 
-    button:hover { background: #f0f0f0; }
+    /* Logic: Default State */
+    #playNow { background: #fff; color: var(--fg); }
+    #stop { background: var(--fg); color: var(--bg); font-weight: bold; } /* Default Stopped = Filled */
 
-    /* Active Filled State */
+    /* Active State (Toggled via JS class "filled") */
     button.filled {
-      background: var(--fg);
-      color: var(--bg);
+      background: var(--fg) !important;
+      color: var(--bg) !important;
       font-weight: bold;
     }
-    button.filled:hover { opacity: 0.9; background: var(--fg); }
+    button:not(.filled) {
+      background: #fff !important;
+      color: var(--fg) !important;
+      font-weight: normal;
+    }
+
+    button:hover { opacity: 0.8; }
 
     .separator {
       border: 0;
       border-top: 1px solid var(--fg);
-      margin: 2.5rem 0 1.5rem 0;
+      margin: 2rem 0 1.5rem 0;
     }
 
     footer#credits {
       text-align: left;
-      font-size: 0.75rem; /* Small footer text */
+      font-size: 0.75rem;
       line-height: 1.5;
       text-transform: uppercase;
       letter-spacing: 0.05em;
@@ -203,11 +225,11 @@
     <section id="launchOnly">
       <h1 class="sr-only">Open Audio Player</h1>
       <div class="launch-actions">
-        <button type="button" id="launchPlayer" class="secondary-btn" aria-label="Open Player">Open</button>
+        <button type="button" id="launchPlayer" class="secondary-btn">Open</button>
       </div>
     </section>
 
-    <h1 id="popoutTitle">Open</h1>
+    <h1 id="popoutTitle" class="title-style">Open</h1>
 
     <section id="controls" aria-label="Controls">
       <form id="songForm" onsubmit="return false;">
@@ -234,11 +256,10 @@
           <button type="button" id="playNow" aria-pressed="false">Play</button>
           <button type="button" id="stop" class="filled" aria-pressed="true">Stop</button>
         </div>
-
-        <div id="recordStatus" class="sr-only" aria-live="polite"></div>
-
       </form>
     </section>
+
+    <div id="recordStatus" class="sr-only" aria-live="polite"></div>
 
     <hr class="separator" />
 
