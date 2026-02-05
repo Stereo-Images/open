@@ -1,19 +1,18 @@
 /* ============================================================
-   OPEN — v35 (Complete Hybrid) — iOS Glitch Guard Integrated
+   OPEN — v36 (Panic Switch)
    - Audio: "True Drift" v171 (Drones, Arcs, Export, AirPlay)
-   - Fixes: Reverb Flush, Node Killing, iOS Background/Foreground (NO "Stop lights up")
-   - FIX v35.1: iOS duplicate lifecycle events + late-suspend cancellation (idempotent pause/resume)
-   - UI: Ghost Buttons, Open Animation, Mobile Fix
-   - NOTE: Export engine is kept UNTOUCHED.
+   - Fix: REMOVED Suspend Delay. Immediate Hard Mute on exit.
+   - Fix: Disconnects Master Node on exit to prevent buffer repeats.
+   - UI: Ghost Buttons, Open Animation, Mobile Fix.
    ============================================================ */
 
 (() => {
-  const STATE_KEY = "open_player_settings_v35";
+  const STATE_KEY = "open_player_settings_v36";
 
   // --- TUNING & CONSTANTS ---
-  const MELODY_FLOOR_HZ = 220;
-  const DRONE_FLOOR_HZ  = 87.31;
-  const DRONE_GAIN_MULT = 0.70;
+  const MELODY_FLOOR_HZ = 220;    
+  const DRONE_FLOOR_HZ  = 87.31;  
+  const DRONE_GAIN_MULT = 0.70;   
   const MASTER_VOL = 0.3;
   const REVERB_RETURN_LEVEL = 0.80;
 
@@ -22,7 +21,7 @@
     return freq;
   }
 
-  // --- ACTIVE NODE TRACKING (Prevents Bleed) ---
+  // --- ACTIVE NODE TRACKING ---
   let activeSources = [];
 
   function trackNode(node) {
@@ -63,11 +62,7 @@
     const width = 500, height = 680;
     const left = Math.max(0, (window.screen.width / 2) - (width / 2));
     const top = Math.max(0, (window.screen.height / 2) - (height / 2));
-    window.open(
-      `${window.location.href.split("#")[0]}#popout`,
-      "open_player",
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
-    );
+    window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`);
   }
 
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
@@ -100,26 +95,23 @@
   }
 
   // --- UI LOGIC (Ghost Buttons) ---
-  // States: "playing" | "stopped" | "paused"
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
-
-    const isPlayingState = (state === "playing");
-    const isStoppedState = (state === "stopped"); // ONLY this lights Stop
+    const isPlaying = (state === "playing");
 
     if (playBtn) {
-      playBtn.classList.toggle("filled", isPlayingState);
-      playBtn.setAttribute("aria-pressed", isPlayingState ? "true" : "false");
+      if (isPlaying) playBtn.classList.add("filled");
+      else playBtn.classList.remove("filled");
+      playBtn.setAttribute("aria-pressed", isPlaying ? "true" : "false");
     }
-
     if (stopBtn) {
-      stopBtn.classList.toggle("filled", isStoppedState);
-      stopBtn.setAttribute("aria-pressed", isStoppedState ? "true" : "false");
+      if (!isPlaying) stopBtn.classList.add("filled");
+      else stopBtn.classList.remove("filled");
+      stopBtn.setAttribute("aria-pressed", !isPlaying ? "true" : "false");
     }
-
-    if (toneInput) toneInput.disabled = isPlayingState;
+    if (toneInput) toneInput.disabled = isPlaying;
   }
 
   // --- RECORDING ---
@@ -311,18 +303,12 @@
     heartbeat.start();
     heartbeat.connect(audioContext.destination);
 
-    // Audio Anchor for AirPlay (No Video Anchor to avoid iOS lock issues)
+    // AirPlay Anchor
     let a = document.getElementById("open-airplay-audio");
     if (!a) {
       a = document.createElement("audio");
       a.id = "open-airplay-audio";
-      // iOS: avoid display:none; keep effectively invisible but "real" to media stack
-      a.style.position = "fixed";
-      a.style.left = "-9999px";
-      a.style.width = "1px";
-      a.style.height = "1px";
-      a.style.opacity = "0.01";
-      a.style.pointerEvents = "none";
+      a.style.display = "none";
       a.autoplay = true;
       a.playsInline = true;
       document.body.appendChild(a);
@@ -335,7 +321,6 @@
     });
   }
 
-  // --- HARD FLUSH REVERB ---
   function refreshReverb() {
     if (!audioContext) return;
     if (reverbNode) {
@@ -347,21 +332,6 @@
     reverbPreDelay.disconnect();
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
-  }
-
-  // --- iOS-safe helper (fade master without clicks) ---
-  function fadeMasterTo(target, seconds = 0.10) {
-    if (!masterGain || !audioContext) return;
-    const t = audioContext.currentTime;
-    masterGain.gain.cancelScheduledValues(t);
-    masterGain.gain.setValueAtTime(masterGain.gain.value, t);
-    masterGain.gain.linearRampToValueAtTime(target, t + seconds);
-  }
-
-  // --- AirPlay detection (do not suspend when active) ---
-  function isAirPlayActive() {
-    const a = document.getElementById("open-airplay-audio");
-    return !!(a && a.webkitCurrentPlaybackTargetIsWireless);
   }
 
   // --- MELODY SCHEDULING ---
@@ -590,15 +560,11 @@
           const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
           let deltaEnd = cadencePlan.end - curDeg;
           if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
-          if (chance(0.35)) patternIdxA += deltaEnd;
-          else if (chance(0.25)) patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
-          if (ct === "authentic") tension = clamp01(tension - 0.22);
-          else tension = clamp01(tension + 0.10);
+          if (chance(0.35)) patternIdxA += deltaEnd; else if (chance(0.25)) patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
+          if (ct === "authentic") tension = clamp01(tension - 0.22); else tension = clamp01(tension + 0.10);
           lastCadenceType = ct;
         }
-      } else {
-        patternIdxA += (rand() < 0.5 ? 1 : -1);
-      }
+      } else { patternIdxA += (rand() < 0.5 ? 1 : -1); }
 
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
       const wantLT = cadencePlan ? cadencePlan.wantLT : false;
@@ -623,12 +589,7 @@
           else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
         }
         const melodyDegNow = degreeFromIdx(patternIdxA);
-        const useThirdColor = shouldUseThirdDrone({
-          atCadenceZone: (phraseStep >= 13),
-          tensionVal: tension,
-          cadenceType: ct,
-          melodyDeg: melodyDegNow
-        });
+        const useThirdColor = shouldUseThirdDrone({ atCadenceZone: (phraseStep >= 13), tensionVal: tension, cadenceType: ct, melodyDeg: melodyDegNow });
         if (!useThirdColor && droneRootDegree !== 0 && chance(0.65)) droneRootDegree = 0;
         const curRegister = Math.floor(patternIdxA / 7);
         const droneOct = Math.min(curRegister - 1, 0);
@@ -650,8 +611,7 @@
         }
         scheduleNote(audioContext, masterGain, reverbSend, freq, nextTimeA, appliedDur, 0.4, pressure, tension);
       }
-      notesSinceModulation++;
-      nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
+      notesSinceModulation++; nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
     }
   }
 
@@ -949,81 +909,89 @@
     return new Blob([buffer], { type: "audio/wav" });
   }
 
-  // --- iOS BACKGROUND/FOREGROUND (IDEMPOTENT + LATE-SUSPEND CANCEL) ---
-  // Fixes iOS Safari double-fire (visibilitychange + pagehide/pageshow) and "late suspend" after resume.
+  // --- iOS BACKGROUND/FOREGROUND (IDEMPOTENT + "PANIC MUTE") ---
+  // Fixes the "fragment glitch" on app switch by force-killing volume and disconnecting.
   let wasPlayingBeforeHide = false;
   let pausedElapsed = 0;
-
-  let bgState = "visible";     // "visible" | "hidden"
-  let suspendTimer = null;
+  let bgState = "visible";
   let bgEpoch = 0;
-
-  function clearSuspendTimer() {
-    if (suspendTimer) {
-      clearTimeout(suspendTimer);
-      suspendTimer = null;
-    }
-  }
 
   function pauseForBackground(reason = "unknown") {
     if (!audioContext) return;
-    if (bgState === "hidden") return; // idempotent
+    if (bgState === "hidden") return;
 
     bgState = "hidden";
     bgEpoch++;
-    const myEpoch = bgEpoch;
 
     wasPlayingBeforeHide = isPlaying;
     if (wasPlayingBeforeHide) {
       pausedElapsed = Math.max(0, audioContext.currentTime - sessionStartTime);
     }
 
-    // Stop scheduling immediately (prevents catch-up on return)
+    // 1. Stop scheduler logic
     isPlaying = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
-    // Fade out quickly to avoid clicks
-    fadeMasterTo(0.0, 0.12);
+    // 2. HARD MUTE & DISCONNECT (The "Panic Switch")
+    // This is instant. No ramp. It prevents the buffer underrun glitch.
+    if (masterGain) {
+      masterGain.gain.cancelScheduledValues(audioContext.currentTime);
+      masterGain.gain.setValueAtTime(0, audioContext.currentTime);
+      
+      // Additional safety: Disconnect destination if not using AirPlay
+      // This prevents ANY stray audio from hitting the hardware buffer.
+      // (If AirPlay is active, we must leave it connected or AirPlay drops)
+      if (!isAirPlayActive()) {
+        try { masterGain.disconnect(audioContext.destination); } catch(e) {}
+      }
+    }
 
-    // Cancel any previous pending suspend, then schedule a guarded suspend
-    clearSuspendTimer();
-    suspendTimer = setTimeout(() => {
-      if (bgState !== "hidden") return;
-      if (bgEpoch !== myEpoch) return; // prevents "late suspend" after resume
-      if (isAirPlayActive()) return;
-      try { if (audioContext && audioContext.state === "running") audioContext.suspend?.(); } catch {}
-    }, 220);
+    // 3. Suspend immediately (don't wait for fade)
+    // Only if not using AirPlay (AirPlay requires running context)
+    if (!isAirPlayActive()) {
+        try { if (audioContext.state === "running") audioContext.suspend(); } catch {}
+    }
 
-    // IMPORTANT: do NOT light up Stop on background pause
     setButtonState(wasPlayingBeforeHide ? "paused" : "stopped");
   }
 
   async function resumeFromBackground(reason = "unknown") {
     if (!audioContext) return;
-    if (bgState === "visible") return; // idempotent
+    if (bgState === "visible") return;
 
     bgState = "visible";
-    bgEpoch++; // invalidates any pending suspend
-    clearSuspendTimer();
+    bgEpoch++;
 
-    try { await audioContext.resume?.(); } catch {}
+    // 1. Reconnect Master if we disconnected it
+    try { 
+      masterGain.disconnect(); // clear old connections just in case
+      masterGain.connect(audioContext.destination);
+      if (streamDest) masterGain.connect(streamDest);
+    } catch(e) {}
 
+    // 2. Resume Context
+    try { await audioContext.resume(); } catch {}
+
+    // 3. Hard Clean (kills old drone ghosts)
     if (wasPlayingBeforeHide) {
       killAllActiveNodes();
       refreshReverb();
     }
 
-    // Reset scheduling horizon to avoid burst scheduling
+    // 4. Restore Scheduler state
     const now = audioContext.currentTime;
-    nextTimeA = now + 0.10; // slightly larger helps iOS
+    nextTimeA = now + 0.10; // Anti-burst offset
 
-    // Preserve elapsed time for fixed-duration mode
     if (wasPlayingBeforeHide) {
       sessionStartTime = now - pausedElapsed;
     }
 
-    // Fade back in
-    fadeMasterTo(MASTER_VOL, 0.18);
+    // 5. Restore Volume (Fade In)
+    if (masterGain) {
+      masterGain.gain.cancelScheduledValues(now);
+      masterGain.gain.setValueAtTime(0, now);
+      masterGain.gain.linearRampToValueAtTime(MASTER_VOL, now + 0.2); // Smooth entry
+    }
 
     if (wasPlayingBeforeHide) {
       isPlaying = true;
@@ -1031,6 +999,12 @@
       timerInterval = setInterval(scheduler, 50);
       setButtonState("playing");
     }
+  }
+
+  // --- AirPlay Detection helper ---
+  function isAirPlayActive() {
+    const a = document.getElementById("open-airplay-audio");
+    return !!(a && a.webkitCurrentPlaybackTargetIsWireless); // Safari-specific check
   }
 
   document.addEventListener("visibilitychange", () => {
