@@ -1,3 +1,4 @@
+<!-- player.html (PLAYER PAGE) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,16 +7,14 @@
   <title>Open — Player</title>
   <link rel="stylesheet" href="style.css" />
 </head>
-<body>
-  <main class="page" aria-labelledby="playerTitle">
+<body class="player">
+  <main class="shell" aria-label="Audio Instrument">
     <h1 id="playerTitle" class="title-style">Open</h1>
 
-    <hr class="separator" aria-hidden="true" />
-
-    <section aria-label="Controls">
+    <section id="controls" aria-label="Controls">
       <form id="songForm" onsubmit="return false;">
         <div class="form-group">
-          <label for="songDuration">Duration</label>
+          <label for="songDuration">Duration:</label>
           <select id="songDuration" name="songDuration">
             <option value="60" selected>1 minute</option>
             <option value="300">5 minutes</option>
@@ -27,7 +26,7 @@
 
         <div class="form-group">
           <label id="toneLabel" for="tone">
-            Root tone: <span id="hzReadout" aria-hidden="true">110</span> Hz
+            Root Tone: <span id="hzReadout" aria-hidden="true">110</span> Hz
           </label>
           <input
             type="range"
@@ -40,27 +39,29 @@
           />
         </div>
 
-        <div class="form-actions" role="group" aria-label="Transport controls">
-          <button type="button" id="playNow" aria-pressed="false">Play</button>
-          <button type="button" id="stop" class="filled" aria-pressed="true">Stop</button>
+        <div class="form-actions">
+          <button type="button" id="playNow" class="btn" aria-pressed="false">Play</button>
+          <button type="button" id="stop" class="btn filled" aria-pressed="true">Stop</button>
         </div>
       </form>
     </section>
 
-    <!-- Screen-reader announcements -->
-    <div id="playerStatus" class="sr-only" aria-live="polite">Stopped</div>
+    <!-- Polite live region for announcements -->
+    <div id="srStatus" class="sr-only" aria-live="polite">
+      Stopped. Use Play to begin. Shift+R to record. Shift+E to export WAV.
+    </div>
 
-    <!-- Optional: hidden help text for hotkeys (screen readers will find it) -->
-    <p class="sr-only" id="hotkeyHelp">
-      Hotkeys: Press R to start or stop recording. Press E to export a WAV file.
-    </p>
+    <hr class="separator" />
 
-    <footer class="credits">
-      <div>By Aaron Koppel</div>
-      <div>Stereo Images, 2026</div>
+    <footer id="credits" role="contentinfo">
+      <div class="credit-line">By Aaron Koppel</div>
+      <div class="credit-line">Stereo Images, 2026</div>
+      <div class="credit-line hotkeys" aria-hidden="true">
+        Hotkeys: Shift+R record · Shift+E export
+      </div>
     </footer>
   </main>
 
-  <script src="script.js"></script>
+  <script src="player.js"></script>
 </body>
 </html>
