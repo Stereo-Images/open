@@ -1,13 +1,13 @@
 /* ============================================================
-   OPEN — v36 (Panic Switch)
+   OPEN — v39 (Complete Smart Panic)
    - Audio: "True Drift" v171 (Drones, Arcs, Export, AirPlay)
-   - Fix: REMOVED Suspend Delay. Immediate Hard Mute on exit.
-   - Fix: Disconnects Master Node on exit to prevent buffer repeats.
+   - Fix: "Smart Panic" (Stops local audio on exit, keeps AirPlay alive)
+   - Fix: Reverb Flush & Node Killing for clean restarts
    - UI: Ghost Buttons, Open Animation, Mobile Fix.
    ============================================================ */
 
 (() => {
-  const STATE_KEY = "open_player_settings_v36";
+  const STATE_KEY = "open_player_settings_v39";
 
   // --- TUNING & CONSTANTS ---
   const MELODY_FLOOR_HZ = 220;    
@@ -94,24 +94,24 @@
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
 
-  // --- UI LOGIC (Ghost Buttons) ---
+  // --- UI LOGIC ---
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
-    const isPlaying = (state === "playing");
+    const isPlayingState = (state === "playing");
 
     if (playBtn) {
-      if (isPlaying) playBtn.classList.add("filled");
+      if (isPlayingState) playBtn.classList.add("filled");
       else playBtn.classList.remove("filled");
-      playBtn.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+      playBtn.setAttribute("aria-pressed", isPlayingState ? "true" : "false");
     }
     if (stopBtn) {
-      if (!isPlaying) stopBtn.classList.add("filled");
+      if (state === "stopped") stopBtn.classList.add("filled");
       else stopBtn.classList.remove("filled");
-      stopBtn.setAttribute("aria-pressed", !isPlaying ? "true" : "false");
+      stopBtn.setAttribute("aria-pressed", state === "stopped" ? "true" : "false");
     }
-    if (toneInput) toneInput.disabled = isPlaying;
+    if (toneInput) toneInput.disabled = isPlayingState;
   }
 
   // --- RECORDING ---
@@ -486,10 +486,7 @@
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
 
-    // --- iOS APP SWITCH FIX (NO CATCH-UP BURST) ---
-    if (nextTimeA < now - 0.25) {
-      nextTimeA = now + 0.05;
-    }
+    if (nextTimeA < now - 0.25) { nextTimeA = now + 0.05; } // Catch-up prevention
 
     const elapsed = now - sessionStartTime;
     if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
@@ -651,7 +648,7 @@
     timerInterval = setInterval(scheduler, 50);
   }
 
-  function stopAllManual() {
+  function stopAllManual(instant = false) {
     isPlaying = false; isEndingNaturally = false; isApproachingEnd = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
@@ -660,8 +657,12 @@
     if (masterGain && audioContext) {
       const t = audioContext.currentTime;
       masterGain.gain.cancelScheduledValues(t);
-      masterGain.gain.setValueAtTime(masterGain.gain.value, t);
-      masterGain.gain.linearRampToValueAtTime(0, t + 0.05);
+      if (instant) {
+        masterGain.gain.setValueAtTime(0, t);
+      } else {
+        masterGain.gain.setValueAtTime(masterGain.gain.value, t);
+        masterGain.gain.linearRampToValueAtTime(0, t + 0.05);
+      }
     }
     setButtonState("stopped");
   }
@@ -672,8 +673,7 @@
     setButtonState("stopped");
   }
 
-  // --- FULL EXPORT ENGINE ---
-  // (UNCHANGED)
+  // --- FULL EXPORT ENGINE (Offline Rendering) ---
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
     if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
@@ -708,7 +708,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // --- RE-SIMULATE MUSIC (Offline) ---
+    // Re-simulate music offline
     let localPhraseCount = 0; let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
     let localArcPos = -1; let localTension = 0.0;
@@ -883,7 +883,7 @@
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
     const a = document.createElement("a");
-    a.style.display = "none"; a.href = url; a.download = `open-final-v35-${Date.now()}.wav`;
+    a.style.display = "none"; a.href = url; a.download = `open-final-v39-${Date.now()}.wav`;
     document.body.appendChild(a); a.click();
     setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
   }
@@ -909,111 +909,26 @@
     return new Blob([buffer], { type: "audio/wav" });
   }
 
-  // --- iOS BACKGROUND/FOREGROUND (IDEMPOTENT + "PANIC MUTE") ---
-  // Fixes the "fragment glitch" on app switch by force-killing volume and disconnecting.
-  let wasPlayingBeforeHide = false;
-  let pausedElapsed = 0;
-  let bgState = "visible";
-  let bgEpoch = 0;
-
-  function pauseForBackground(reason = "unknown") {
-    if (!audioContext) return;
-    if (bgState === "hidden") return;
-
-    bgState = "hidden";
-    bgEpoch++;
-
-    wasPlayingBeforeHide = isPlaying;
-    if (wasPlayingBeforeHide) {
-      pausedElapsed = Math.max(0, audioContext.currentTime - sessionStartTime);
+  // --- SMART PANIC (Fixes iOS Glitch, Respects AirPlay) ---
+  const handleBackground = () => {
+    // 1. Check for active AirPlay
+    // If we are AirPlaying, DO NOT stop. AirPlay handles backgrounding fine.
+    function isAirPlayActive() {
+      const a = document.getElementById("open-airplay-audio");
+      return !!(a && a.webkitCurrentPlaybackTargetIsWireless);
     }
 
-    // 1. Stop scheduler logic
-    isPlaying = false;
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    if (isAirPlayActive()) return;
 
-    // 2. HARD MUTE & DISCONNECT (The "Panic Switch")
-    // This is instant. No ramp. It prevents the buffer underrun glitch.
-    if (masterGain) {
-      masterGain.gain.cancelScheduledValues(audioContext.currentTime);
-      masterGain.gain.setValueAtTime(0, audioContext.currentTime);
-      
-      // Additional safety: Disconnect destination if not using AirPlay
-      // This prevents ANY stray audio from hitting the hardware buffer.
-      // (If AirPlay is active, we must leave it connected or AirPlay drops)
-      if (!isAirPlayActive()) {
-        try { masterGain.disconnect(audioContext.destination); } catch(e) {}
-      }
+    // 2. If LOCAL playback, KILL IT to prevent glitch.
+    if (document.hidden) {
+      stopAllManual(true); // "true" means instant mute
     }
+  };
 
-    // 3. Suspend immediately (don't wait for fade)
-    // Only if not using AirPlay (AirPlay requires running context)
-    if (!isAirPlayActive()) {
-        try { if (audioContext.state === "running") audioContext.suspend(); } catch {}
-    }
-
-    setButtonState(wasPlayingBeforeHide ? "paused" : "stopped");
-  }
-
-  async function resumeFromBackground(reason = "unknown") {
-    if (!audioContext) return;
-    if (bgState === "visible") return;
-
-    bgState = "visible";
-    bgEpoch++;
-
-    // 1. Reconnect Master if we disconnected it
-    try { 
-      masterGain.disconnect(); // clear old connections just in case
-      masterGain.connect(audioContext.destination);
-      if (streamDest) masterGain.connect(streamDest);
-    } catch(e) {}
-
-    // 2. Resume Context
-    try { await audioContext.resume(); } catch {}
-
-    // 3. Hard Clean (kills old drone ghosts)
-    if (wasPlayingBeforeHide) {
-      killAllActiveNodes();
-      refreshReverb();
-    }
-
-    // 4. Restore Scheduler state
-    const now = audioContext.currentTime;
-    nextTimeA = now + 0.10; // Anti-burst offset
-
-    if (wasPlayingBeforeHide) {
-      sessionStartTime = now - pausedElapsed;
-    }
-
-    // 5. Restore Volume (Fade In)
-    if (masterGain) {
-      masterGain.gain.cancelScheduledValues(now);
-      masterGain.gain.setValueAtTime(0, now);
-      masterGain.gain.linearRampToValueAtTime(MASTER_VOL, now + 0.2); // Smooth entry
-    }
-
-    if (wasPlayingBeforeHide) {
-      isPlaying = true;
-      if (timerInterval) clearInterval(timerInterval);
-      timerInterval = setInterval(scheduler, 50);
-      setButtonState("playing");
-    }
-  }
-
-  // --- AirPlay Detection helper ---
-  function isAirPlayActive() {
-    const a = document.getElementById("open-airplay-audio");
-    return !!(a && a.webkitCurrentPlaybackTargetIsWireless); // Safari-specific check
-  }
-
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) pauseForBackground("visibilitychange");
-    else resumeFromBackground("visibilitychange");
-  });
-
-  window.addEventListener("pagehide", () => pauseForBackground("pagehide"));
-  window.addEventListener("pageshow", (e) => resumeFromBackground(e?.persisted ? "pageshow(bfcache)" : "pageshow"));
+  // Bind to visibility change AND pagehide for max reliability
+  document.addEventListener("visibilitychange", handleBackground);
+  window.addEventListener("pagehide", handleBackground);
 
   document.addEventListener("DOMContentLoaded", () => {
     applyModeClasses();
@@ -1023,7 +938,8 @@
     const stopBtn = document.getElementById("stop");
 
     if (playBtn) playBtn.addEventListener("click", startFromUI);
-    if (stopBtn) stopBtn.addEventListener("click", stopAllManual);
+    // User click -> Smooth stop
+    if (stopBtn) stopBtn.addEventListener("click", () => stopAllManual(false));
 
     applyControls(loadState());
 
@@ -1045,7 +961,6 @@
       setButtonState("stopped");
     }
 
-    // --- LAUNCH ANIMATION ---
     const launchBtn = document.getElementById("launchPlayer");
     if (launchBtn) {
       launchBtn.addEventListener("click", () => {
