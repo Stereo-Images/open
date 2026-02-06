@@ -1,4 +1,3 @@
-<!-- index.html (LAUNCHER PAGE) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -13,9 +12,16 @@
 
     <section class="launchOnly">
       <div class="launch-actions">
-        <button type="button" id="launchPlayer" class="btn btn-launch">Open</button>
+        <button 
+          type="button" 
+          id="launchPlayer" 
+          class="btn btn-launch"
+          aria-label="Open audio player in a new window">
+          Open
+        </button>
       </div>
     </section>
+
   </main>
 
   <script>
@@ -27,11 +33,11 @@
 
       function openPlayer() {
         if (isMobileDevice()) {
-          // Mobile: same tab
+          // Mobile: same tab navigation
           window.location.href = "player.html";
           return;
         }
-        // Desktop: popout window
+        // Desktop: open popout window
         const width = 520, height = 720;
         const left = Math.max(0, (window.screen.width / 2) - (width / 2));
         const top = Math.max(0, (window.screen.height / 2) - (height / 2));
