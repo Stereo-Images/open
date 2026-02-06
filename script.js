@@ -1,12 +1,9 @@
 /* ============================================================
-   OPEN — v171_true_drift (2026-01-29)
-   - “Ghost Downbeat”: Internal logic starts at step 0, audio at step 1.
-   - “Natural Start”: NO forced drone at t=0. Melody emerges from silence.
-   - “Safety”: Phrase counters initialized to -1 to prevent mute bug.
+   OPEN — v171_true_drift (RESTORED & SANITIZED)
    ============================================================ */
 
 (() => {
-  const STATE_KEY = “open_player_settings_v171_true_drift”;
+  const STATE_KEY = "open_player_settings_v171_true_drift";
 
   // =========================
   // TARGET BEHAVIOR
@@ -23,29 +20,30 @@
   // =========================
   // VIEW & STATE
   // =========================
-  function isPopoutMode() { return window.location.hash === “#popout”; }
+  function isPopoutMode() { return window.location.hash === "#popout"; }
   function isMobileDevice() {
-    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || “”) ||
-      (window.matchMedia?.(“(pointer: coarse)”)?.matches && window.matchMedia?.(“(max-width: 820px)”)?.matches);
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") ||
+      (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
   }
 
   function applyModeClasses() {
-    if (isPopoutMode()) document.body.classList.add(“popout”);
-    else document.body.classList.remove(“popout”);
+    if (isPopoutMode()) document.body.classList.add("popout");
+    else document.body.classList.remove("popout");
   }
 
   function launchPlayer() {
     if (isMobileDevice()) {
-      document.body.classList.add(“mobile-player”);
-      window.location.hash = “#popout”;
+      document.body.classList.add("mobile-player");
+      window.location.hash = "#popout";
       applyModeClasses();
-      setButtonState(“stopped”);
+      setButtonState("stopped");
       return;
     }
+    // Desktop: Popout Window
     const width = 500, height = 680;
     const left = Math.max(0, (window.screen.width / 2) - (width / 2));
     const top = Math.max(0, (window.screen.height / 2) - (height / 2));
-    window.open(`${window.location.href.split(“#”)[0]}#popout`, “open_player”, `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`);
+    window.open(`${window.location.href.split("#")[0]}#popout`, "open_player", `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`);
   }
 
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
@@ -53,20 +51,20 @@
 
   function readControls() {
     return {
-      songDuration: document.getElementById(“songDuration”)?.value ?? “60”,
-      tone: document.getElementById(“tone”)?.value ?? “110”,
+      songDuration: document.getElementById("songDuration")?.value ?? "60",
+      tone: document.getElementById("tone")?.value ?? "110",
       updatedAt: Date.now()
     };
   }
 
   function applyControls(state) {
-    const sd = document.getElementById(“songDuration”);
-    const tone = document.getElementById(“tone”);
-    const hzReadout = document.getElementById(“hzReadout”);
+    const sd = document.getElementById("songDuration");
+    const tone = document.getElementById("tone");
+    const hzReadout = document.getElementById("hzReadout");
     if (sd) {
-      const allowed = new Set([“60”, “300”, “600”, “1800”, “infinite”]);
-      const v = state?.songDuration != null ? String(state.songDuration) : “60”;
-      sd.value = allowed.has(v) ? v : “60”;
+      const allowed = new Set(["60", "300", "600", "1800", "infinite"]);
+      const v = state?.songDuration != null ? String(state.songDuration) : "60";
+      sd.value = allowed.has(v) ? v : "60";
     }
     let toneVal = 110;
     if (state?.tone != null) {
@@ -78,12 +76,15 @@
   }
 
   function setButtonState(state) {
-    const playBtn = document.getElementById(“playNow”);
-    const stopBtn = document.getElementById(“stop”);
-    const toneInput = document.getElementById(“tone”);
-    if (playBtn) playBtn.classList.toggle(“filled”, state === “playing”);
-    if (stopBtn) stopBtn.classList.toggle(“filled”, state !== “playing”);
-    if (toneInput) toneInput.disabled = (state === “playing”);
+    const playBtn = document.getElementById("playNow");
+    const stopBtn = document.getElementById("stop");
+    const toneInput = document.getElementById("tone");
+    
+    // Ghost Button Logic: "filled" means active/selected
+    if (playBtn) playBtn.classList.toggle("filled", state === "playing");
+    if (stopBtn) stopBtn.classList.toggle("filled", state !== "playing");
+    
+    if (toneInput) toneInput.disabled = (state === "playing");
   }
 
   // =========================
@@ -101,8 +102,8 @@
     } else {
       if (!streamDest?.stream) return;
       recordedChunks = [];
-      const types = [“audio/webm;codecs=opus”, “audio/webm”, “audio/ogg”];
-      const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || “”;
+      const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+      const mimeType = types.find(t => MediaRecorder.isTypeSupported(t)) || "";
       try {
         mediaRecorder = new MediaRecorder(streamDest.stream, mimeType ? { mimeType } : undefined);
       } catch (e) { console.warn(e); return; }
@@ -111,9 +112,9 @@
       mediaRecorder.onstop = () => {
         const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
         const url = URL.createObjectURL(blob);
-        const a = document.createElement(“a”);
+        const a = document.createElement("a");
         a.href = url;
-        a.download = `open-live-${Date.now()}.${blob.type.includes(“ogg”)?”ogg”:”webm”}`;
+        a.download = `open-live-${Date.now()}.${blob.type.includes("ogg")?"ogg":"webm"}`;
         document.body.appendChild(a); a.click();
         setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
       };
@@ -124,10 +125,10 @@
   }
 
   function setRecordUI(on) {
-    const el = document.getElementById(“recordStatus”);
+    const el = document.getElementById("recordStatus");
     if (el) {
-      el.textContent = on ? “Recording: ON” : “Recording: off”;
-      el.classList.toggle(“recording-on”, on);
+      el.textContent = on ? "Recording: ON" : "Recording: off";
+      el.classList.toggle("recording-on", on);
     }
   }
 
@@ -181,8 +182,8 @@
   let arcPos = -1;
   let arcClimaxAt = 4;
   let tension = 0.0;
-  let lastCadenceType = “none”;
-  let currentCadenceType = “none”;
+  let lastCadenceType = "none";
+  let currentCadenceType = "none";
 
   // Drone Cooldown
   let lastDroneStart = -9999;
@@ -212,10 +213,10 @@
     tension = clamp01(tension * 0.4 + 0.05);
   }
 
-  // — HARMONY LOGIC —
+  // --- HARMONY LOGIC ---
   function cadenceRepeatPenalty(type) {
     if (type !== lastCadenceType) return 0.0;
-    if (type === “authentic”) return 0.30;
+    if (type === "authentic") return 0.30;
     return 0.18;
   }
 
@@ -237,16 +238,16 @@
     const sum = keys.reduce((a, k) => a + w[k], 0);
     let r = rand() * sum;
     for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
-    return “authentic”;
+    return "authentic";
   }
 
   function cadenceTargets(type) {
     switch (type) {
-      case “authentic”: return { pre: 6, end: 0, wantLT: true };
-      case “half”: return { pre: 1, end: 4, wantLT: false };
-      case “plagal”: return { pre: 3, end: 0, wantLT: false };
-      case “deceptive”: return { pre: 6, end: 5, wantLT: true };
-      case “evaded”: return { pre: 6, end: 2, wantLT: true };
+      case "authentic": return { pre: 6, end: 0, wantLT: true };
+      case "half": return { pre: 1, end: 4, wantLT: false };
+      case "plagal": return { pre: 3, end: 0, wantLT: false };
+      case "deceptive": return { pre: 6, end: 5, wantLT: true };
+      case "evaded": return { pre: 6, end: 2, wantLT: true };
       default: return { pre: 2, end: 0, wantLT: false };
     }
   }
@@ -268,7 +269,7 @@
     reverbNode = audioContext.createConvolver();
     reverbNode.buffer = createImpulseResponse(audioContext);
     reverbLP = audioContext.createBiquadFilter();
-    reverbLP.type = “lowpass”;
+    reverbLP.type = "lowpass";
     reverbLP.frequency.value = 4200;
     reverbLP.Q.value = 0.7;
 
@@ -291,22 +292,22 @@
     heartbeat.connect(audioContext.destination);
     
     // Wake Lock
-    let v = document.querySelector(“video”);
+    let v = document.querySelector("video");
     if(!v) {
-        v = document.createElement(“video”);
-        Object.assign(v.style, {position:’fixed’, bottom:0, right:0, width:’1px’, height:’1px’, opacity:0.01, zIndex:-1});
+        v = document.createElement("video");
+        Object.assign(v.style, {position:'fixed', bottom:0, right:0, width:'1px', height:'1px', opacity:0.01, zIndex:-1});
         v.muted = true; v.playsInline = true;
         document.body.appendChild(v);
     }
     v.srcObject = streamDest.stream;
     v.play().catch(()=>{});
 
-    document.addEventListener(‘keydown’, (e) => { 
-      if (e.key.toLowerCase() === ‘r’) toggleRecording(); 
+    document.addEventListener("keydown", (e) => { 
+      if (e.key.toLowerCase() === "r") toggleRecording(); 
     });
   }
 
-  // — MELODY ENGINE —
+  // --- MELODY ENGINE ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
@@ -332,7 +333,7 @@
       const ampGain = ctx.createGain();
       const filter = ctx.createBiquadFilter();
 
-      filter.type = “lowpass”;
+      filter.type = "lowpass";
       filter.frequency.value = Math.min(freq * 3.5, 6000);
       filter.Q.value = 0.6;
 
@@ -359,11 +360,11 @@
     });
   }
 
-  // — SMART DRONE CHORD (Condition 3rd + Normalized Weights) —
+  // --- SMART DRONE CHORD (Condition 3rd + Normalized Weights) ---
   function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality, includeThird = true) {
      let f0 = clampFreqMin(rootFreq, DRONE_FLOOR_HZ);
 
-     const thirdRatio = (quality === “min”) ? Math.pow(2, 3/12) : Math.pow(2, 4/12);
+     const thirdRatio = (quality === "min") ? Math.pow(2, 3/12) : Math.pow(2, 4/12);
      const fifthRatio = Math.pow(2, 7/12); 
      
      const vol = baseVolume * DRONE_GAIN_MULT;
@@ -384,8 +385,8 @@
     const ampGain = ctx.createGain();
     const lp = ctx.createBiquadFilter();
 
-    carrier.type = “sine”;
-    modulator.type = “sine”;
+    carrier.type = "sine";
+    modulator.type = "sine";
     carrier.frequency.value = freq;
     modulator.frequency.value = freq * 2.0; 
     modulator.detune.value = (rand() - 0.5) * 8; 
@@ -398,7 +399,7 @@
     ampGain.gain.exponentialRampToValueAtTime(volume, time + 2.0); 
     ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-    lp.type = “lowpass”;
+    lp.type = "lowpass";
     lp.frequency.setValueAtTime(600, time);
     lp.Q.value = 0.6;
 
@@ -445,7 +446,7 @@
   function shouldUseThirdDrone({ atCadenceZone, tensionVal, cadenceType, melodyDeg }) {
     if (atCadenceZone) return false;
     if (tensionVal >= 0.55) return false;
-    if (cadenceType === “half” || cadenceType === “deceptive” || cadenceType === “evaded”) return false;
+    if (cadenceType === "half" || cadenceType === "deceptive" || cadenceType === "evaded") return false;
     return (melodyDeg === 0 || melodyDeg === 2 || melodyDeg === 4);
   }
 
@@ -463,12 +464,12 @@
 
   function scheduler() {
     if (!isPlaying) return;
-    const durationInput = document.getElementById(“songDuration”)?.value ?? “60”;
+    const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
-    if (durationInput !== “infinite” && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
+    if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
 
-    let baseFreq = Number(document.getElementById(“tone”)?.value ?? 110);
+    let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
 
@@ -555,7 +556,7 @@
                 patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
              }
              
-             if(ct === “authentic”) tension = clamp01(tension - 0.22);
+             if(ct === "authentic") tension = clamp01(tension - 0.22);
              else tension = clamp01(tension + 0.10);
              
              lastCadenceType = ct;
@@ -584,12 +585,12 @@
       const canStartDrone = (nextTimeA >= lastDroneStart + lastDroneDur * 0.65);
 
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
-         const ct = currentCadenceType || “authentic”;
+         const ct = currentCadenceType || "authentic";
          let droneRootDegree = 0;
          if (!isArcStart && !isClimax) {
-           if (ct === “half”) droneRootDegree = 4;
-           else if (ct === “deceptive”) droneRootDegree = chance(0.6) ? 0 : 5;
-           else if (ct === “plagal”) droneRootDegree = chance(0.6) ? 3 : 0;
+           if (ct === "half") droneRootDegree = 4;
+           else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
+           else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
            else droneRootDegree = 0;
          }
 
@@ -617,7 +618,7 @@
          lastDroneDur = droneDur;
 
          const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
-         const quality = isMinor ? “min” : “maj”;
+         const quality = isMinor ? "min" : "maj";
 
          scheduleDroneChord(audioContext, masterGain, reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
@@ -638,7 +639,7 @@
 
   function startFromUI() {
     initAudio();
-    if (audioContext.state === “suspended”) audioContext.resume?.();
+    if (audioContext.state === "suspended") audioContext.resume?.();
 
     isEndingNaturally = false;
     isApproachingEnd = false;
@@ -647,8 +648,8 @@
     circlePosition = 0;
     isMinor = false;
     tension = 0.0;
-    lastCadenceType = “none”;
-    currentCadenceType = “none”;
+    lastCadenceType = "none";
+    currentCadenceType = "none";
     lastDroneStart = -9999;
     lastDroneDur = 0;
     notesSinceModulation = 0;
@@ -680,7 +681,7 @@
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
 
-    setButtonState(“playing”);
+    setButtonState("playing");
 
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = setInterval(scheduler, 50);
@@ -697,26 +698,26 @@
       masterGain.gain.setValueAtTime(masterGain.gain.value, t);
       masterGain.gain.linearRampToValueAtTime(0, t + 0.05);
     }
-    setButtonState(“stopped”);
+    setButtonState("stopped");
   }
 
   function beginNaturalEnd() {
     isEndingNaturally = true;
     isPlaying = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    setButtonState(“stopped”);
+    setButtonState("stopped");
   }
 
   // =========================
   // EXPORT (Mirrors Live Logic)
   // =========================
   async function renderWavExport() {
-    if (!isPlaying && !audioContext) { alert(“Please start playback first.”); return; }
-    if (!sessionSnapshot?.seed) { alert(“Press Play once first.”); return; }
+    if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
+    if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
     setSeed(sessionSnapshot.seed);
 
-    const durationInput = document.getElementById(“songDuration”)?.value ?? “60”;
-    const exportDuration = (durationInput === “infinite”) ? 180 : Math.min(180, parseFloat(durationInput));
+    const durationInput = document.getElementById("songDuration")?.value ?? "60";
+    const exportDuration = (durationInput === "infinite") ? 180 : Math.min(180, parseFloat(durationInput));
     const sampleRate = 44100;
 
     const offlineCtx = new OfflineAudioContext(2, sampleRate * exportDuration, sampleRate);
@@ -729,7 +730,7 @@
     const offlineReverb = offlineCtx.createConvolver();
     offlineReverb.buffer = createImpulseResponse(offlineCtx);
     const offlineReverbLP = offlineCtx.createBiquadFilter();
-    offlineReverbLP.type = “lowpass”;
+    offlineReverbLP.type = "lowpass";
     offlineReverbLP.frequency.value = 4200;
     offlineReverbLP.Q.value = 0.7;
 
@@ -749,7 +750,7 @@
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
     let localArcPos = -1;
     let localTension = 0.0;
-    let localLastCadenceType = “none”, localCadenceType = “none”;
+    let localLastCadenceType = "none", localCadenceType = "none";
     let localLastDroneStart = -9999, localLastDroneDur = 0;
     let usedSnapshotArc = false;
 
@@ -768,7 +769,7 @@
     localStartNewArc();
 
     const exportDensity = sessionSnapshot.density;
-    let baseFreq = Number(document.getElementById(“tone”)?.value ?? 110);
+    let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
 
@@ -784,7 +785,7 @@
 
     function localCadenceRepeatPenalty(type) {
       if (type !== localLastCadenceType) return 0.0;
-      if (type === “authentic”) return 0.30;
+      if (type === "authentic") return 0.30;
       return 0.18;
     }
 
@@ -802,7 +803,7 @@
 
       const keys = Object.keys(w); const sum = keys.reduce((a,k)=>a+w[k],0); let r = rand()*sum;
       for (const k of keys){ r -= w[k]; if (r<=0) return k; }
-      return “authentic”;
+      return "authentic";
     }
 
     function localUpdateHarmony() {
@@ -904,13 +905,15 @@
              let deltaEnd = cadencePlan.end - curDeg;
              if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
              
+             // Softened Snap (Ambient drift)
              if(chance(0.35)) {
                 localIdx += deltaEnd;
              } else if (chance(0.25)) {
+                // Near miss
                 localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
              }
              
-             if(ct === “authentic”) localTension = clamp01(localTension - 0.22);
+             if(ct === "authentic") localTension = clamp01(localTension - 0.22);
              else localTension = clamp01(localTension + 0.10);
              localLastCadenceType = ct;
           }
@@ -939,11 +942,11 @@
 
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
          let droneRootDegree = 0;
-         const ct = localCadenceType || “authentic”;
+         const ct = localCadenceType || "authentic";
          if (!isArcStart && !isClimax) {
-           if (ct === “half”) droneRootDegree = 4;
-           else if (ct === “deceptive”) droneRootDegree = chance(0.6) ? 0 : 5;
-           else if (ct === “plagal”) droneRootDegree = chance(0.6) ? 3 : 0;
+           if (ct === "half") droneRootDegree = 4;
+           else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
+           else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
          }
 
          const melodyDegNow = localDegreeFromIdx(localIdx);
@@ -970,7 +973,7 @@
          localLastDroneDur = droneDur;
 
          const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
-         const quality = localMinor ? “min” : “maj”;
+         const quality = localMinor ? "min" : "maj";
 
          scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
@@ -990,8 +993,8 @@
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement(‘a’);
-    a.style.display = ‘none’;
+    const a = document.createElement("a");
+    a.style.display = "none";
     a.href = url;
     a.download = `open-final-v171-${Date.now()}.wav`;
     document.body.appendChild(a);
@@ -1017,37 +1020,37 @@
       }
       offset++;
     }
-    return new Blob([buffer], { type: “audio/wav” });
+    return new Blob([buffer], { type: "audio/wav" });
   }
 
-  document.addEventListener(“DOMContentLoaded”, () => {
+  document.addEventListener("DOMContentLoaded", () => {
     applyModeClasses();
-    window.addEventListener(“hashchange”, applyModeClasses);
+    window.addEventListener("hashchange", applyModeClasses);
 
-    const playBtn = document.getElementById(“playNow”);
-    const stopBtn = document.getElementById(“stop”);
+    const playBtn = document.getElementById("playNow");
+    const stopBtn = document.getElementById("stop");
 
-    if (playBtn) playBtn.addEventListener(“click”, startFromUI);
-    if (stopBtn) stopBtn.addEventListener(“click”, stopAllManual);
+    if (playBtn) playBtn.addEventListener("click", startFromUI);
+    if (stopBtn) stopBtn.addEventListener("click", stopAllManual);
 
     applyControls(loadState());
 
-    document.getElementById(“tone”)?.addEventListener(“input”, (e) => {
-        document.getElementById(“hzReadout”).textContent = e.target.value;
+    document.getElementById("tone")?.addEventListener("input", (e) => {
+        document.getElementById("hzReadout").textContent = e.target.value;
         saveState(readControls());
     });
-    document.getElementById(“songDuration”)?.addEventListener(“change”, () => saveState(readControls()));
-    const recBtn = document.getElementById(“record”);
+    document.getElementById("songDuration")?.addEventListener("change", () => saveState(readControls()));
+    const recBtn = document.getElementById("record");
     if (recBtn) recBtn.onclick = toggleRecording;
 
-    const exportBtn = document.getElementById(“export”);
+    const exportBtn = document.getElementById("export");
     if (exportBtn) exportBtn.onclick = renderWavExport;
 
     if (isPopoutMode()) {
-      document.body.classList.add(“popout”);
-      setButtonState(“stopped”);
+      document.body.classList.add("popout");
+      setButtonState("stopped");
     }
 
-    document.getElementById(“launchPlayer”)?.addEventListener(“click”, launchPlayer);
+    document.getElementById("launchPlayer")?.addEventListener("click", launchPlayer);
   });
 })();
