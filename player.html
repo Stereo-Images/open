@@ -7,13 +7,15 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <main class="wrap" aria-labelledby="playerTitle">
+  <main class="page" aria-labelledby="playerTitle">
     <h1 id="playerTitle" class="title-style">Open</h1>
 
-    <section id="controls" aria-label="Controls">
+    <hr class="separator" aria-hidden="true" />
+
+    <section aria-label="Controls">
       <form id="songForm" onsubmit="return false;">
         <div class="form-group">
-          <label for="songDuration">Duration:</label>
+          <label for="songDuration">Duration</label>
           <select id="songDuration" name="songDuration">
             <option value="60" selected>1 minute</option>
             <option value="300">5 minutes</option>
@@ -25,7 +27,7 @@
 
         <div class="form-group">
           <label id="toneLabel" for="tone">
-            Root Tone: <span id="hzReadout" aria-hidden="true">110</span> Hz
+            Root tone: <span id="hzReadout" aria-hidden="true">110</span> Hz
           </label>
           <input
             type="range"
@@ -38,27 +40,24 @@
           />
         </div>
 
-        <div class="form-actions" role="group" aria-label="Transport">
+        <div class="form-actions" role="group" aria-label="Transport controls">
           <button type="button" id="playNow" aria-pressed="false">Play</button>
           <button type="button" id="stop" class="filled" aria-pressed="true">Stop</button>
-        </div>
-
-        <div class="form-actions" role="group" aria-label="Capture and Export">
-          <button type="button" id="record" aria-pressed="false">Record</button>
-          <button type="button" id="export">Export WAV</button>
         </div>
       </form>
     </section>
 
-    <!-- Live regions for accessibility -->
+    <!-- Screen-reader announcements -->
     <div id="playerStatus" class="sr-only" aria-live="polite">Stopped</div>
-    <div id="recordStatus" class="sr-only" aria-live="polite"></div>
 
-    <hr class="separator" />
+    <!-- Optional: hidden help text for hotkeys (screen readers will find it) -->
+    <p class="sr-only" id="hotkeyHelp">
+      Hotkeys: Press R to start or stop recording. Press E to export a WAV file.
+    </p>
 
-    <footer class="credits" role="contentinfo">
-      <div class="credit-line">By Aaron Koppel</div>
-      <div class="credit-line">Stereo Images, 2026</div>
+    <footer class="credits">
+      <div>By Aaron Koppel</div>
+      <div>Stereo Images, 2026</div>
     </footer>
   </main>
 
