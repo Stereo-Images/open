@@ -1,15 +1,14 @@
 /* ============================================================
-   OPEN — v40 (Hair Trigger / Hard Disconnect)
-   - Behavior: Swiping/Minimizing triggers INSTANT silence.
-   - Fix: Added 'blur' event for faster detection on iOS.
-   - Fix: Physically disconnects Master Node on exit (impossible to glitch).
-   - Audio: "True Drift" v171 (Drones, Arcs, Export, AirPlay).
+   OPEN — v41 (Reverb Killer / Zero Latency Stop)
+   - Behavior: Swiping away destroys the Reverb Node instantly.
+   - Fix: Removes the internal audio buffer that causes "tail glitches".
+   - AirPlay: "Smart Panic" keeps AirPlay alive while killing local audio.
    ============================================================ */
 
 (() => {
-  const STATE_KEY = "open_player_settings_v40";
+  const STATE_KEY = "open_player_settings_v41";
 
-  // --- TUNING & CONSTANTS ---
+  // --- TUNING ---
   const MELODY_FLOOR_HZ = 220;    
   const DRONE_FLOOR_HZ  = 87.31;  
   const DRONE_GAIN_MULT = 0.70;   
@@ -94,24 +93,21 @@
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
 
-  // --- UI LOGIC ---
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
     const toneInput = document.getElementById("tone");
-    const isPlaying = (state === "playing");
+    const isPlayingState = (state === "playing");
 
     if (playBtn) {
-      if (isPlaying) playBtn.classList.add("filled");
-      else playBtn.classList.remove("filled");
-      playBtn.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+      playBtn.classList.toggle("filled", isPlayingState);
+      playBtn.setAttribute("aria-pressed", isPlayingState ? "true" : "false");
     }
     if (stopBtn) {
-      if (state === "stopped") stopBtn.classList.add("filled");
-      else stopBtn.classList.remove("filled");
+      stopBtn.classList.toggle("filled", state === "stopped");
       stopBtn.setAttribute("aria-pressed", state === "stopped" ? "true" : "false");
     }
-    if (toneInput) toneInput.disabled = isPlaying;
+    if (toneInput) toneInput.disabled = isPlayingState;
   }
 
   // --- RECORDING ---
@@ -157,7 +153,7 @@
     }
   }
 
-  // --- RNG & SEEDING ---
+  // --- RNG ---
   let sessionSeed = 0;
   let rng = Math.random;
   function mulberry32(seed) {
@@ -281,20 +277,23 @@
 
     reverbPreDelay = audioContext.createDelay(0.1);
     reverbPreDelay.delayTime.value = 0.045;
+    
     reverbLP = audioContext.createBiquadFilter();
     reverbLP.type = "lowpass";
     reverbLP.frequency.value = 4200;
     reverbLP.Q.value = 0.7;
+
     reverbSend = audioContext.createGain();
     reverbSend.gain.value = 0.0;
     reverbReturn = audioContext.createGain();
     reverbReturn.gain.value = REVERB_RETURN_LEVEL;
 
+    // Connect chain (Reverb Node is inserted dynamically)
     reverbSend.connect(reverbPreDelay);
     reverbLP.connect(reverbReturn);
     reverbReturn.connect(masterGain);
 
-    refreshReverb();
+    buildReverbNode(); // Initial setup
 
     const silent = audioContext.createBuffer(1, 1, audioContext.sampleRate);
     const heartbeat = audioContext.createBufferSource();
@@ -321,17 +320,29 @@
     });
   }
 
-  function refreshReverb() {
+  // --- REVERB MANAGEMENT (The Anti-Glitch Mechanism) ---
+  function buildReverbNode() {
     if (!audioContext) return;
-    if (reverbNode) {
-      try { reverbNode.disconnect(); } catch(e) {}
-      reverbNode = null;
-    }
+    // Ensure old node is dead
+    destroyReverbNode(); 
+    
+    // Create fresh node
     reverbNode = audioContext.createConvolver();
     reverbNode.buffer = createImpulseResponse(audioContext);
-    reverbPreDelay.disconnect();
+    
+    // Connect into chain
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
+  }
+
+  function destroyReverbNode() {
+    if (reverbNode) {
+      try {
+        reverbPreDelay.disconnect(reverbNode);
+        reverbNode.disconnect();
+      } catch (e) {}
+      reverbNode = null;
+    }
   }
 
   // --- MELODY SCHEDULING ---
@@ -486,10 +497,8 @@
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
 
-    // --- iOS APP SWITCH FIX (NO CATCH-UP BURST) ---
-    if (nextTimeA < now - 0.25) {
-      nextTimeA = now + 0.05;
-    }
+    // --- iOS Anti-Burst ---
+    if (nextTimeA < now - 0.25) { nextTimeA = now + 0.05; } 
 
     const elapsed = now - sessionStartTime;
     if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
@@ -619,13 +628,12 @@
     initAudio();
     if (audioContext.state === "suspended") audioContext.resume?.();
 
-    // 1. HARD CLEAN: Kill all oscillators
+    // 1. Kill active sounds
     killAllActiveNodes(); 
-    
-    // 2. HARD CLEAN: Reset Reverb (No tails!)
-    refreshReverb();
-    
-    // 3. ENSURE CONNECTION (In case panic switch disconnected it)
+    // 2. Rebuild Reverb (Critical Fix for Glitches)
+    buildReverbNode();
+
+    // 3. Ensure Master is Connected (If Panic disconnected it)
     if (masterGain) {
       try { masterGain.disconnect(audioContext.destination); } catch(e) {}
       masterGain.connect(audioContext.destination);
@@ -661,18 +669,25 @@
     timerInterval = setInterval(scheduler, 50);
   }
 
+  // --- UNIVERSAL STOP (Called by User or Panic) ---
   function stopAllManual(instant = false) {
     isPlaying = false; isEndingNaturally = false; isApproachingEnd = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
     killAllActiveNodes();
 
+    // V41 FIX: Destroy reverb buffer immediately on stop/exit
+    destroyReverbNode();
+
     if (masterGain && audioContext) {
       const t = audioContext.currentTime;
       masterGain.gain.cancelScheduledValues(t);
       if (instant) {
+        // INSTANT CUT (Panic Mode)
         masterGain.gain.setValueAtTime(0, t);
+        try { masterGain.disconnect(audioContext.destination); } catch(e) {}
       } else {
+        // SMOOTH FADE (User Mode)
         masterGain.gain.setValueAtTime(masterGain.gain.value, t);
         masterGain.gain.linearRampToValueAtTime(0, t + 0.05);
       }
@@ -686,7 +701,7 @@
     setButtonState("stopped");
   }
 
-  // --- FULL EXPORT ENGINE (UNCHANGED) ---
+  // --- FULL EXPORT ENGINE ---
   async function renderWavExport() {
     if (!isPlaying && !audioContext) { alert("Please start playback first."); return; }
     if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
@@ -721,7 +736,6 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // --- RE-SIMULATE MUSIC (Offline) ---
     let localPhraseCount = 0; let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
     let localArcPos = -1; let localTension = 0.0;
@@ -924,7 +938,6 @@
 
   // --- SMART PANIC (Fixes iOS Glitch, Respects AirPlay) ---
   const handleBackground = () => {
-    // Helper check inside the handler context
     function isAirPlayActive() {
       const a = document.getElementById("open-airplay-audio");
       return !!(a && a.webkitCurrentPlaybackTargetIsWireless);
@@ -933,12 +946,7 @@
     if (isAirPlayActive()) return;
 
     if (document.hidden) {
-      // 1. HARD MUTE & DISCONNECT
-      if (masterGain) {
-        masterGain.gain.cancelScheduledValues(audioContext.currentTime);
-        masterGain.gain.setValueAtTime(0, audioContext.currentTime);
-        try { masterGain.disconnect(audioContext.destination); } catch(e) {}
-      }
+      // 1. HARD MUTE & DISCONNECT (Panic Mode)
       stopAllManual(true);
     }
   };
@@ -979,7 +987,6 @@
       setButtonState("stopped");
     }
 
-    // --- LAUNCH ANIMATION ---
     const launchBtn = document.getElementById("launchPlayer");
     if (launchBtn) {
       launchBtn.addEventListener("click", () => {
