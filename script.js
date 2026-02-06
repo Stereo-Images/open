@@ -323,20 +323,20 @@
   }
 
   function refreshReverb() {
-    if (!audioContext) return;
-    // Disconnect old one (garbage collection will handle it)
-    if (reverbNode) {
-      try { reverbNode.disconnect(); } catch(e) {}
-      reverbNode = null;
-    }
-    // Create fresh one (Clears the buffer/tail!)
-    reverbNode = audioContext.createConvolver();
-    reverbNode.buffer = createImpulseResponse(audioContext);
-    
-    reverbPreDelay.disconnect();
-    reverbPreDelay.connect(reverbNode);
-    reverbNode.connect(reverbLP);
+  if (!audioContext) return;
+
+  // Disconnect only the specific old connection (avoid global disconnect())
+  if (reverbNode) {
+    try { reverbPreDelay.disconnect(reverbNode); } catch (e) {}
+    try { reverbNode.disconnect(); } catch (e) {}
   }
+
+  reverbNode = audioContext.createConvolver();
+  reverbNode.buffer = createImpulseResponse(audioContext);
+
+  reverbPreDelay.connect(reverbNode);
+  reverbNode.connect(reverbLP);
+}
 
   // --- MELODY SCHEDULING ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
