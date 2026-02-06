@@ -1,9 +1,7 @@
-/* ============================================================
-   OPEN — v171_true_drift + 508 + Hotkeys + AirPlay anchor
-   - Shift+R: toggle recording (no UI button required)
-   - Shift+E: export WAV
-   - Keeps reverb + graph alive to reduce choppiness on app switch
-   ============================================================ */
+/* player.js (FULL v171_TRUE_DRIFT + 508 HOTKEYS: SHIFT+R, SHIFT+E)
+   - Record/Export buttons are not used (hotkeys only).
+   - Live region announcements via #srStatus.
+*/
 
 (() => {
   const STATE_KEY = "open_player_settings_v171_true_drift";
@@ -11,15 +9,9 @@
   // =========================
   // TARGET BEHAVIOR
   // =========================
-  const MELODY_FLOOR_HZ = 220;    // A3 (prevents thumping)
-  const DRONE_FLOOR_HZ  = 87.31;  // F2
+  const MELODY_FLOOR_HZ = 220;    // A3 (Prevents thumping)
+  const DRONE_FLOOR_HZ  = 87.31;  // F2 (Precise Pitch)
   const DRONE_GAIN_MULT = 0.70;   // 70% volume for drones
-
-  // Reverb
-  const REVERB_RETURN_LEVEL = 0.80;
-
-  // UI / accessibility
-  const STATUS_DEBOUNCE_MS = 350;
 
   function clampFreqMin(freq, floorHz) {
     while (freq < floorHz) freq *= 2;
@@ -27,42 +19,19 @@
   }
 
   // =========================
-  // VIEW & STATE
+  // A11Y HELPERS
   // =========================
-  function isPopoutMode() { return window.location.hash === "#popout"; }
-  function isMobileDevice() {
-    const ua = navigator.userAgent || "";
-    return /iPhone|iPad|iPod|Android/i.test(ua) ||
-      (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
+  function announce(msg) {
+    const el = document.getElementById("srStatus");
+    if (!el) return;
+    // prevent some SRs from ignoring "same string"
+    el.textContent = "";
+    setTimeout(() => { el.textContent = msg; }, 10);
   }
 
-  function applyModeClasses() {
-    document.body.classList.toggle("popout", isPopoutMode());
-  }
-
-  // If you truly want *two separate pages*, change this to navigate to player.html.
-  // For now, this preserves your existing behavior: popout (desktop) or same-page hash (mobile).
-  function launchPlayer() {
-    if (isMobileDevice()) {
-      document.body.classList.add("mobile-player");
-      window.location.hash = "#popout";
-      applyModeClasses();
-      setButtonState("stopped");
-      announce("Player opened.");
-      return;
-    }
-
-    const width = 500, height = 680;
-    const left = Math.max(0, (window.screen.width / 2) - (width / 2));
-    const top = Math.max(0, (window.screen.height / 2) - (height / 2));
-
-    window.open(
-      `${window.location.href.split("#")[0]}#popout`,
-      "open_player",
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
-    );
-  }
-
+  // =========================
+  // STATE
+  // =========================
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
   function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
 
@@ -94,11 +63,6 @@
     if (hzReadout) hzReadout.textContent = String(toneVal);
   }
 
-  function setPressed(el, pressed) {
-    if (!el) return;
-    el.setAttribute("aria-pressed", pressed ? "true" : "false");
-  }
-
   function setButtonState(state) {
     const playBtn = document.getElementById("playNow");
     const stopBtn = document.getElementById("stop");
@@ -106,62 +70,35 @@
 
     const playing = (state === "playing");
 
-    if (playBtn) playBtn.classList.toggle("filled", playing);
-    if (stopBtn) stopBtn.classList.toggle("filled", !playing);
+    if (playBtn) {
+      playBtn.classList.toggle("filled", playing);
+      playBtn.setAttribute("aria-pressed", playing ? "true" : "false");
+    }
+    if (stopBtn) {
+      stopBtn.classList.toggle("filled", !playing);
+      stopBtn.setAttribute("aria-pressed", playing ? "false" : "true");
+    }
 
-    setPressed(playBtn, playing);
-    setPressed(stopBtn, !playing);
-
-    // Lock tone while playing to keep deterministic behavior stable
     if (toneInput) toneInput.disabled = playing;
   }
 
   // =========================
-  // 508 LIVE STATUS (debounced)
-  // =========================
-  let lastStatusAt = 0;
-  let lastStatusMsg = "";
-
-  function announce(msg) {
-    const el = document.getElementById("playerStatus");
-    if (!el) return;
-
-    const now = Date.now();
-    if (msg === lastStatusMsg && now - lastStatusAt < 1500) return;
-
-    // Debounce rapid updates to avoid screen reader spam
-    if (now - lastStatusAt < STATUS_DEBOUNCE_MS) return;
-
-    lastStatusAt = now;
-    lastStatusMsg = msg;
-    el.textContent = msg;
-  }
-
-  // =========================
-  // LIVE RECORDING (Shift+R)
+  // LIVE RECORDING (HOTKEY)
   // =========================
   let mediaRecorder = null;
   let recordedChunks = [];
   let isRecording = false;
 
-  function setRecordStatus(on) {
-    // Optional: keep your #recordStatus sr-only element if you want
-    const el = document.getElementById("recordStatus");
-    if (el) el.textContent = on ? "Recording on." : "Recording off.";
-    announce(on ? "Recording on." : "Recording off.");
-  }
-
   function toggleRecording() {
-    // Must have initAudio() already run
-    if (!streamDest?.stream) {
-      announce("Recording unavailable until playback starts.");
+    if (!audioContext || !streamDest?.stream) {
+      announce("Recording unavailable until audio starts. Press Play first.");
       return;
     }
 
     if (isRecording) {
       isRecording = false;
-      try { mediaRecorder?.stop(); } catch {}
-      setRecordStatus(false);
+      try { mediaRecorder.stop(); } catch {}
+      announce("Recording stopped. File download should begin.");
       return;
     }
 
@@ -173,46 +110,33 @@
       mediaRecorder = new MediaRecorder(streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       console.warn(e);
-      announce("Recording not supported in this browser.");
+      announce("Recording failed to start in this browser.");
       return;
     }
 
-    mediaRecorder.ondataavailable = (e) => {
+    mediaRecorder.ondataavailable = e => {
       if (e.data && e.data.size > 0) recordedChunks.push(e.data);
     };
 
     mediaRecorder.onstop = () => {
-      try {
-        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        const ext = blob.type.includes("ogg") ? "ogg" : "webm";
-        a.download = `open-live-${Date.now()}.${ext}`;
-        document.body.appendChild(a);
-        a.click();
-        setTimeout(() => {
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-        }, 100);
-        announce("Recording saved.");
-      } catch {
-        announce("Recording ended.");
-      }
+      const type = mediaRecorder.mimeType || "audio/webm";
+      const blob = new Blob(recordedChunks, { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `open-live-${Date.now()}.${type.includes("ogg") ? "ogg" : "webm"}`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
     };
 
-    try {
-      mediaRecorder.start(250);
-      isRecording = true;
-      setRecordStatus(true);
-    } catch (e) {
-      console.warn(e);
-      announce("Could not start recording.");
-    }
+    mediaRecorder.start(250);
+    isRecording = true;
+    announce("Recording started.");
   }
 
   // =========================
-  // RNG (deterministic sessions)
+  // DETERMINISTIC RNG
   // =========================
   let sessionSeed = 0;
   let rng = Math.random;
@@ -226,6 +150,7 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
+
   function setSeed(seed) { sessionSeed = (seed >>> 0); rng = mulberry32(sessionSeed); }
   function rngStream(tagInt) { return mulberry32((sessionSeed ^ tagInt) >>> 0); }
   function rand() { return rng(); }
@@ -236,17 +161,12 @@
   // =========================
   // AUDIO GRAPH
   // =========================
-  let audioContext = null;
-  let masterGain = null;
-
+  let audioContext = null, masterGain = null;
   let reverbNode = null, reverbPreDelay = null;
   let reverbSend = null, reverbReturn = null, reverbLP = null;
-
   let streamDest = null;
 
-  // AirPlay anchors
-  let airplayAudioEl = null;
-  let wakeVideoEl = null;
+  const REVERB_RETURN_LEVEL = 0.80;
 
   let isPlaying = false;
   let isEndingNaturally = false;
@@ -289,57 +209,53 @@
     return impulse;
   }
 
-  function initAirPlayAnchors() {
-    // AUDIO element is the most important for AirPlay availability.
-    if (!airplayAudioEl) {
-      airplayAudioEl = document.getElementById("open-airplay-audio");
-      if (!airplayAudioEl) {
-        airplayAudioEl = document.createElement("audio");
-        airplayAudioEl.id = "open-airplay-audio";
-        airplayAudioEl.muted = true;          // keep it silent (we route audio to speakers via WebAudio)
-        airplayAudioEl.autoplay = true;
-        airplayAudioEl.playsInline = true;
-        airplayAudioEl.setAttribute("aria-hidden", "true");
-        airplayAudioEl.style.position = "fixed";
-        airplayAudioEl.style.left = "-9999px";
-        airplayAudioEl.style.width = "1px";
-        airplayAudioEl.style.height = "1px";
-        document.body.appendChild(airplayAudioEl);
-      }
-    }
+  function circDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 7 - d); }
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
-    // VIDEO “wake” anchor (kept from your earlier version)
-    if (!wakeVideoEl) {
-      wakeVideoEl = document.querySelector("video#open-wake-video");
-      if (!wakeVideoEl) {
-        wakeVideoEl = document.createElement("video");
-        wakeVideoEl.id = "open-wake-video";
-        Object.assign(wakeVideoEl.style, {
-          position: "fixed", bottom: "0", right: "0",
-          width: "1px", height: "1px",
-          opacity: 0.01, zIndex: -1
-        });
-        wakeVideoEl.muted = true;
-        wakeVideoEl.playsInline = true;
-        wakeVideoEl.setAttribute("aria-hidden", "true");
-        document.body.appendChild(wakeVideoEl);
-      }
-    }
+  function startNewArc() {
+    arcLen = 4 + Math.floor(rand() * 5);
+    arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
+    arcPos = -1;
+    tension = clamp01(tension * 0.4 + 0.05);
   }
 
-  function attachStreamToMediaElements() {
-    if (!streamDest?.stream) return;
+  // --- HARMONY LOGIC ---
+  function cadenceRepeatPenalty(type) {
+    if (type !== lastCadenceType) return 0.0;
+    if (type === "authentic") return 0.30;
+    return 0.18;
+  }
 
-    initAirPlayAnchors();
+  function pickCadenceTypeForPhrase() {
+    const nearClimax = (arcPos === arcClimaxAt);
+    const lateArc = (arcPos >= arcLen - 2);
+    let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
 
-    // Attach stream to both (Safari supports srcObject for media elements in modern versions;
-    // if not, it just fails silently)
-    try { airplayAudioEl.srcObject = streamDest.stream; } catch {}
-    try { wakeVideoEl.srcObject = streamDest.stream; } catch {}
+    if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
+    w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
 
-    // Try playing them (requires user gesture first; safe to ignore failures)
-    airplayAudioEl.play?.().catch(() => {});
-    wakeVideoEl.play?.().catch(() => {});
+    if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
+    if (lateArc && tension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
+    if (isMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
+
+    for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - cadenceRepeatPenalty(k));
+
+    const keys = Object.keys(w);
+    const sum = keys.reduce((a, k) => a + w[k], 0);
+    let r = rand() * sum;
+    for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
+    return "authentic";
+  }
+
+  function cadenceTargets(type) {
+    switch (type) {
+      case "authentic": return { pre: 6, end: 0, wantLT: true };
+      case "half": return { pre: 1, end: 4, wantLT: false };
+      case "plagal": return { pre: 3, end: 0, wantLT: false };
+      case "deceptive": return { pre: 6, end: 5, wantLT: true };
+      case "evaded": return { pre: 6, end: 2, wantLT: true };
+      default: return { pre: 2, end: 0, wantLT: false };
+    }
   }
 
   function initAudio() {
@@ -355,7 +271,7 @@
     streamDest = audioContext.createMediaStreamDestination();
     masterGain.connect(streamDest);
 
-    // Reverb chain (kept — removing it can make transitions sound abrupt and “choppy”)
+    // Reverb bus
     reverbPreDelay = audioContext.createDelay(0.1);
     reverbPreDelay.delayTime.value = 0.045;
 
@@ -379,26 +295,42 @@
     reverbLP.connect(reverbReturn);
     reverbReturn.connect(masterGain);
 
-    // “heartbeat” source to keep graph active
+    // Silent heartbeat (keeps graph alive)
     const silent = audioContext.createBuffer(1, 1, audioContext.sampleRate);
     const heartbeat = audioContext.createBufferSource();
     heartbeat.buffer = silent;
     heartbeat.loop = true;
-    heartbeat.connect(audioContext.destination);
     heartbeat.start();
+    heartbeat.connect(audioContext.destination);
 
-    attachStreamToMediaElements();
+    // iOS background stability helper (hidden video)
+    let v = document.querySelector("video[data-open-wakelock='1']");
+    if (!v) {
+      v = document.createElement("video");
+      v.setAttribute("data-open-wakelock", "1");
+      Object.assign(v.style, {
+        position: "fixed",
+        bottom: "0",
+        right: "0",
+        width: "1px",
+        height: "1px",
+        opacity: "0.01",
+        zIndex: "-1"
+      });
+      v.muted = true;
+      v.playsInline = true;
+      document.body.appendChild(v);
+    }
+    v.srcObject = streamDest.stream;
+    v.play().catch(() => { /* ok */ });
   }
 
-  // =========================
-  // MELODY ENGINE
-  // =========================
+  // --- MELODY ENGINE ---
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
     const numVoices = 2 + Math.floor(rand() * 2);
     let totalAmp = 0;
-
     const isFractured = (tensionAmt > 0.75);
     const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
     const ratioFuzz = isFractured ? 0.08 : 0.0;
@@ -442,19 +374,17 @@
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
       ampGain.connect(filter);
-
       filter.connect(destination);
       filter.connect(wetSend);
 
       modulator.start(time);
       carrier.start(time);
-
       modulator.stop(time + duration);
       carrier.stop(time + duration);
     });
   }
 
-  // DRONE CHORD
+  // --- SMART DRONE CHORD ---
   function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality, includeThird = true) {
     let f0 = clampFreqMin(rootFreq, DRONE_FLOOR_HZ);
 
@@ -465,6 +395,7 @@
 
     scheduleBassVoice(ctx, destination, wetSend, f0, time, duration, vol * 0.50);
     scheduleBassVoice(ctx, destination, wetSend, f0 * fifthRatio, time, duration, vol * 0.30);
+
     if (includeThird) scheduleBassVoice(ctx, destination, wetSend, f0 * thirdRatio, time, duration, vol * 0.20);
   }
 
@@ -477,7 +408,6 @@
 
     carrier.type = "sine";
     modulator.type = "sine";
-
     carrier.frequency.value = freq;
     modulator.frequency.value = freq * 2.0;
     modulator.detune.value = (rand() - 0.5) * 8;
@@ -496,75 +426,20 @@
 
     modulator.connect(modGain);
     modGain.connect(carrier.frequency);
-
     carrier.connect(ampGain);
     ampGain.connect(lp);
-
     lp.connect(destination);
     lp.connect(wetSend);
 
     modulator.start(time);
     carrier.start(time);
-
     modulator.stop(time + duration);
     carrier.stop(time + duration);
-  }
-
-  // =========================
-  // HARMONY LOGIC
-  // =========================
-  function circDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 7 - d); }
-  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-  function startNewArc() {
-    arcLen = 4 + Math.floor(rand() * 5);
-    arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
-    arcPos = -1;
-    tension = clamp01(tension * 0.4 + 0.05);
-  }
-
-  function cadenceRepeatPenalty(type) {
-    if (type !== lastCadenceType) return 0.0;
-    if (type === "authentic") return 0.30;
-    return 0.18;
-  }
-
-  function pickCadenceTypeForPhrase() {
-    const nearClimax = (arcPos === arcClimaxAt);
-    const lateArc = (arcPos >= arcLen - 2);
-    let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
-
-    if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
-    w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
-
-    if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
-    if (lateArc && tension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
-    if (isMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
-
-    for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - cadenceRepeatPenalty(k));
-
-    const keys = Object.keys(w);
-    const sum = keys.reduce((a, k) => a + w[k], 0);
-    let r = rand() * sum;
-    for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
-    return "authentic";
-  }
-
-  function cadenceTargets(type) {
-    switch (type) {
-      case "authentic": return { pre: 6, end: 0, wantLT: true };
-      case "half": return { pre: 1, end: 4, wantLT: false };
-      case "plagal": return { pre: 3, end: 0, wantLT: false };
-      case "deceptive": return { pre: 6, end: 5, wantLT: true };
-      case "evaded": return { pre: 6, end: 2, wantLT: true };
-      default: return { pre: 2, end: 0, wantLT: false };
-    }
   }
 
   function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
     let pos = circlePos % 12; if (pos < 0) pos += 12;
     let semitones = (pos * 7) % 12;
-
     let rootOffset = semitones;
     if (minorMode) rootOffset = (semitones + 9) % 12;
 
@@ -622,19 +497,13 @@
     phraseStep = 0;
   }
 
-  // =========================
-  // SCHEDULER
-  // =========================
   function scheduler() {
     if (!isPlaying || !audioContext) return;
 
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
     const elapsed = now - sessionStartTime;
-
-    if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) {
-      isApproachingEnd = true;
-    }
+    if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
 
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
@@ -651,15 +520,17 @@
     while (nextTimeA < now + 0.5) {
       let appliedDur = noteDur;
 
+      const pressure = Math.min(1.0, notesSinceModulation / 48.0);
       updateHarmonyState();
 
-      // End logic (natural tail)
+      // End logic
       if (isApproachingEnd && !isEndingNaturally) {
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
           scheduleNote(audioContext, masterGain, reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
+          announce("Playback ended.");
           return;
         }
       }
@@ -673,15 +544,12 @@
       }
 
       const isCadence = (phraseStep >= 13);
-      const pressure = Math.min(1.0, notesSinceModulation / 48.0);
-
       if (chance(phraseStep === 15 ? 0.85 : 0.2)) appliedDur *= 1.2;
 
       // Melody movement
       if (isCadence) {
         const cadenceDegrees = [0, 1, 3, 4, 5];
         const currentOctave = Math.floor(patternIdxA / 7) * 7;
-
         let deg = patternIdxA - currentOctave;
         deg = ((deg % 7) + 7) % 7;
 
@@ -723,8 +591,11 @@
           if (deltaEnd > 3) deltaEnd -= 7;
           if (deltaEnd < -3) deltaEnd += 7;
 
-          if (chance(0.35)) patternIdxA += deltaEnd;
-          else if (chance(0.25)) patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
+          if (chance(0.35)) {
+            patternIdxA += deltaEnd;
+          } else if (chance(0.25)) {
+            patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
+          }
 
           if (ct === "authentic") tension = clamp01(tension - 0.22);
           else tension = clamp01(tension + 0.10);
@@ -793,7 +664,7 @@
         scheduleDroneChord(audioContext, masterGain, reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
-      // Schedule melody (drone-solo rule)
+      // Schedule melody
       const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
       if (!isDroneSolo) {
         if (isCadence && arcPos === arcClimaxAt && phraseStep === 15) {
@@ -807,17 +678,9 @@
     }
   }
 
-  // =========================
-  // PLAY / STOP
-  // =========================
   function startFromUI() {
     initAudio();
-
-    // iOS/Safari: resume context on gesture
-    if (audioContext?.state === "suspended") audioContext.resume?.();
-
-    // Ensure AirPlay anchors have the stream after gesture
-    attachStreamToMediaElements();
+    if (audioContext.state === "suspended") audioContext.resume?.();
 
     isEndingNaturally = false;
     isApproachingEnd = false;
@@ -835,17 +698,16 @@
     arcLen = 6;
     arcClimaxAt = 4;
 
-    // Fade in
     if (masterGain && audioContext) {
       const t = audioContext.currentTime;
-      masterGain.gain.cancelScheduledValues(t);
-      masterGain.gain.setValueAtTime(0.0001, t);
-      masterGain.gain.linearRampToValueAtTime(0.3, t + 0.12);
+      masterGain.gain.cancelScheduledValues(0);
+      masterGain.gain.setValueAtTime(0, t);
+      masterGain.gain.linearRampToValueAtTime(0.3, t + 0.1);
     }
 
-    // New deterministic run
-    const seed =
-      (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
+    const seed = (crypto?.getRandomValues
+      ? crypto.getRandomValues(new Uint32Array(1))[0]
+      : Math.floor(Math.random() * 2 ** 32)) >>> 0;
 
     setSeed(seed);
     runDensity = 0.05 + rand() * 0.375;
@@ -853,16 +715,15 @@
     startNewArc();
     sessionSnapshot = { seed, density: runDensity, arcLen, arcClimaxAt };
 
-    // Phrase counters init to -1 to prevent mute bug
     phraseCount = -1;
-    silentInitPhraseLive();
+    silentInitPhraseLive(); // init phrase logic only
 
     isPlaying = true;
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
 
     setButtonState("playing");
-    announce("Playing.");
+    announce("Playing. Shift+R to record. Shift+E to export WAV.");
 
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = setInterval(scheduler, 50);
@@ -875,12 +736,11 @@
 
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
-    // Fade out quickly (don’t hard cut)
     if (masterGain && audioContext) {
       const t = audioContext.currentTime;
       masterGain.gain.cancelScheduledValues(t);
-      masterGain.gain.setValueAtTime(masterGain.gain.value || 0.2, t);
-      masterGain.gain.linearRampToValueAtTime(0.0001, t + 0.08);
+      masterGain.gain.setValueAtTime(masterGain.gain.value, t);
+      masterGain.gain.linearRampToValueAtTime(0, t + 0.05);
     }
 
     setButtonState("stopped");
@@ -890,38 +750,33 @@
   function beginNaturalEnd() {
     isEndingNaturally = true;
     isPlaying = false;
-
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-
     setButtonState("stopped");
-    announce("Ended.");
   }
 
   // =========================
-  // WAV EXPORT (Shift+E)
+  // EXPORT WAV (HOTKEY Shift+E)
   // =========================
   async function renderWavExport() {
     if (!sessionSnapshot?.seed) {
-      announce("Press Play once before exporting.");
+      announce("Export unavailable until you press Play at least once.");
       return;
     }
 
-    announce("Export started.");
-
-    // Re-seed to reproduce the session structure
+    // Use the last session seed so export matches the session
     setSeed(sessionSnapshot.seed);
 
     const durationInput = document.getElementById("songDuration")?.value ?? "60";
     const exportDuration = (durationInput === "infinite") ? 180 : Math.min(180, parseFloat(durationInput));
     const sampleRate = 44100;
 
-    const offlineCtx = new OfflineAudioContext(2, Math.floor(sampleRate * exportDuration), sampleRate);
+    announce("Exporting WAV. Please wait…");
 
+    const offlineCtx = new OfflineAudioContext(2, sampleRate * exportDuration, sampleRate);
     const offlineMaster = offlineCtx.createGain();
     offlineMaster.gain.value = 0.3;
     offlineMaster.connect(offlineCtx.destination);
 
-    // Reverb mirror
     const offlinePreDelay = offlineCtx.createDelay(0.1);
     offlinePreDelay.delayTime.value = 0.045;
 
@@ -945,26 +800,17 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Local copies of state (mirrors live setup)
+    // Local mirror state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
     let localArcPos = -1;
     let localTension = 0.0;
-    let localLastCadenceType = "none", localCadenceType = "none";
-    let localLastDroneStart = -9999, localLastDroneDur = 0;
+    let localLastCadenceType = "none";
+    let localCadenceType = "none";
+    let localLastDroneStart = -9999;
+    let localLastDroneDur = 0;
     let usedSnapshotArc = false;
-
-    const exportDensity = sessionSnapshot.density;
-
-    let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
-    if (!Number.isFinite(baseFreq)) baseFreq = 110;
-    baseFreq = Math.max(100, Math.min(200, baseFreq));
-
-    const noteDur = (1 / exportDensity) * 2.5;
-
-    let localCircle = 0, localMinor = false, localIdx = 0;
-    let localTime = 0.05, localModCount = 0, localPhraseStep = 0;
 
     function localStartNewArc() {
       if (!usedSnapshotArc && sessionSnapshot.arcLen != null) {
@@ -977,6 +823,23 @@
       }
       localArcPos = -1;
       localTension = clamp01(localTension * 0.4 + 0.05);
+    }
+    localStartNewArc();
+
+    const exportDensity = sessionSnapshot.density;
+
+    let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
+    if (!Number.isFinite(baseFreq)) baseFreq = 110;
+    baseFreq = Math.max(100, Math.min(200, baseFreq));
+
+    const noteDur = (1 / exportDensity) * 2.5;
+
+    let localCircle = 0, localMinor = false, localIdx = 0;
+    let localTime = 0.05, localModCount = 0, localPhraseStep = 0;
+
+    function localDegreeFromIdx(idx) {
+      const base = Math.floor(idx / 7) * 7;
+      return ((idx - base) % 7 + 7) % 7;
     }
 
     function localCadenceRepeatPenalty(type) {
@@ -992,6 +855,7 @@
 
       if (localArcPos < localArcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
       w.authentic += localTension * 0.25; w.deceptive += localTension * 0.10; w.evaded -= localTension * 0.18;
+
       if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
       if (lateArc && localTension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
       if (localMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
@@ -1009,18 +873,11 @@
       const r = rand();
       let pressure = Math.min(1.0, localModCount / 48.0);
       if (localArcPos === localArcClimaxAt) pressure *= 2.5;
-      pressure = Math.min(1.0, pressure);
-
       if (r < pressure * 0.35) {
         if (chance(0.2)) localMinor = !localMinor;
         else localCircle += (chance(0.5) ? 1 : -1);
         localModCount = 0;
       }
-    }
-
-    function localDegreeFromIdx(idx) {
-      const base = Math.floor(idx / 7) * 7;
-      return ((idx - base) % 7 + 7) % 7;
     }
 
     function silentInitPhraseExport() {
@@ -1032,18 +889,16 @@
       localPhraseStep = 0;
     }
 
-    localStartNewArc();
     localPhraseCount = -1;
     silentInitPhraseExport();
 
     while (localTime < exportDuration - 2.0) {
       localPhraseStep = (localPhraseStep + 1) % 16;
-
       if (localPhraseStep === 0) {
         localPhraseCount++;
         localArcPos++;
         if (localArcPos >= localArcLen) {
-          // subsequent arcs after snapshot: free drift
+          // subsequent arcs randomize
           localArcLen = 4 + Math.floor(rand() * 5);
           localArcClimaxAt = Math.max(2, localArcLen - 2 - Math.floor(rand() * 2));
           localArcPos = -1;
@@ -1055,23 +910,18 @@
 
       const isCadence = (localPhraseStep >= 13);
       const pressure = Math.min(1.0, localModCount / 48.0);
-
       localUpdateHarmony();
 
-      // reverb send tracking density
       const normDensity = clamp01((exportDensity - 0.05) / 0.375);
-      let targetSend = 0.65 - (0.25 * normDensity);
-      targetSend = Math.max(0, Math.min(0.95, targetSend));
+      const targetSend = 0.65 - (0.25 * normDensity);
       offlineSend.gain.setTargetAtTime(targetSend, localTime, 2.5);
 
       let appliedDur = noteDur;
       if (chance(localPhraseStep === 15 ? 0.85 : 0.2)) appliedDur *= 1.2;
 
-      // melody movement (mirrors live)
       if (isCadence) {
         const cadenceDegrees = [0, 1, 3, 4, 5];
         const currentOctave = Math.floor(localIdx / 7) * 7;
-
         let deg = localIdx - currentOctave;
         deg = ((deg % 7) + 7) % 7;
 
@@ -1094,7 +944,8 @@
         if (delta < -3) delta += 7;
         localIdx = currentOctave + deg + delta;
 
-        const cadencePlan = cadenceTargets(localCadenceType);
+        const ct = localCadenceType;
+        const cadencePlan = cadenceTargets(ct);
 
         if (localPhraseStep === 14 && chance(0.70)) {
           const curOct = Math.floor(localIdx / 7) * 7;
@@ -1115,10 +966,10 @@
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
 
-          if (localCadenceType === "authentic") localTension = clamp01(localTension - 0.22);
+          if (ct === "authentic") localTension = clamp01(localTension - 0.22);
           else localTension = clamp01(localTension + 0.10);
 
-          localLastCadenceType = localCadenceType;
+          localLastCadenceType = ct;
         }
       } else {
         localIdx += (rand() < 0.5 ? 1 : -1);
@@ -1132,12 +983,14 @@
       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-      // drones mirror
+      // Drone logic (mirror live)
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
       const isClimax = (localArcPos === localArcClimaxAt && localPhraseStep === 0);
       const atPhraseStart = (localPhraseStep === 0);
 
-      let droneProb = atPhraseStart ? 0.18 : 0.04;
+      let droneProb = 0.04;
+      if (atPhraseStart) droneProb = 0.18;
+
       const canStartDrone = (localTime >= localLastDroneStart + localLastDroneDur * 0.65);
 
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
@@ -1179,6 +1032,7 @@
         scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
+      // Melody schedule
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12 && localPhraseCount > 0);
       if (!isDroneSolo) {
         if (isCadence && localArcPos === localArcClimaxAt && localPhraseStep === 15) {
@@ -1192,9 +1046,9 @@
     }
 
     const renderedBuffer = await offlineCtx.startRendering();
-    const wavBlob = bufferToWave(renderedBuffer, Math.floor(exportDuration * sampleRate));
-    const url = URL.createObjectURL(wavBlob);
+    const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
 
+    const url = URL.createObjectURL(wavBlob);
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
@@ -1202,12 +1056,8 @@
     document.body.appendChild(a);
     a.click();
 
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 150);
-
-    announce("Export complete.");
+    setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
+    announce("Export complete. WAV download started.");
   }
 
   function bufferToWave(abuffer, len) {
@@ -1216,59 +1066,60 @@
     const buffer = new ArrayBuffer(length);
     const view = new DataView(buffer);
 
-    function setUint16(data, pos) { view.setUint16(pos, data, true); }
-    function setUint32(data, pos) { view.setUint32(pos, data, true); }
-
-    setUint32(0x46464952, 0);              // "RIFF"
-    setUint32(length - 8, 4);
-    setUint32(0x45564157, 8);              // "WAVE"
-    setUint32(0x20746d66, 12);             // "fmt "
-    setUint32(16, 16);                     // PCM
-    setUint16(1, 20);                      // format
-    setUint16(numOfChan, 22);
-    setUint32(abuffer.sampleRate, 24);
-    setUint32(abuffer.sampleRate * 2 * numOfChan, 28);
-    setUint16(numOfChan * 2, 32);
-    setUint16(16, 34);
-    setUint32(0x61746164, 36);             // "data"
-    setUint32(length - 44, 40);
-
-    let offset = 44;
     const channels = [];
+    const sampleRate = abuffer.sampleRate;
+    let offset = 0;
+    let pos = 0;
+
+    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
+    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+
+    setUint32(0x46464952);
+    setUint32(length - 8);
+    setUint32(0x45564157);
+    setUint32(0x20746d66);
+    setUint32(16);
+    setUint16(1);
+    setUint16(numOfChan);
+    setUint32(sampleRate);
+    setUint32(sampleRate * 2 * numOfChan);
+    setUint16(numOfChan * 2);
+    setUint16(16);
+    setUint32(0x61746164);
+    setUint32(length - pos - 4);
+
     for (let i = 0; i < numOfChan; i++) channels.push(abuffer.getChannelData(i));
 
-    for (let i = 0; i < len; i++) {
-      for (let ch = 0; ch < numOfChan; ch++) {
-        let sample = Math.max(-1, Math.min(1, channels[ch][i] || 0));
-        sample = sample < 0 ? sample * 32768 : sample * 32767;
-        view.setInt16(offset, sample | 0, true);
-        offset += 2;
+    while (pos < length) {
+      for (let i = 0; i < numOfChan; i++) {
+        let sample = Math.max(-1, Math.min(1, channels[i][offset]));
+        sample = (0.5 + sample < 0 ? sample * 32768 : sample * 32767) | 0;
+        view.setInt16(pos, sample, true);
+        pos += 2;
       }
+      offset++;
     }
-
     return new Blob([buffer], { type: "audio/wav" });
   }
 
   // =========================
-  // HOTKEYS (Shift+R / Shift+E)
+  // HOTKEYS (Shift+R, Shift+E)
   // =========================
-  function handleKeydown(e) {
+  function onKeyDown(e) {
+    // avoid triggering when user is interacting with form controls
+    const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : "";
+    const inFormControl = (tag === "input" || tag === "select" || tag === "textarea");
+
     if (!e.shiftKey) return;
 
-    const key = (e.key || "").toLowerCase();
+    const k = (e.key || "").toLowerCase();
 
-    // Avoid triggering while user is interacting with form fields
-    const tag = (document.activeElement?.tagName || "").toLowerCase();
-    const typing = (tag === "input" || tag === "select" || tag === "textarea");
-
-    if (typing) return;
-
-    if (key === "r") {
+    if (k === "r" && !inFormControl) {
       e.preventDefault();
       toggleRecording();
     }
 
-    if (key === "e") {
+    if (k === "e" && !inFormControl) {
       e.preventDefault();
       renderWavExport();
     }
@@ -1278,39 +1129,23 @@
   // INIT
   // =========================
   document.addEventListener("DOMContentLoaded", () => {
-    applyModeClasses();
-    window.addEventListener("hashchange", applyModeClasses);
-
-    const playBtn = document.getElementById("playNow");
-    const stopBtn = document.getElementById("stop");
-
-    playBtn?.addEventListener("click", startFromUI);
-    stopBtn?.addEventListener("click", stopAllManual);
-
     applyControls(loadState());
+    setButtonState("stopped");
+
+    document.getElementById("playNow")?.addEventListener("click", startFromUI);
+    document.getElementById("stop")?.addEventListener("click", stopAllManual);
 
     document.getElementById("tone")?.addEventListener("input", (e) => {
-      const v = e.target?.value ?? "110";
-      const hzReadout = document.getElementById("hzReadout");
-      if (hzReadout) hzReadout.textContent = String(v);
+      const v = e.target.value;
+      const hz = document.getElementById("hzReadout");
+      if (hz) hz.textContent = String(v);
       saveState(readControls());
     });
 
     document.getElementById("songDuration")?.addEventListener("change", () => saveState(readControls()));
 
-    document.getElementById("launchPlayer")?.addEventListener("click", launchPlayer);
+    document.addEventListener("keydown", onKeyDown);
 
-    document.addEventListener("keydown", handleKeydown);
-
-    // If already in popout hash
-    if (isPopoutMode()) {
-      document.body.classList.add("popout");
-      setButtonState("stopped");
-    } else {
-      setButtonState("stopped");
-    }
-
-    // Help text for hotkeys (screen reader only)
-    announce("Ready. Shift plus R to record. Shift plus E to export.");
+    announce("Stopped. Use Play to begin. Shift+R to record. Shift+E to export WAV.");
   });
 })();
