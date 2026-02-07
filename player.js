@@ -1,12 +1,14 @@
 /* ============================================================
-   OPEN — v171_true_drift (Option B.1: AirPlay keepalive + decisive music stop)
-   - AirPlay: hidden <audio> element plays MediaStreamDestination stream
-   - Background: stop MUSIC (no stutter), but keep AirPlay route alive via keepalive
+   OPEN — v171_true_drift (Option B.2: AirPlay stickier + decisive music stop)
+   - AirPlay: hidden <audio> plays MediaStreamDestination stream
+   - Stickier: prime on first user gesture + burst retries + reattach srcObject
+   - Background: stop MUSIC (no stutter), keep AirPlay route alive via keepalive
    - No bleed: track + hard-stop all scheduled oscillators on Stop / before Play
    - Hotkeys (Shift required):
        Shift+R = record toggle
        Shift+E = export WAV
        Shift+S = stop
+       Shift+A = show AirPlay picker (if supported)
    - Full v171 export block included
    ============================================================ */
 
@@ -153,10 +155,7 @@
 
   function setRecordUI(on) {
     const el = document.getElementById("recordStatus");
-    if (el) {
-      el.textContent = on ? "Recording: ON" : "Recording: off";
-      el.classList.toggle("recording-on", on);
-    }
+    if (el) el.textContent = on ? "Recording: ON" : "Recording: off";
   }
 
   // =========================
@@ -193,8 +192,13 @@
 
   // AirPlay keepalive
   let airplayEl = null;
-  let keepAliveNode = null;      // ConstantSourceNode or Oscillator (fallback)
+  let keepAliveNode = null;
   let keepAliveGain = null;
+
+  // AirPlay stickiness
+  let airplayPrimed = false;
+  let airplayStickyRetriesInstalled = false;
+  let allowAirplayAutoRetry = true;
 
   let isPlaying = false;
   let isEndingNaturally = false;
@@ -226,8 +230,7 @@
   const activeOscillators = new Set();
 
   function trackIfLive(ctx, osc) {
-    if (!osc) return;
-    if (!audioContext) return;
+    if (!osc || !audioContext) return;
     if (ctx !== audioContext) return; // do not track OfflineAudioContext nodes
     activeOscillators.add(osc);
     osc.onended = () => { activeOscillators.delete(osc); };
@@ -306,23 +309,52 @@
   }
 
   // =========================
-  // AIRPLAY KEEPALIVE SETUP
+  // AIRPLAY KEEPALIVE + STICKY
   // =========================
   function ensureAirplayElement() {
     if (airplayEl) return;
+
     airplayEl = document.createElement("audio");
     airplayEl.setAttribute("playsinline", "");
     airplayEl.setAttribute("webkit-playsinline", "");
     airplayEl.autoplay = true;
     airplayEl.controls = false;
-    airplayEl.muted = false; // must be NOT muted for AirPlay routing
+    airplayEl.muted = false; // must NOT be muted for routing
+    airplayEl.preload = "auto";
+
     airplayEl.style.position = "fixed";
     airplayEl.style.left = "-9999px";
     airplayEl.style.width = "1px";
     airplayEl.style.height = "1px";
     airplayEl.style.opacity = "0.01";
     airplayEl.style.pointerEvents = "none";
+
     document.body.appendChild(airplayEl);
+
+    // If iOS pauses it, re-try (unless we intentionally disallow)
+    if (!airplayStickyRetriesInstalled) {
+      airplayStickyRetriesInstalled = true;
+
+      const nudge = () => {
+        if (!allowAirplayAutoRetry) return;
+        if (!streamDest?.stream) return;
+        // Reattach and try again
+        tryAttachAirplayStream();
+        burstPlayAirplay();
+      };
+
+      airplayEl.addEventListener("pause", nudge);
+      airplayEl.addEventListener("ended", nudge);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) nudge();
+      }, { passive: true });
+    }
+  }
+
+  function tryAttachAirplayStream() {
+    if (!airplayEl || !streamDest?.stream) return;
+    // Reattach srcObject each time (iOS sometimes drops it silently)
+    try { airplayEl.srcObject = streamDest.stream; } catch {}
   }
 
   function ensureKeepAliveSignal() {
@@ -330,10 +362,8 @@
     if (keepAliveNode) return;
 
     keepAliveGain = audioContext.createGain();
-    // Extremely low signal—enough to keep stream active, effectively inaudible
     keepAliveGain.gain.value = 0.000001;
 
-    // Prefer ConstantSourceNode; fallback to oscillator if not available
     if (audioContext.createConstantSource) {
       keepAliveNode = audioContext.createConstantSource();
       keepAliveNode.offset.value = 1.0;
@@ -341,7 +371,6 @@
       keepAliveGain.connect(streamDest);
       keepAliveNode.start();
     } else {
-      // Fallback: very low sine
       const osc = audioContext.createOscillator();
       osc.type = "sine";
       osc.frequency.value = 30;
@@ -352,16 +381,76 @@
     }
   }
 
-  async function startAirplayRoute() {
+  async function tryPlayAirplayOnce() {
+    if (!airplayEl) return false;
+    try {
+      await airplayEl.play();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function burstPlayAirplay() {
+    if (!airplayEl) return;
+
+    // Burst retries: many iOS builds succeed only after a few attempts
+    const delays = [0, 80, 200, 500, 1200, 2500];
+    delays.forEach((ms) => {
+      setTimeout(async () => {
+        if (!allowAirplayAutoRetry) return;
+        tryAttachAirplayStream();
+        await tryPlayAirplayOnce();
+      }, ms);
+    });
+  }
+
+  async function startAirplayRouteSticky() {
     if (!audioContext || !streamDest) return;
+
     ensureAirplayElement();
     ensureKeepAliveSignal();
 
-    // Attach stream
-    try { airplayEl.srcObject = streamDest.stream; } catch {}
+    tryAttachAirplayStream();
 
-    // Attempt play (needs to happen inside a user gesture at least once)
-    try { await airplayEl.play(); } catch {}
+    // First attempt immediately
+    await tryPlayAirplayOnce();
+
+    // Then burst attempts
+    burstPlayAirplay();
+
+    airplayPrimed = true;
+  }
+
+  function showAirplayPickerIfSupported() {
+    if (!airplayEl) return false;
+    const fn = airplayEl.webkitShowPlaybackTargetPicker;
+    if (typeof fn === "function") {
+      try { fn.call(airplayEl); return true; } catch { return false; }
+    }
+    return false;
+  }
+
+  // Prime AirPlay on first real user gesture (most important for iOS)
+  function installFirstGestureAirplayPrime() {
+    let done = false;
+    const prime = async () => {
+      if (done) return;
+      done = true;
+
+      initAudio();
+      if (audioContext?.state === "suspended") {
+        try { await audioContext.resume?.(); } catch {}
+      }
+
+      // Try to start the route in this gesture
+      await startAirplayRouteSticky();
+    };
+
+    const opts = { passive: true, capture: true };
+    window.addEventListener("pointerdown", prime, opts);
+    window.addEventListener("touchend", prime, opts);
+    window.addEventListener("keydown", prime, opts);
   }
 
   // =========================
@@ -412,7 +501,7 @@
     heartbeat.connect(audioContext.destination);
     heartbeat.start();
 
-    // Legacy wake-lock video hack (harmless even if AirPlay uses <audio>)
+    // Legacy wake-lock video hack
     let v = document.querySelector("video");
     if (!v) {
       v = document.createElement("video");
@@ -427,6 +516,9 @@
     }
     v.srcObject = streamDest.stream;
     v.play().catch(() => {});
+
+    // Ensure airplay element exists early (srcObject may be attached later)
+    ensureAirplayElement();
   }
 
   // =========================
@@ -788,10 +880,12 @@
   // =========================
   async function startFromUI() {
     initAudio();
-    if (audioContext?.state === "suspended") await audioContext.resume?.();
+    if (audioContext?.state === "suspended") {
+      try { await audioContext.resume?.(); } catch {}
+    }
 
-    // IMPORTANT: This must happen during a user gesture at least once for AirPlay.
-    await startAirplayRoute();
+    // Stickier AirPlay: must be called in this user gesture
+    await startAirplayRouteSticky();
 
     // Kill any lingering scheduled nodes from prior run
     try {
@@ -858,7 +952,6 @@
 
     const t = audioContext.currentTime;
 
-    // Kill future audio immediately to avoid bleed
     stopAndClearAllOscillators(t);
 
     if (masterGain) {
@@ -873,21 +966,17 @@
   }
 
   // Background stop variant: stop MUSIC, keep AirPlay route alive
-  function stopMusicKeepAirplay(reason = "") {
+  function stopMusicKeepAirplay() {
     if (!audioContext) return;
 
-    // stop music engine scheduling
     isPlaying = false;
     isEndingNaturally = false;
     isApproachingEnd = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
 
     const t = audioContext.currentTime;
-
-    // kill oscillators to prevent any stutter/bleed
     stopAndClearAllOscillators(t);
 
-    // mute quickly (but DO NOT tear down stream / airplay audio element)
     if (masterGain) {
       try {
         masterGain.gain.cancelScheduledValues(t);
@@ -896,7 +985,6 @@
       } catch {}
     }
 
-    // stop recording if active
     if (isRecording) {
       try { mediaRecorder?.stop(); } catch {}
       isRecording = false;
@@ -951,29 +1039,6 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    let localPhraseCount = 0;
-    let localArcLen = sessionSnapshot.arcLen ?? 6;
-    let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
-    let localArcPos = -1;
-    let localTension = 0.0;
-    let localLastCadenceType = "none", localCadenceType = "none";
-    let localLastDroneStart = -9999, localLastDroneDur = 0;
-    let usedSnapshotArc = false;
-
-    function localStartNewArc() {
-      if (!usedSnapshotArc && sessionSnapshot.arcLen != null) {
-        localArcLen = sessionSnapshot.arcLen;
-        localArcClimaxAt = sessionSnapshot.arcClimaxAt;
-        usedSnapshotArc = true;
-      } else {
-        localArcLen = 4 + Math.floor(rand() * 5);
-        localArcClimaxAt = Math.max(2, localArcLen - 2 - Math.floor(rand() * 2));
-      }
-      localArcPos = -1;
-      localTension = clamp01(localTension * 0.4 + 0.05);
-    }
-    localStartNewArc();
-
     const exportDensity = sessionSnapshot.density;
     let baseFreq = Number(document.getElementById("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
@@ -983,6 +1048,25 @@
     let localCircle = 0, localMinor = false, localIdx = 0;
 
     let localTime = 0.05, localModCount = 0, localPhraseStep = 0;
+    let localArcLen = sessionSnapshot.arcLen ?? 6;
+    let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
+    let localArcPos = -1;
+    let localTension = 0.0;
+    let localLastCadenceType = "none";
+    let localCadenceType = "none";
+    let localLastDroneStart = -9999;
+    let localLastDroneDur = 0;
+    let localPhraseCount = -1;
+
+    function localStartNewArc() {
+      localArcLen = 4 + Math.floor(rand() * 5);
+      localArcClimaxAt = Math.max(2, localArcLen - 2 - Math.floor(rand() * 2));
+      localArcPos = -1;
+      localTension = clamp01(localTension * 0.4 + 0.05);
+    }
+
+    // Keep the snapshot arc for the first arc
+    localArcPos = -1;
 
     function localDegreeFromIdx(idx) {
       const base = Math.floor(idx / 7) * 7;
@@ -999,6 +1083,7 @@
       const nearClimax = (localArcPos === localArcClimaxAt);
       const lateArc = (localArcPos >= localArcLen - 2);
       let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
+
       if (localArcPos < localArcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
       w.authentic += localTension * 0.25; w.deceptive += localTension * 0.10; w.evaded -= localTension * 0.18;
       if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
@@ -1007,7 +1092,8 @@
 
       for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - localCadenceRepeatPenalty(k));
 
-      const keys = Object.keys(w); const sum = keys.reduce((a, k) => a + w[k], 0);
+      const keys = Object.keys(w);
+      const sum = keys.reduce((a, k) => a + w[k], 0);
       let r = rand() * sum;
       for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
       return "authentic";
@@ -1028,12 +1114,18 @@
       localPhraseStep = 15;
       localPhraseCount++;
       localArcPos = localArcPos + 1;
-      if (localArcPos >= localArcLen) localStartNewArc();
+      if (localArcPos >= localArcLen) {
+        localStartNewArc();
+        localArcPos = 0;
+      }
       localCadenceType = localPickCadenceType();
       localPhraseStep = 0;
     }
 
-    localPhraseCount = -1;
+    // Use snapshot arc for first arc
+    localArcLen = sessionSnapshot.arcLen ?? localArcLen;
+    localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? localArcClimaxAt;
+
     silentInitPhraseExport();
 
     while (localTime < exportDuration - 2.0) {
@@ -1042,11 +1134,8 @@
         localPhraseCount++;
         localArcPos++;
         if (localArcPos >= localArcLen) {
-          localArcLen = 4 + Math.floor(rand() * 5);
-          localArcClimaxAt = Math.max(2, localArcLen - 2 - Math.floor(rand() * 2));
-          localArcPos = -1;
-          localTension = clamp01(localTension * 0.4 + 0.05);
-          localArcPos++;
+          localStartNewArc();
+          localArcPos = 0;
         }
         localCadenceType = localPickCadenceType();
       }
@@ -1099,15 +1188,6 @@
           localIdx += deltaPre;
         }
 
-        if (localMinor && cadencePlan.wantLT && localPhraseStep === 14 && chance(0.6)) {
-          const curOct = Math.floor(localIdx / 7) * 7;
-          const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
-          let dTo6 = 6 - curDeg;
-          if (dTo6 > 3) dTo6 -= 7;
-          if (dTo6 < -3) dTo6 += 7;
-          localIdx += dTo6;
-        }
-
         if (localPhraseStep === 15) {
           const curOct = Math.floor(localIdx / 7) * 7;
           const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
@@ -1120,6 +1200,7 @@
 
           if (ct === "authentic") localTension = clamp01(localTension - 0.22);
           else localTension = clamp01(localTension + 0.10);
+
           localLastCadenceType = ct;
         }
       } else {
@@ -1250,13 +1331,13 @@
   // =========================
   function installBackgroundMusicStopKeepAirplay() {
     const handler = () => {
-      if (document.hidden) stopMusicKeepAirplay("hidden");
+      if (document.hidden) stopMusicKeepAirplay();
     };
 
     document.addEventListener("visibilitychange", handler, { passive: true });
-    window.addEventListener("pagehide", () => stopMusicKeepAirplay("pagehide"), { passive: true });
-    window.addEventListener("blur", () => stopMusicKeepAirplay("blur"), { passive: true });
-    document.addEventListener("freeze", () => stopMusicKeepAirplay("freeze"), { passive: true });
+    window.addEventListener("pagehide", () => stopMusicKeepAirplay(), { passive: true });
+    window.addEventListener("blur", () => stopMusicKeepAirplay(), { passive: true });
+    document.addEventListener("freeze", () => stopMusicKeepAirplay(), { passive: true });
   }
 
   // =========================
@@ -1283,16 +1364,19 @@
     document.getElementById("songDuration")?.addEventListener("change", () => saveState(readControls()));
     document.getElementById("launchPlayer")?.addEventListener("click", launchPlayer);
 
+    // Prime AirPlay on first user gesture globally (sticky)
+    installFirstGestureAirplayPrime();
+
     // Shift-hotkeys only
-    document.addEventListener("keydown", (e) => {
+    document.addEventListener("keydown", async (e) => {
       if (!e.shiftKey) return;
       const k = (e.key || "").toLowerCase();
 
       if (k === "r") {
         e.preventDefault();
         initAudio();
-        // ensure airplay stream exists; recording needs streamDest
-        startAirplayRoute();
+        if (audioContext?.state === "suspended") { try { await audioContext.resume?.(); } catch {} }
+        await startAirplayRouteSticky();
         toggleRecording();
       }
 
@@ -1304,6 +1388,15 @@
       if (k === "s") {
         e.preventDefault();
         stopAllManual();
+      }
+
+      if (k === "a") {
+        e.preventDefault();
+        initAudio();
+        if (audioContext?.state === "suspended") { try { await audioContext.resume?.(); } catch {} }
+        await startAirplayRouteSticky();
+        // Force picker if available (best reliability)
+        showAirplayPickerIfSupported();
       }
     });
 
