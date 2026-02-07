@@ -1,51 +1,41 @@
 /* ============================================================
-   OPEN — Option B1 (Hybrid “Safety Bed”)
-   - Foreground: full v171_true_drift generative engine (melody + drones + arcs)
-   - Background/Lock/App-switch: continuous “Safety Bed” drone that does NOT rely on timers
-   - AirPlay: sticky <audio> bridge fed by MediaStreamDestination
-   - Anti-bleed: per-run mix bus + active-node tracking + fast fade + hard kill
-   - Hotkeys:
-     - Shift + R = toggle recording (webm/opus)
-     - Shift + E = export WAV (offline render, full logic)
-   - 508: aria-pressed toggles, polite live status via #playerStatus / #recordStatus
+   OPEN — B1.1 (Hard-stop on background)
+   - AirPlay bridge enabled while active (foreground).
+   - Immediate stop on background/lock/switch-app to prevent stutter.
+   - Anti-bleed: per-run mix bus + active node tracking + hard kill.
+   - Hotkeys: Shift+R (record), Shift+E (export WAV)
    ============================================================ */
 
 (() => {
   "use strict";
 
-  const STATE_KEY = "open_player_settings_b1";
+  const STATE_KEY = "open_player_settings_b11";
 
   // =========================
   // TUNING
   // =========================
-  const MELODY_FLOOR_HZ = 220;    // A3 (prevents thumping)
+  const MELODY_FLOOR_HZ = 220;    // A3
   const DRONE_FLOOR_HZ  = 87.31;  // F2
   const DRONE_GAIN_MULT = 0.70;
 
   const MASTER_VOL = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
-  // Foreground scheduler
-  const SCHEDULER_INTERVAL_MS = 125;
-  const LOOKAHEAD_FG = 1.5; // schedule-ahead window while visible/active
-  const MAX_EVENTS_PER_TICK = 700;
-
-  // Safety Bed behavior
-  const SAFETY_BED_FADE_IN  = 0.15; // seconds
-  const SAFETY_BED_FADE_OUT = 0.35; // seconds
-  const SAFETY_BED_LEVEL    = 0.18; // relative to MASTER_VOL-ish, but inside bus
-
-  // Stop behavior
-  const STOP_FADE_SEC = 0.10;
+  // Scheduler
+  const LOOKAHEAD = 1.5;                // foreground schedule window
+  const SCHEDULER_INTERVAL_MS = 80;     // responsive scheduling
+  const MAX_EVENTS_PER_TICK = 900;
 
   // =========================
-  // DOM UTILS
+  // UTILS
   // =========================
   const $ = (id) => document.getElementById(id);
 
-  function isPlayerPage() {
-    return !!$("playNow") && !!$("stop");
+  function clampFreqMin(freq, floorHz) {
+    while (freq < floorHz) freq *= 2;
+    return freq;
   }
+  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
   function announce(msg) {
     const live = $("playerStatus") || $("recordStatus");
@@ -56,17 +46,18 @@
   }
 
   // =========================
-  // VIEW / LAUNCH
+  // PAGE ROUTING
   // =========================
+  function isLauncherPage() { return !!$("launchPlayer"); }
+  function isPlayerPage() { return !!$("playNow"); }
+
   function isMobileDevice() {
-    const ua = navigator.userAgent || "";
-    return /iPhone|iPad|iPod|Android/i.test(ua) ||
+    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") ||
       (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
   }
 
   function launchPlayer() {
-    // If you’re using a two-page package, index.html should call this.
-    // Mobile: navigate in-tab, Desktop: open popout.
+    // Launcher opens player page.
     if (isMobileDevice()) {
       window.location.href = "player.html";
       return;
@@ -82,7 +73,7 @@
   }
 
   // =========================
-  // STATE / CONTROLS
+  // STATE & CONTROLS
   // =========================
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
   function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
@@ -119,7 +110,6 @@
     const playBtn = $("playNow");
     const stopBtn = $("stop");
     const toneInput = $("tone");
-
     const playing = (state === "playing");
 
     if (playBtn) {
@@ -136,24 +126,23 @@
   }
 
   // =========================
-  // AUDIO CORE (Bus + Bridge + Safety Bed)
+  // AUDIO CORE
   // =========================
   let audioContext = null;
 
-  // Per-run bus to prevent bleed
-  let bus = null; // { masterGain, reverbSend, streamDest, ... }
-  let cachedImpulseBuffer = null;
+  // Per-run bus (anti-bleed)
+  let bus = null;
 
-  // AirPlay bridge element
+  // AirPlay bridge element (keeps route alive while foreground)
   let bridgeAudioEl = null;
 
-  // Safety Bed nodes (continuous; does not rely on timer scheduling)
-  let safety = null; // { gain, oscNodes[], filter }
-
-  // Active scheduled node tracking (for hard stop / anti-bleed)
+  // Nodes created during a run (hard stop kills them)
   const activeNodes = new Set();
-  function track(n) { if (n) activeNodes.add(n); return n; }
-  function untrack(n) { if (n) activeNodes.delete(n); }
+  function trackNode(n) { if (n) activeNodes.add(n); return n; }
+  function untrackNode(n) { if (n) activeNodes.delete(n); }
+
+  // Cached impulse
+  let cachedImpulseBuffer = null;
 
   function ensureAudioContext() {
     if (audioContext) return;
@@ -161,15 +150,14 @@
     audioContext = new Ctx();
   }
 
-  function ensureBridgeEl() {
+  function ensureBridge() {
     if (bridgeAudioEl) return;
     bridgeAudioEl = document.createElement("audio");
-    bridgeAudioEl.id = "open-bridge";
+    bridgeAudioEl.id = "open-airplay-bridge";
     bridgeAudioEl.setAttribute("playsinline", "true");
     bridgeAudioEl.setAttribute("aria-hidden", "true");
-    bridgeAudioEl.muted = false;
     bridgeAudioEl.loop = true;
-    // Keep it effectively invisible
+    bridgeAudioEl.muted = false;
     Object.assign(bridgeAudioEl.style, {
       position: "fixed",
       width: "1px",
@@ -182,15 +170,16 @@
     document.body.appendChild(bridgeAudioEl);
   }
 
-  function clamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-  // IMPORTANT: do not reuse impulse across contexts of different sampleRate? (we do per audioContext)
   function createImpulseResponse(ctx) {
+    // Note: buffer tied to sample rate; simplest stable approach is per context sampleRate
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
+
     const duration = 10.0, decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
-    const r = rngStream(0xC0FFEE);
+
+    // deterministic-ish noise
+    const r = mulberry32((sessionSeed ^ 0xC0FFEE) >>> 0);
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
       for (let i = 0; i < length; i++) {
@@ -201,17 +190,36 @@
     return impulse;
   }
 
+  function killAllActiveNodes(now = 0) {
+    for (const n of Array.from(activeNodes)) {
+      try { n.stop?.(now); } catch {}
+      try { n.disconnect?.(); } catch {}
+      untrackNode(n);
+    }
+  }
+
+  function teardownBusHard() {
+    if (!audioContext) return;
+    if (!bus) return;
+
+    try { bus.masterGain.gain.cancelScheduledValues(audioContext.currentTime); } catch {}
+    try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
+
+    killAllActiveNodes(audioContext.currentTime);
+
+    try { bus.reverbReturn.disconnect(); } catch {}
+    try { bus.reverbSend.disconnect(); } catch {}
+    try { bus.masterGain.disconnect(); } catch {}
+    try { bus.streamDest.disconnect(); } catch {}
+
+    bus = null;
+  }
+
   function buildMixBus() {
     ensureAudioContext();
 
-    // Hard detach previous bus to avoid bleed
-    if (bus) {
-      try { bus.masterGain.disconnect(); } catch {}
-      try { bus.reverbReturn.disconnect(); } catch {}
-      try { bus.reverbSend.disconnect(); } catch {}
-      try { bus.streamDest.disconnect?.(); } catch {}
-      bus = null;
-    }
+    // Hard teardown prior bus to prevent bleed
+    teardownBusHard();
 
     const masterGain = audioContext.createGain();
     masterGain.gain.value = MASTER_VOL;
@@ -243,127 +251,72 @@
     reverbLP.connect(reverbReturn);
     reverbReturn.connect(masterGain);
 
-    bus = { masterGain, streamDest, reverbSend, reverbReturn };
+    bus = { masterGain, reverbSend, reverbReturn, streamDest };
 
-    ensureBridgeEl();
+    // AirPlay bridge route
+    ensureBridge();
     bridgeAudioEl.srcObject = streamDest.stream;
   }
 
-  function killAllActiveNodes(now) {
-    const t = (typeof now === "number") ? now : (audioContext?.currentTime ?? 0);
-    for (const n of Array.from(activeNodes)) {
-      try { n.stop?.(t); } catch {}
-      try { n.disconnect?.(); } catch {}
-      untrack(n);
+  // =========================
+  // LIVE RECORDING
+  // =========================
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let isRecording = false;
+
+  function setRecordUI(on) {
+    const el = $("recordStatus");
+    if (!el) return;
+    el.textContent = on ? "Recording: ON" : "Recording: off";
+  }
+
+  function toggleRecording() {
+    if (!bus?.streamDest?.stream) return;
+
+    if (isRecording) {
+      isRecording = false;
+      try { mediaRecorder?.stop(); } catch {}
+      setRecordUI(false);
+      return;
     }
-  }
 
-  // =========================
-  // SAFETY BED (continuous drone that survives background throttling)
-  // =========================
-  function stopSafetyBed(hard = false) {
-    if (!safety || !audioContext || !bus) { safety = null; return; }
-    const now = audioContext.currentTime;
+    recordedChunks = [];
 
+    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+    const mimeType = types.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || "";
     try {
-      safety.gain.gain.cancelScheduledValues(now);
-      if (hard) {
-        safety.gain.gain.setValueAtTime(0, now);
-      } else {
-        safety.gain.gain.setValueAtTime(safety.gain.gain.value, now);
-        safety.gain.gain.linearRampToValueAtTime(0.0001, now + SAFETY_BED_FADE_OUT);
-      }
-    } catch {}
-
-    // stop oscillators after fade
-    const stopAt = hard ? now : (now + SAFETY_BED_FADE_OUT + 0.05);
-    for (const o of safety.osc || []) {
-      try { o.stop(stopAt); } catch {}
-      try { o.disconnect(); } catch {}
+      mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
+    } catch (e) {
+      console.warn(e);
+      return;
     }
-    try { safety.filter?.disconnect(); } catch {}
-    try { safety.gain?.disconnect(); } catch {}
-    safety = null;
-  }
 
-  function startSafetyBed(baseFreq) {
-    // create once per run; keep gain at ~0 while visible; ramp up on hidden
-    if (!audioContext || !bus) return;
-    stopSafetyBed(true);
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
+    };
 
-    const now = audioContext.currentTime;
-    const g = audioContext.createGain();
-    g.gain.setValueAtTime(0.0001, now);
+    mediaRecorder.onstop = () => {
+      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `open-live-${Date.now()}.${blob.type.includes("ogg") ? "ogg" : "webm"}`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => {
+        try { document.body.removeChild(a); } catch {}
+        URL.revokeObjectURL(url);
+      }, 150);
+    };
 
-    // A little damping / smoothing so it sounds like “bed”, not harsh
-    const lp = audioContext.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(900, now);
-    lp.Q.value = 0.6;
-
-    // Choose a stable chord from base tone (root + 5th + (optional) 3rd)
-    // Keep it consonant to avoid “mode jump” when backgrounded.
-    // We’ll use major third by default; minor/major changes are handled by the live engine.
-    const f0 = clampFreqMin(Number(baseFreq) || 110, DRONE_FLOOR_HZ);
-    const fifth = f0 * Math.pow(2, 7 / 12);
-    const third = f0 * Math.pow(2, 4 / 12);
-
-    const oscRoot = track(audioContext.createOscillator());
-    const oscFifth = track(audioContext.createOscillator());
-    const oscThird = track(audioContext.createOscillator());
-
-    oscRoot.type = "sine";
-    oscFifth.type = "sine";
-    oscThird.type = "sine";
-
-    oscRoot.frequency.setValueAtTime(f0, now);
-    oscFifth.frequency.setValueAtTime(fifth, now);
-    oscThird.frequency.setValueAtTime(third, now);
-
-    // slight detune for movement, very subtle
-    oscRoot.detune.setValueAtTime(0, now);
-    oscFifth.detune.setValueAtTime(-3, now);
-    oscThird.detune.setValueAtTime(2, now);
-
-    oscRoot.connect(g);
-    oscFifth.connect(g);
-    oscThird.connect(g);
-
-    g.connect(lp);
-    // dry + a little reverb send
-    lp.connect(bus.masterGain);
-    lp.connect(bus.reverbSend);
-
-    oscRoot.start(now);
-    oscFifth.start(now);
-    oscThird.start(now);
-
-    // record for cleanup
-    safety = { gain: g, filter: lp, osc: [oscRoot, oscFifth, oscThird] };
-  }
-
-  function safetyBedFadeIn() {
-    if (!audioContext || !safety) return;
-    const now = audioContext.currentTime;
-    try {
-      safety.gain.gain.cancelScheduledValues(now);
-      safety.gain.gain.setValueAtTime(Math.max(0.0001, safety.gain.gain.value), now);
-      safety.gain.gain.linearRampToValueAtTime(SAFETY_BED_LEVEL, now + SAFETY_BED_FADE_IN);
-    } catch {}
-  }
-
-  function safetyBedFadeOut() {
-    if (!audioContext || !safety) return;
-    const now = audioContext.currentTime;
-    try {
-      safety.gain.gain.cancelScheduledValues(now);
-      safety.gain.gain.setValueAtTime(Math.max(0.0001, safety.gain.gain.value), now);
-      safety.gain.gain.linearRampToValueAtTime(0.0001, now + SAFETY_BED_FADE_OUT);
-    } catch {}
+    try { mediaRecorder.start(250); } catch {}
+    isRecording = true;
+    setRecordUI(true);
   }
 
   // =========================
-  // DETERMINISTIC RNG
+  // RNG (deterministic stream)
   // =========================
   let sessionSeed = 0;
   let rng = Math.random;
@@ -377,60 +330,20 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-
   function setSeed(seed) { sessionSeed = (seed >>> 0); rng = mulberry32(sessionSeed); }
-  function rngStream(tagInt) { return mulberry32((sessionSeed ^ tagInt) >>> 0); }
   function rand() { return rng(); }
   function chance(p) { return rand() < p; }
 
   // =========================
-  // MUSIC THEORY HELPERS
+  // MUSICAL STRUCTURE
   // =========================
-  function clampFreqMin(freq, floorHz) {
-    let f = freq;
-    while (f < floorHz) f *= 2;
-    return f;
-  }
-
   function circDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 7 - d); }
 
-  function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
-    let pos = circlePos % 12; if (pos < 0) pos += 12;
-    let semitones = (pos * 7) % 12;
-    let rootOffset = semitones; if (minorMode) rootOffset = (semitones + 9) % 12;
-
-    const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
-    const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
-
-    const len = 7;
-    const octave = Math.floor(scaleIndex / len);
-    const degree = ((scaleIndex % len) + len) % len;
-
-    let intervals = minorMode ? minorIntervals : majorIntervals;
-    if (minorMode && opts.raiseLeadingTone && degree === 6) {
-      intervals = minorIntervals.slice();
-      intervals[6] = 11;
-    }
-
-    const noteValue = rootOffset + intervals[degree] + (octave * 12);
-    return baseFreq * Math.pow(2, noteValue / 12);
-  }
-
-  function clampBaseTone() {
-    let baseFreq = Number($("tone")?.value ?? 110);
-    if (!Number.isFinite(baseFreq)) baseFreq = 110;
-    return Math.max(100, Math.min(200, baseFreq));
-  }
-
-  // =========================
-  // v171 HARMONY / ARC STATE
-  // =========================
   let isPlaying = false;
   let isEndingNaturally = false;
   let isApproachingEnd = false;
 
   let timerInterval = null;
-  let currentLookahead = LOOKAHEAD_FG;
 
   let nextTimeA = 0;
   let patternIdxA = 0;
@@ -455,13 +368,11 @@
 
   let sessionSnapshot = null;
 
-  function clamp01Local(x) { return Math.max(0, Math.min(1, x)); }
-
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
     arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
     arcPos = -1;
-    tension = clamp01Local(tension * 0.4 + 0.05);
+    tension = clamp01(tension * 0.4 + 0.05);
   }
 
   function cadenceRepeatPenalty(type) {
@@ -488,7 +399,6 @@
     const keys = Object.keys(w);
     const sum = keys.reduce((a, k) => a + w[k], 0);
     let r = rand() * sum;
-
     for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
     return "authentic";
   }
@@ -496,12 +406,35 @@
   function cadenceTargets(type) {
     switch (type) {
       case "authentic": return { pre: 6, end: 0, wantLT: true };
-      case "half": return { pre: 1, end: 4, wantLT: false };
-      case "plagal": return { pre: 3, end: 0, wantLT: false };
+      case "half":      return { pre: 1, end: 4, wantLT: false };
+      case "plagal":    return { pre: 3, end: 0, wantLT: false };
       case "deceptive": return { pre: 6, end: 5, wantLT: true };
-      case "evaded": return { pre: 6, end: 2, wantLT: true };
-      default: return { pre: 2, end: 0, wantLT: false };
+      case "evaded":    return { pre: 6, end: 2, wantLT: true };
+      default:          return { pre: 2, end: 0, wantLT: false };
     }
+  }
+
+  function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
+    let pos = circlePos % 12; if (pos < 0) pos += 12;
+    let semitones = (pos * 7) % 12;
+    let rootOffset = semitones;
+    if (minorMode) rootOffset = (semitones + 9) % 12;
+
+    const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
+    const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
+
+    const len = 7;
+    const octave = Math.floor(scaleIndex / len);
+    const degree = ((scaleIndex % len) + len) % len;
+
+    let intervals = minorMode ? minorIntervals : majorIntervals;
+    if (minorMode && opts.raiseLeadingTone && degree === 6) {
+      intervals = minorIntervals.slice();
+      intervals[6] = 11;
+    }
+
+    const noteValue = rootOffset + intervals[degree] + (octave * 12);
+    return baseFreq * Math.pow(2, noteValue / 12);
   }
 
   function updateHarmonyState(durationInput) {
@@ -530,7 +463,7 @@
   }
 
   // =========================
-  // SYNTH (v171 voices)
+  // SYNTH
   // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
@@ -546,7 +479,6 @@
       let mRatio = isFractured
         ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
         : (1.5 + rand() * 2.5);
-
       if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
 
       const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
@@ -556,11 +488,11 @@
     });
 
     voices.forEach(voice => {
-      const carrier = track(ctx.createOscillator());
-      const modulator = track(ctx.createOscillator());
-      const modGain = track(ctx.createGain());
-      const ampGain = track(ctx.createGain());
-      const filter = track(ctx.createBiquadFilter());
+      const carrier = trackNode(ctx.createOscillator());
+      const modulator = trackNode(ctx.createOscillator());
+      const modGain = trackNode(ctx.createGain());
+      const ampGain = trackNode(ctx.createGain());
+      const filter = trackNode(ctx.createBiquadFilter());
 
       filter.type = "lowpass";
       filter.frequency.value = Math.min(freq * 3.5, 6000);
@@ -586,23 +518,39 @@
       filter.connect(destination);
       filter.connect(wetSend);
 
-      modulator.start(time); carrier.start(time);
-      modulator.stop(time + duration); carrier.stop(time + duration);
-
-      carrier.onended = () => { untrack(carrier); };
-      modulator.onended = () => { untrack(modulator); };
+      modulator.start(time);
+      carrier.start(time);
+      modulator.stop(time + duration);
+      carrier.stop(time + duration);
     });
   }
 
+  function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality, includeThird = true) {
+    let f0 = clampFreqMin(rootFreq, DRONE_FLOOR_HZ);
+
+    const thirdRatio = (quality === "min") ? Math.pow(2, 3/12) : Math.pow(2, 4/12);
+    const fifthRatio = Math.pow(2, 7/12);
+
+    const vol = baseVolume * DRONE_GAIN_MULT;
+
+    scheduleBassVoice(ctx, destination, wetSend, f0, time, duration, vol * 0.50);
+    scheduleBassVoice(ctx, destination, wetSend, f0 * fifthRatio, time, duration, vol * 0.30);
+
+    if (includeThird) {
+      scheduleBassVoice(ctx, destination, wetSend, f0 * thirdRatio, time, duration, vol * 0.20);
+    }
+  }
+
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
-    const carrier = track(ctx.createOscillator());
-    const modulator = track(ctx.createOscillator());
-    const modGain = track(ctx.createGain());
-    const ampGain = track(ctx.createGain());
-    const lp = track(ctx.createBiquadFilter());
+    const carrier = trackNode(ctx.createOscillator());
+    const modulator = trackNode(ctx.createOscillator());
+    const modGain = trackNode(ctx.createGain());
+    const ampGain = trackNode(ctx.createGain());
+    const lp = trackNode(ctx.createBiquadFilter());
 
     carrier.type = "sine";
     modulator.type = "sine";
+
     carrier.frequency.value = freq;
     modulator.frequency.value = freq * 2.0;
     modulator.detune.value = (rand() - 0.5) * 8;
@@ -628,31 +576,14 @@
     lp.connect(destination);
     lp.connect(wetSend);
 
-    modulator.start(time); carrier.start(time);
-    modulator.stop(time + duration); carrier.stop(time + duration);
-
-    carrier.onended = () => { untrack(carrier); };
-    modulator.onended = () => { untrack(modulator); };
-  }
-
-  function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality, includeThird = true) {
-    let f0 = clampFreqMin(rootFreq, DRONE_FLOOR_HZ);
-
-    const thirdRatio = (quality === "min") ? Math.pow(2, 3 / 12) : Math.pow(2, 4 / 12);
-    const fifthRatio = Math.pow(2, 7 / 12);
-
-    const vol = baseVolume * DRONE_GAIN_MULT;
-
-    scheduleBassVoice(ctx, destination, wetSend, f0, time, duration, vol * 0.50);
-    scheduleBassVoice(ctx, destination, wetSend, f0 * fifthRatio, time, duration, vol * 0.30);
-
-    if (includeThird) {
-      scheduleBassVoice(ctx, destination, wetSend, f0 * thirdRatio, time, duration, vol * 0.20);
-    }
+    modulator.start(time);
+    carrier.start(time);
+    modulator.stop(time + duration);
+    carrier.stop(time + duration);
   }
 
   // =========================
-  // PHRASE INIT (v171 “ghost downbeat”)
+  // SCHEDULER
   // =========================
   function silentInitPhraseLive() {
     phraseStep = 15;
@@ -663,52 +594,44 @@
     phraseStep = 0;
   }
 
-  // =========================
-  // SCHEDULER (foreground)
-  // =========================
   function scheduler() {
     if (!isPlaying || !audioContext || !bus) return;
 
-    const durationInput = $("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
+    const boundary = now + LOOKAHEAD;
 
+    const durationInput = $("songDuration")?.value ?? "60";
     const elapsed = now - sessionStartTime;
     if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
 
-    const baseFreq = clampBaseTone();
+    let baseFreq = Number($("tone")?.value ?? 110);
+    if (!Number.isFinite(baseFreq)) baseFreq = 110;
+    baseFreq = Math.max(100, Math.min(200, baseFreq));
+
     const noteDur = (1 / runDensity) * 2.5;
 
-    // Reverb send automation (v171-ish)
+    // Reverb send automation
     if (bus.reverbSend && arcPos !== arcClimaxAt - 1) {
       let targetSend = 0.65 - (0.25 * clamp01((runDensity - 0.05) / 0.375));
       targetSend = Math.max(0, Math.min(0.95, targetSend));
       bus.reverbSend.gain.setTargetAtTime(targetSend, now, 2.5);
     }
 
-    const lookaheadBoundary = now + currentLookahead;
-
     let events = 0;
-    while (nextTimeA < lookaheadBoundary) {
+    while (nextTimeA < boundary) {
       if (events++ > MAX_EVENTS_PER_TICK) break;
 
       let appliedDur = noteDur;
 
-      const pressure = Math.min(1.0, notesSinceModulation / 48.0);
+      let pressure = Math.min(1.0, notesSinceModulation / 48.0);
       updateHarmonyState(durationInput);
 
-      // End logic (natural tail)
+      // End logic (simple: stop scheduling once past duration)
       if (isApproachingEnd && !isEndingNaturally) {
-        // Schedule a long, stable final note on phrase boundary
-        if (patternIdxA % 7 === 0) {
-          let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-          fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
-          beginNaturalEnd();
-          return;
-        }
+        beginNaturalEnd();
+        return;
       }
 
-      // Phrase stepping
       phraseStep = (phraseStep + 1) % 16;
       if (phraseStep === 0) {
         phraseCount++;
@@ -720,7 +643,7 @@
       const isCadence = (phraseStep >= 13);
       if (chance(phraseStep === 15 ? 0.85 : 0.2)) appliedDur *= 1.2;
 
-      // Melody movement
+      // Melody movement (kept from v171)
       if (isCadence) {
         const cadenceDegrees = [0, 1, 3, 4, 5];
         const currentOctave = Math.floor(patternIdxA / 7) * 7;
@@ -747,12 +670,12 @@
         patternIdxA = currentOctave + deg + delta;
 
         const ct = currentCadenceType;
-        const plan = cadenceTargets(ct);
+        const cadencePlan = cadenceTargets(ct);
 
         if (phraseStep === 14 && chance(0.70)) {
           const curOct = Math.floor(patternIdxA / 7) * 7;
           const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
-          let deltaPre = plan.pre - curDeg;
+          let deltaPre = cadencePlan.pre - curDeg;
           if (deltaPre > 3) deltaPre -= 7;
           if (deltaPre < -3) deltaPre += 7;
           patternIdxA += deltaPre;
@@ -761,27 +684,24 @@
         if (phraseStep === 15) {
           const curOct = Math.floor(patternIdxA / 7) * 7;
           const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
-          let deltaEnd = plan.end - curDeg;
+          let deltaEnd = cadencePlan.end - curDeg;
           if (deltaEnd > 3) deltaEnd -= 7;
           if (deltaEnd < -3) deltaEnd += 7;
 
-          // Soft “ambient snap”
           if (chance(0.35)) {
             patternIdxA += deltaEnd;
           } else if (chance(0.25)) {
             patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
           }
 
-          if (ct === "authentic") tension = clamp01Local(tension - 0.22);
-          else tension = clamp01Local(tension + 0.10);
-
+          if (ct === "authentic") tension = clamp01(tension - 0.22);
+          else tension = clamp01(tension + 0.10);
           lastCadenceType = ct;
         }
       } else {
         patternIdxA += (rand() < 0.5 ? 1 : -1);
       }
 
-      // Leading tone raise in minor where desired
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
       const wantLT = cadencePlan ? cadencePlan.wantLT : false;
       const degNow = degreeFromIdx(patternIdxA);
@@ -790,7 +710,7 @@
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-      // Drone logic
+      // Drone logic (mirrors v171 intent)
       const isArcStart = (arcPos === 0 && phraseStep === 0);
       const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
       const atPhraseStart = (phraseStep === 0);
@@ -803,6 +723,7 @@
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
         const ct = currentCadenceType || "authentic";
         let droneRootDegree = 0;
+
         if (!isArcStart && !isClimax) {
           if (ct === "half") droneRootDegree = 4;
           else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
@@ -818,8 +739,6 @@
           melodyDeg: melodyDegNow
         });
 
-        if (!useThirdColor && droneRootDegree !== 0 && chance(0.65)) droneRootDegree = 0;
-
         const curRegister = Math.floor(patternIdxA / 7);
         const droneOct = Math.min(curRegister - 1, 0);
         const droneIdx = droneOct * 7 + droneRootDegree;
@@ -828,7 +747,7 @@
         droneRootFreq = clampFreqMin(droneRootFreq, DRONE_FLOOR_HZ);
 
         const t0 = Math.max(nextTimeA - 0.05, audioContext.currentTime);
-        const droneDur = isArcStart ? 32.0 : 22.0;
+        let droneDur = isArcStart ? 32.0 : 22.0;
 
         lastDroneStart = t0;
         lastDroneDur = droneDur;
@@ -839,7 +758,7 @@
         scheduleDroneChord(audioContext, bus.masterGain, bus.reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
-      // Melody scheduling (with “drone solo” region)
+      // Melody scheduling
       const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
       if (!isDroneSolo) {
         if (isCadence && arcPos === arcClimaxAt && phraseStep === 15) {
@@ -854,49 +773,7 @@
   }
 
   // =========================
-  // BACKGROUND HANDLING (B1)
-  // =========================
-  let wasHidden = false;
-
-  function enterBackgroundMode() {
-    if (!isPlaying || !audioContext || !bus) return;
-    wasHidden = true;
-
-    // Bring up the Safety Bed so audio never depends on timer scheduling
-    safetyBedFadeIn();
-    announce("Playing (background)");
-
-    // Reduce scheduler load — but keep it running lightly for when timers do fire.
-    currentLookahead = LOOKAHEAD_FG; // still fine; bed is the guarantee
-  }
-
-  function exitBackgroundMode() {
-    if (!isPlaying || !audioContext || !bus) return;
-    if (!wasHidden) return;
-    wasHidden = false;
-
-    // Fade Safety Bed down, return to full motion
-    safetyBedFadeOut();
-    announce("Playing");
-    currentLookahead = LOOKAHEAD_FG;
-
-    // Immediately refill the scheduled window on return
-    try { scheduler(); } catch {}
-  }
-
-  function handleVisibilityChange() {
-    if (document.hidden) enterBackgroundMode();
-    else exitBackgroundMode();
-  }
-
-  // iOS sometimes fires pagehide more reliably than visibilitychange during app switch
-  function handlePageHide() {
-    // Don’t stop — just ensure safety bed is on
-    enterBackgroundMode();
-  }
-
-  // =========================
-  // PLAY / STOP
+  // START / STOP
   // =========================
   async function startFromUI() {
     ensureAudioContext();
@@ -904,19 +781,17 @@
       try { await audioContext.resume(); } catch {}
     }
 
-    // Make sure any prior run is dead (anti-bleed)
+    // Hard stop any prior run (prevents bleed)
     stopAllManual(true);
 
     buildMixBus();
 
-    // AirPlay: must be started from a user gesture
-    try { ensureBridgeEl(); await bridgeAudioEl.play(); } catch {}
+    // Start AirPlay bridge stream while foreground
+    if (bridgeAudioEl) {
+      try { await bridgeAudioEl.play(); } catch { /* user gesture already from button */ }
+    }
 
-    // Init Safety Bed (quiet, will fade in only when hidden)
-    startSafetyBed(clampBaseTone());
-    safetyBedFadeOut();
-
-    // Reset v171 state
+    // Reset musical state
     isEndingNaturally = false;
     isApproachingEnd = false;
 
@@ -924,23 +799,18 @@
     circlePosition = 0;
     isMinor = false;
     tension = 0.0;
+
     lastCadenceType = "none";
     currentCadenceType = "none";
     lastDroneStart = -9999;
     lastDroneDur = 0;
+
     notesSinceModulation = 0;
     arcPos = -1;
     arcLen = 6;
     arcClimaxAt = 4;
 
-    // Fade in master for this run
-    if (bus?.masterGain && audioContext) {
-      const t = audioContext.currentTime;
-      bus.masterGain.gain.cancelScheduledValues(t);
-      bus.masterGain.gain.setValueAtTime(0, t);
-      bus.masterGain.gain.linearRampToValueAtTime(MASTER_VOL, t + 0.10);
-    }
-
+    // New session seed + density
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Math.floor(Math.random() * 2 ** 32)) >>> 0;
     setSeed(seed);
     runDensity = 0.05 + rand() * 0.375;
@@ -948,37 +818,41 @@
     startNewArc();
     sessionSnapshot = { seed, density: runDensity, arcLen, arcClimaxAt };
 
-    // Ghost init
+    // Init phrase counters
     phraseCount = -1;
     silentInitPhraseLive();
 
-    // Start scheduling
+    // Start
     isPlaying = true;
-    wasHidden = false;
-
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
-    currentLookahead = LOOKAHEAD_FG;
+
+    // Fade in
+    if (bus?.masterGain) {
+      const t = audioContext.currentTime;
+      bus.masterGain.gain.cancelScheduledValues(t);
+      bus.masterGain.gain.setValueAtTime(0, t);
+      bus.masterGain.gain.linearRampToValueAtTime(MASTER_VOL, t + 0.08);
+    }
 
     setButtonState("playing");
 
     if (timerInterval) clearInterval(timerInterval);
-    timerInterval = setInterval(() => {
-      try { scheduler(); } catch {}
-    }, SCHEDULER_INTERVAL_MS);
+    timerInterval = setInterval(scheduler, SCHEDULER_INTERVAL_MS);
 
-    // Kick the first fill
+    // Prime buffer immediately
     scheduler();
   }
 
   function stopAllManual(instant = false) {
-    // stop scheduler first so no new events get queued
     isPlaying = false;
     isEndingNaturally = false;
     isApproachingEnd = false;
-    wasHidden = false;
 
-    if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
 
     // Stop recording if active
     if (isRecording) {
@@ -987,32 +861,34 @@
       setRecordUI(false);
     }
 
-    if (!audioContext || !bus) {
+    // Stop airplay bridge playback (prevents weird background behavior)
+    if (bridgeAudioEl) {
+      try { bridgeAudioEl.pause(); } catch {}
+      // keep srcObject attached (AirPlay works again on next play)
+    }
+
+    if (!audioContext) {
       setButtonState("stopped");
       return;
     }
 
-    const t = audioContext.currentTime;
+    if (instant || !bus?.masterGain) {
+      teardownBusHard();
+      setButtonState("stopped");
+      return;
+    }
 
-    // Fade master down quickly
+    // Soft fade then hard kill nodes
+    const t = audioContext.currentTime;
     try {
       bus.masterGain.gain.cancelScheduledValues(t);
       bus.masterGain.gain.setValueAtTime(bus.masterGain.gain.value, t);
-      bus.masterGain.gain.linearRampToValueAtTime(0.0001, t + (instant ? 0.001 : STOP_FADE_SEC));
+      bus.masterGain.gain.linearRampToValueAtTime(0, t + 0.10);
     } catch {}
 
-    // Safety bed off
-    stopSafetyBed(true);
-
-    // Hard kill active scheduled nodes after fade
-    const killDelayMs = instant ? 0 : Math.ceil((STOP_FADE_SEC + 0.05) * 1000);
     setTimeout(() => {
-      try { killAllActiveNodes(audioContext.currentTime); } catch {}
-      // Optional: stop bridge playback (keeps AirPlay session less “sticky”)
-      // If you want AirPlay to remain available, leaving it playing can help.
-      // We’ll pause on stop to match user expectation.
-      try { bridgeAudioEl?.pause(); } catch {}
-    }, killDelayMs);
+      teardownBusHard();
+    }, 140);
 
     setButtonState("stopped");
   }
@@ -1021,16 +897,16 @@
     isEndingNaturally = true;
     isPlaying = false;
     if (timerInterval) { clearInterval(timerInterval); timerInterval = null; }
-    // Let the scheduled tail ring; also reduce safety bed
-    safetyBedFadeOut();
-    setButtonState("stopped");
+    stopAllManual(false);
   }
 
   // =========================
-  // EXPORT WAV (FULL BLOCK)
+  // EXPORT WAV (full block)
   // =========================
   async function renderWavExport() {
     if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
+
+    // Deterministic repeat
     setSeed(sessionSnapshot.seed);
 
     const durationInput = $("songDuration")?.value ?? "60";
@@ -1038,15 +914,17 @@
     const sampleRate = 44100;
 
     const offlineCtx = new OfflineAudioContext(2, sampleRate * exportDuration, sampleRate);
+
     const offlineMaster = offlineCtx.createGain();
     offlineMaster.gain.value = MASTER_VOL;
     offlineMaster.connect(offlineCtx.destination);
 
     const offlinePreDelay = offlineCtx.createDelay(0.1);
     offlinePreDelay.delayTime.value = 0.045;
+
     const offlineReverb = offlineCtx.createConvolver();
-    // Note: createImpulseResponse uses rngStream; keep seed set already
     offlineReverb.buffer = createImpulseResponse(offlineCtx);
+
     const offlineReverbLP = offlineCtx.createBiquadFilter();
     offlineReverbLP.type = "lowpass";
     offlineReverbLP.frequency.value = 4200;
@@ -1054,6 +932,7 @@
 
     const offlineSend = offlineCtx.createGain();
     offlineSend.gain.value = 0.0;
+
     const offlineReturn = offlineCtx.createGain();
     offlineReturn.gain.value = REVERB_RETURN_LEVEL;
 
@@ -1063,19 +942,19 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Restore full export simulation logic (mirrors live)
+    // ---- Export simulation state (mirrors v171) ----
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
     let localArcPos = -1;
     let localTension = 0.0;
-    let localLastCadenceType = "none", localCadenceType = "none";
-    let localLastDroneStart = -9999, localLastDroneDur = 0;
+    let localLastCadenceType = "none";
+    let localCadenceType = "none";
+    let localLastDroneStart = -9999;
+    let localLastDroneDur = 0;
     let usedSnapshotArc = false;
 
-    function localClamp01(x) { return Math.max(0, Math.min(1, x)); }
-
-    function localStartNewArc() {
+    function localStartNewArc(){
       if (!usedSnapshotArc && sessionSnapshot.arcLen != null) {
         localArcLen = sessionSnapshot.arcLen;
         localArcClimaxAt = sessionSnapshot.arcClimaxAt;
@@ -1085,16 +964,25 @@
         localArcClimaxAt = Math.max(2, localArcLen - 2 - Math.floor(rand() * 2));
       }
       localArcPos = -1;
-      localTension = localClamp01(localTension * 0.4 + 0.05);
+      localTension = clamp01(localTension * 0.4 + 0.05);
     }
     localStartNewArc();
 
     const exportDensity = sessionSnapshot.density;
-    let baseFreq = clampBaseTone();
+
+    let baseFreq = Number($("tone")?.value ?? 110);
+    if (!Number.isFinite(baseFreq)) baseFreq = 110;
+    baseFreq = Math.max(100, Math.min(200, baseFreq));
 
     const noteDur = (1 / exportDensity) * 2.5;
-    let localCircle = 0, localMinor = false, localIdx = 0;
-    let localTime = 0.05, localModCount = 0, localPhraseStep = 0;
+
+    let localCircle = 0;
+    let localMinor = false;
+    let localIdx = 0;
+
+    let localTime = 0.05;
+    let localModCount = 0;
+    let localPhraseStep = 0;
 
     function localDegreeFromIdx(idx) {
       const base = Math.floor(idx / 7) * 7;
@@ -1107,14 +995,13 @@
       return 0.18;
     }
 
-    function localPickCadenceType() {
+    function localPickCadenceType(){
       const nearClimax = (localArcPos === localArcClimaxAt);
       const lateArc = (localArcPos >= localArcLen - 2);
-      let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
 
+      let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
       if (localArcPos < localArcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
       w.authentic += localTension * 0.25; w.deceptive += localTension * 0.10; w.evaded -= localTension * 0.18;
-
       if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
       if (lateArc && localTension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
       if (localMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
@@ -1147,7 +1034,6 @@
       localCadenceType = localPickCadenceType();
       localPhraseStep = 0;
     }
-
     localPhraseCount = -1;
     silentInitPhraseExport();
 
@@ -1156,10 +1042,7 @@
       if (localPhraseStep === 0) {
         localPhraseCount++;
         localArcPos++;
-        if (localArcPos >= localArcLen) {
-          localStartNewArc();
-          localArcPos++;
-        }
+        if (localArcPos >= localArcLen) { localStartNewArc(); localArcPos++; }
         localCadenceType = localPickCadenceType();
       }
 
@@ -1167,10 +1050,9 @@
       const pressure = Math.min(1.0, localModCount / 48.0);
       localUpdateHarmony();
 
-      const normDensity = localClamp01((exportDensity - 0.05) / 0.375);
+      const normDensity = clamp01((exportDensity - 0.05) / 0.375);
       let targetSend = 0.65 - (0.25 * normDensity);
-      targetSend = Math.max(0, Math.min(0.95, targetSend));
-      offlineSend.gain.setTargetAtTime(targetSend, localTime, 2.5);
+      offlineSend.gain.setValueAtTime(Math.max(0, Math.min(0.95, targetSend)), localTime);
 
       let appliedDur = noteDur;
       if (chance(localPhraseStep === 15 ? 0.85 : 0.2)) appliedDur *= 1.2;
@@ -1200,12 +1082,13 @@
         if (delta < -3) delta += 7;
         localIdx = currentOctave + deg + delta;
 
-        const plan = cadenceTargets(localCadenceType);
+        const ct = localCadenceType;
+        const cadencePlan = cadenceTargets(ct);
 
         if (localPhraseStep === 14 && chance(0.70)) {
           const curOct = Math.floor(localIdx / 7) * 7;
           const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
-          let deltaPre = plan.pre - curDeg;
+          let deltaPre = cadencePlan.pre - curDeg;
           if (deltaPre > 3) deltaPre -= 7;
           if (deltaPre < -3) deltaPre += 7;
           localIdx += deltaPre;
@@ -1214,24 +1097,24 @@
         if (localPhraseStep === 15) {
           const curOct = Math.floor(localIdx / 7) * 7;
           const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
-          let deltaEnd = plan.end - curDeg;
+          let deltaEnd = cadencePlan.end - curDeg;
           if (deltaEnd > 3) deltaEnd -= 7;
           if (deltaEnd < -3) deltaEnd += 7;
 
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
 
-          if (localCadenceType === "authentic") localTension = localClamp01(localTension - 0.22);
-          else localTension = localClamp01(localTension + 0.10);
+          if (ct === "authentic") localTension = clamp01(localTension - 0.22);
+          else localTension = clamp01(localTension + 0.10);
 
-          localLastCadenceType = localCadenceType;
+          localLastCadenceType = ct;
         }
       } else {
         localIdx += (rand() < 0.5 ? 1 : -1);
       }
 
-      const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
-      const wantLT = plan ? plan.wantLT : false;
+      const cadencePlan = localCadenceType ? cadenceTargets(localCadenceType) : null;
+      const wantLT = cadencePlan ? cadencePlan.wantLT : false;
       const degNow = localDegreeFromIdx(localIdx);
       const raiseLT = localMinor && isCadence && wantLT && (degNow === 6);
 
@@ -1248,6 +1131,7 @@
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
         let droneRootDegree = 0;
         const ct = localCadenceType || "authentic";
+
         if (!isArcStart && !isClimax) {
           if (ct === "half") droneRootDegree = 4;
           else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
@@ -1272,7 +1156,7 @@
         droneRootFreq = clampFreqMin(droneRootFreq, DRONE_FLOOR_HZ);
 
         const t0 = Math.max(localTime - 0.05, 0);
-        const droneDur = isArcStart ? 32.0 : 22.0;
+        let droneDur = isArcStart ? 32.0 : 22.0;
 
         localLastDroneStart = t0;
         localLastDroneDur = droneDur;
@@ -1297,15 +1181,14 @@
 
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
-    const url = URL.createObjectURL(wavBlob);
 
+    const url = URL.createObjectURL(wavBlob);
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-b1-${Date.now()}.wav`;
+    a.download = `open-final-b11-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
-
     setTimeout(() => {
       try { document.body.removeChild(a); } catch {}
       URL.revokeObjectURL(url);
@@ -1321,8 +1204,8 @@
     const sampleRate = abuffer.sampleRate;
     let offset = 0, pos = 0;
 
-    function setUint16(data) { view.setUint16(pos, data, true); pos += 2; }
-    function setUint32(data) { view.setUint32(pos, data, true); pos += 4; }
+    const setUint16 = (data) => { view.setUint16(pos, data, true); pos += 2; };
+    const setUint32 = (data) => { view.setUint32(pos, data, true); pos += 4; };
 
     setUint32(0x46464952);
     setUint32(length - 8);
@@ -1353,112 +1236,67 @@
   }
 
   // =========================
-  // RECORDING (Shift+R)
+  // HARD STOP ON BACKGROUND (B1.1)
   // =========================
-  let mediaRecorder = null;
-  let recordedChunks = [];
-  let isRecording = false;
+  function handleVisibilityOrPageHide() {
+    if (!isPlaying) return;
 
-  function setRecordUI(on) {
-    const el = $("recordStatus");
-    if (!el) return;
-    el.textContent = on ? "Recording: ON" : "Recording: off";
-    el.classList.toggle("recording-on", on);
-  }
+    // The key behavior: STOP immediately before iOS throttles timers.
+    stopAllManual(true);
 
-  function toggleRecording() {
-    if (!bus?.streamDest?.stream) return;
-
-    if (isRecording) {
-      isRecording = false;
-      try { mediaRecorder?.stop(); } catch {}
-      setRecordUI(false);
-      return;
-    }
-
-    recordedChunks = [];
-    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
-    const mimeType = types.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || "";
-
-    try {
-      mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
-    } catch {
-      return;
-    }
-
-    mediaRecorder.ondataavailable = e => { if (e.data && e.data.size > 0) recordedChunks.push(e.data); };
-    mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
-      const url = URL.createObjectURL(blob);
-
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `open-live-${Date.now()}.${(blob.type || "").includes("ogg") ? "ogg" : "webm"}`;
-      document.body.appendChild(a);
-      a.click();
-
-      setTimeout(() => {
-        try { document.body.removeChild(a); } catch {}
-        URL.revokeObjectURL(url);
-      }, 150);
-    };
-
-    try { mediaRecorder.start(250); } catch { return; }
-    isRecording = true;
-    setRecordUI(true);
+    // Optional: update label to explain why it stopped.
+    announce("Stopped (background)");
   }
 
   // =========================
-  // INIT / WIRING
+  // INIT
   // =========================
-  function wirePlayerPage() {
-    applyControls(loadState());
+  document.addEventListener("DOMContentLoaded", () => {
+    if (isLauncherPage()) {
+      $("launchPlayer")?.addEventListener("click", launchPlayer);
+      return;
+    }
 
+    if (!isPlayerPage()) return;
+
+    // Controls
     $("playNow")?.addEventListener("click", startFromUI);
     $("stop")?.addEventListener("click", () => stopAllManual(false));
 
-    $("tone")?.addEventListener("input", (e) => {
-      const v = e.target.value;
-      if ($("hzReadout")) $("hzReadout").textContent = v;
-      saveState(readControls());
-      // update safety bed root if already created (keep it subtle)
-      if (safety && audioContext) {
-        // we won’t re-tune the bed live to avoid audible pitch shift while backgrounded
-        // it will refresh on next Play.
-      }
-    });
+    applyControls(loadState());
 
+    $("tone")?.addEventListener("input", (e) => {
+      if ($("hzReadout")) $("hzReadout").textContent = e.target.value;
+      saveState(readControls());
+    });
     $("songDuration")?.addEventListener("change", () => saveState(readControls()));
 
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handlePageHide);
-
-    // Hotkeys (Shift+R record, Shift+E export)
+    // Hotkeys (Shift required)
     document.addEventListener("keydown", (e) => {
-      const key = (e.key || "").toLowerCase();
+      const k = (e.key || "").toLowerCase();
       if (!e.shiftKey) return;
-
-      if (key === "r") {
-        e.preventDefault();
-        toggleRecording();
-      } else if (key === "e") {
-        e.preventDefault();
-        renderWavExport();
-      }
+      if (k === "r") { e.preventDefault(); toggleRecording(); }
+      if (k === "e") { e.preventDefault(); renderWavExport(); }
     });
 
-    // Default state
+    // Hard-stop events (catch background/lock)
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) handleVisibilityOrPageHide();
+    });
+
+    // pagehide fires on iOS when switching apps / navigation
+    window.addEventListener("pagehide", handleVisibilityOrPageHide, { capture: true });
+
+    // For completeness
+    window.addEventListener("blur", () => {
+      // blur alone can be too aggressive on desktop; we keep it mild:
+      // only hard-stop if iOS-like environment AND playing.
+      // If you want blur to ALWAYS stop, uncomment the next line.
+      // handleVisibilityOrPageHide();
+    });
+
     setButtonState("stopped");
     setRecordUI(false);
-  }
-
-  function wireLauncherPage() {
-    $("launchPlayer")?.addEventListener("click", launchPlayer);
-  }
-
-  document.addEventListener("DOMContentLoaded", () => {
-    if (isPlayerPage()) wirePlayerPage();
-    else wireLauncherPage();
   });
 
 })();
