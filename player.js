@@ -1,7 +1,9 @@
 /* ============================================================
-   OPEN — B1.1 (Hard-stop on background)
+   OPEN — B1.1 (Hard-stop on background) + micro-fade to avoid click
    - AirPlay bridge enabled while active (foreground).
    - Immediate stop on background/lock/switch-app to prevent stutter.
+   - Background stop uses a short fade (default 50ms) to avoid clicks,
+     then hard-kills nodes/bus to prevent bleed/stutter.
    - Anti-bleed: per-run mix bus + active node tracking + hard kill.
    - Hotkeys: Shift+R (record), Shift+E (export WAV)
    ============================================================ */
@@ -25,6 +27,10 @@
   const LOOKAHEAD = 1.5;                // foreground schedule window
   const SCHEDULER_INTERVAL_MS = 80;     // responsive scheduling
   const MAX_EVENTS_PER_TICK = 900;
+
+  // Background-stop click prevention
+  const BG_FADE_MS = 50;     // 30–80ms is usually enough to remove click
+  const BG_KILL_PAD_MS = 20; // small pad before hard kill
 
   // =========================
   // UTILS
@@ -170,6 +176,25 @@
     document.body.appendChild(bridgeAudioEl);
   }
 
+  // =========================
+  // RNG (deterministic stream)
+  // =========================
+  let sessionSeed = 0;
+  let rng = Math.random;
+
+  function mulberry32(seed) {
+    let a = seed >>> 0;
+    return function() {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function setSeed(seed) { sessionSeed = (seed >>> 0); rng = mulberry32(sessionSeed); }
+  function rand() { return rng(); }
+  function chance(p) { return rand() < p; }
+
   function createImpulseResponse(ctx) {
     // Note: buffer tied to sample rate; simplest stable approach is per context sampleRate
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
@@ -213,6 +238,27 @@
     try { bus.streamDest.disconnect(); } catch {}
 
     bus = null;
+  }
+
+  // ✅ micro-fade to avoid click, then hard kill to prevent bleed/stutter
+  function fadeOutAndKill(ms = BG_FADE_MS) {
+    if (!audioContext || !bus?.masterGain) {
+      teardownBusHard();
+      return;
+    }
+
+    const t = audioContext.currentTime;
+    const fadeSec = Math.max(0.01, ms / 1000);
+
+    try {
+      bus.masterGain.gain.cancelScheduledValues(t);
+      bus.masterGain.gain.setValueAtTime(bus.masterGain.gain.value, t);
+      bus.masterGain.gain.linearRampToValueAtTime(0.0001, t + fadeSec);
+    } catch {}
+
+    setTimeout(() => {
+      teardownBusHard();
+    }, ms + BG_KILL_PAD_MS);
   }
 
   function buildMixBus() {
@@ -314,25 +360,6 @@
     isRecording = true;
     setRecordUI(true);
   }
-
-  // =========================
-  // RNG (deterministic stream)
-  // =========================
-  let sessionSeed = 0;
-  let rng = Math.random;
-
-  function mulberry32(seed) {
-    let a = seed >>> 0;
-    return function() {
-      a |= 0; a = (a + 0x6D2B79F5) | 0;
-      let t = Math.imul(a ^ (a >>> 15), 1 | a);
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-    };
-  }
-  function setSeed(seed) { sessionSeed = (seed >>> 0); rng = mulberry32(sessionSeed); }
-  function rand() { return rng(); }
-  function chance(p) { return rand() < p; }
 
   // =========================
   // MUSICAL STRUCTURE
@@ -1236,15 +1263,37 @@
   }
 
   // =========================
-  // HARD STOP ON BACKGROUND (B1.1)
+  // HARD STOP ON BACKGROUND (B1.1) — now with micro-fade
   // =========================
   function handleVisibilityOrPageHide() {
     if (!isPlaying) return;
 
-    // The key behavior: STOP immediately before iOS throttles timers.
-    stopAllManual(true);
+    // Stop scheduling immediately (prevents iOS timer throttling stutter)
+    isPlaying = false;
+    isEndingNaturally = false;
+    isApproachingEnd = false;
 
-    // Optional: update label to explain why it stopped.
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+
+    // Stop recording if active
+    if (isRecording) {
+      try { mediaRecorder?.stop(); } catch {}
+      isRecording = false;
+      setRecordUI(false);
+    }
+
+    // Stop airplay bridge playback (prevents weird background behavior)
+    if (bridgeAudioEl) {
+      try { bridgeAudioEl.pause(); } catch {}
+    }
+
+    // ✅ fade out quickly to avoid click, then hard-kill everything
+    fadeOutAndKill(BG_FADE_MS);
+
+    setButtonState("stopped");
     announce("Stopped (background)");
   }
 
@@ -1290,8 +1339,7 @@
     // For completeness
     window.addEventListener("blur", () => {
       // blur alone can be too aggressive on desktop; we keep it mild:
-      // only hard-stop if iOS-like environment AND playing.
-      // If you want blur to ALWAYS stop, uncomment the next line.
+      // If you want blur to ALWAYS stop, uncomment:
       // handleVisibilityOrPageHide();
     });
 
