@@ -1,9 +1,10 @@
 /* ============================================================
-   OPEN — v61 (Mobile Guard + Natural Fade)
-   - Mobile: Hard Stop on background (prevents stutter).
-   - Desktop: Continuous play in background.
-   - Natural End: Stops new notes but lets the last note ring out (v171 style).
-   - Audio: Full v171 Generative Engine + Export.
+   OPEN — v62 (Surgical iOS Patch)
+   - Mobile: Aggressive Hard Stop + Context Close on background.
+   - Fix 1: Bridge tracks released properly (stops phantom CPU).
+   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
+   - Fix 3: Background stop catches tails/fades too.
+   - Desktop: Continuous play (background safe).
    ============================================================ */
 
 (() => {
@@ -15,13 +16,12 @@
     window.__OPEN_PLAYER_KILL__();
   }
   
-  // Register cleanup for next time
   window.__OPEN_PLAYER_KILL__ = () => {
     stopAllManual(true);
-    if (audioContext) audioContext.close();
+    if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v61";
+  const STATE_KEY = "open_player_settings_v62";
 
   // =========================
   // TUNING
@@ -29,7 +29,6 @@
   const MELODY_FLOOR_HZ = 220;    // A3
   const DRONE_FLOOR_HZ  = 87.31;  // F2
   const DRONE_GAIN_MULT = 0.70;
-
   const MASTER_VOL = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
@@ -37,6 +36,9 @@
   const LOOKAHEAD = 1.5;
   const SCHEDULER_INTERVAL_MS = 80;
   const MAX_EVENTS_PER_TICK = 900;
+
+  // Global flag for mobile hard reset
+  let closeCtxAfterStop = false;
 
   // =========================
   // UTILS
@@ -71,9 +73,7 @@
 
   function isMobileDevice() {
     const ua = navigator.userAgent || "";
-    // Check standard mobile UAs
     const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
-    // Check iPad requesting desktop site (MacIntel + Touch Points)
     const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
     return isBasicMobile || isIPadOS;
   }
@@ -153,9 +153,14 @@
   let bus = null;
   let bridgeAudioEl = null;
 
-  // Active node tracking
+  // Active node tracking (Patch 3: Context Aware)
   const activeNodes = new Set();
-  function trackNode(n) { if (n) activeNodes.add(n); return n; }
+  
+  function trackNode(ctx, n) {
+    // Only track LIVE nodes. Do not track Offline/Export nodes.
+    if (n && ctx === audioContext) activeNodes.add(n);
+    return n;
+  }
   
   function killAllActiveNodes(now = 0) {
     for (const n of Array.from(activeNodes)) {
@@ -190,7 +195,11 @@
 
   function createImpulseResponse(ctx) {
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
-    const duration = 10.0, decay = 2.8, rate = ctx.sampleRate;
+    
+    // Patch 5 (Optional): Shorter IR on mobile to save CPU
+    const duration = isMobileDevice() ? 4.0 : 10.0;
+    
+    const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
     const r = mulberry32((sessionSeed ^ 0xC0FFEE) >>> 0);
@@ -215,6 +224,14 @@
     try { bus.reverbSend.disconnect(); } catch {}
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
+    
+    // Patch 2: Release bridge stream (Crucial for iOS)
+    if (bridgeAudioEl?.srcObject) {
+      try { bridgeAudioEl.pause(); } catch {}
+      try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
+      try { bridgeAudioEl.srcObject = null; } catch {}
+    }
+
     bus = null;
   }
 
@@ -284,10 +301,9 @@
     }
 
     recordedChunks = [];
-    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
-    const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
-    
     try {
+      const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+      const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
       mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       return;
@@ -302,7 +318,7 @@
       a.download = `open-live-${Date.now()}.${blob.type.includes("ogg") ? "ogg" : "webm"}`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
+      setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 100);
     };
 
     try { mediaRecorder.start(250); } catch {}
@@ -468,11 +484,12 @@
     });
 
     voices.forEach(voice => {
-      const carrier = trackNode(ctx.createOscillator());
-      const modulator = trackNode(ctx.createOscillator());
-      const modGain = trackNode(ctx.createGain());
-      const ampGain = trackNode(ctx.createGain());
-      const filter = trackNode(ctx.createBiquadFilter());
+      // Patch 3: Context-aware tracking
+      const carrier = trackNode(ctx, ctx.createOscillator());
+      const modulator = trackNode(ctx, ctx.createOscillator());
+      const modGain = trackNode(ctx, ctx.createGain());
+      const ampGain = trackNode(ctx, ctx.createGain());
+      const filter = trackNode(ctx, ctx.createBiquadFilter());
 
       filter.type = "lowpass";
       filter.frequency.value = Math.min(freq * 3.5, 6000);
@@ -502,11 +519,12 @@
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
-    const carrier = trackNode(ctx.createOscillator());
-    const modulator = trackNode(ctx.createOscillator());
-    const modGain = trackNode(ctx.createGain());
-    const ampGain = trackNode(ctx.createGain());
-    const lp = trackNode(ctx.createBiquadFilter());
+    // Patch 3: Context-aware tracking
+    const carrier = trackNode(ctx, ctx.createOscillator());
+    const modulator = trackNode(ctx, ctx.createOscillator());
+    const modGain = trackNode(ctx, ctx.createGain());
+    const ampGain = trackNode(ctx, ctx.createGain());
+    const lp = trackNode(ctx, ctx.createBiquadFilter());
 
     carrier.type = "sine";
     modulator.type = "sine";
@@ -589,14 +607,12 @@
       let pressure = Math.min(1.0, notesSinceModulation / 48.0);
       updateHarmonyState(durationInput);
 
-      // Natural End Handling (v171 Logic)
       if (isApproachingEnd && !isEndingNaturally) {
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          // Play final long note and stop scheduling
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
-          beginNaturalEnd(); 
+          beginNaturalEnd();
           return;
         }
       }
@@ -734,12 +750,25 @@
   }
 
   // =========================
-  // BURST / HARD STOP HANDLER
+  // PATCH 1: ROBUST BACKGROUND HANDLER
   // =========================
-  function handleVisibilityChange() {
-    // ONLY stop on MOBILE devices to prevent stutter.
-    if (isMobileDevice() && document.hidden && isPlaying) {
+  function handleVisibilityChange(e) {
+    if (!isMobileDevice()) return;
+
+    const type = e?.type || "";
+    const isBackgrounding =
+      document.hidden ||
+      type === "pagehide" ||
+      type === "freeze" ||
+      type === "blur";
+
+    if (!isBackgrounding) return;
+
+    // Patch 3: Stop even if ending naturally, capturing tails
+    if (isPlaying || isEndingNaturally || bus) {
+      closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
+      closeCtxAfterStop = false;
     }
   }
 
@@ -774,7 +803,6 @@
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
 
-    // Fade in
     bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     bus.masterGain.gain.linearRampToValueAtTime(MASTER_VOL, audioContext.currentTime + 0.1);
 
@@ -787,10 +815,9 @@
 
   function stopAllManual(instant = false, statusMsg = "Stopped") {
     isPlaying = false;
-    isEndingNaturally = false; // Reset ending flag so stopped state is clean
+    isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
     
-    // Stop recording if active
     if (isRecording) {
       try { mediaRecorder?.stop(); } catch {}
       isRecording = false;
@@ -808,17 +835,23 @@
     } else {
         teardownBusHard();
     }
+
+    // Patch 4: True Hard Context Close on Mobile
+    if (instant && closeCtxAfterStop && audioContext) {
+        try { audioContext.close(); } catch {}
+        audioContext = null; 
+    }
+
     setButtonState("stopped");
     announce(statusMsg);
   }
 
-  // CORRECTED: Natural End stops scheduling but lets audio ring
   function beginNaturalEnd() {
     isEndingNaturally = true;
-    isPlaying = false; // Stop scheduling new notes
+    isPlaying = false; // Stop scheduler
     if (timerInterval) clearInterval(timerInterval);
     setButtonState("stopped");
-    // DO NOT kill audio bus here; let the last note fade naturally.
+    // Bus remains active for reverb tail
   }
 
   // =========================
@@ -856,7 +889,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Export simulation state (mirrors live)
+    // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -977,12 +1010,12 @@
         localIdx = currentOctave + deg + delta;
 
         const ct = localCadenceType;
-        const cadencePlan = cadenceTargets(ct);
+        const plan = cadenceTargets(ct);
 
         if (localPhraseStep === 14 && chance(0.70)) {
           const curOct = Math.floor(localIdx / 7) * 7;
           const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
-          let deltaPre = cadencePlan.pre - curDeg;
+          let deltaPre = plan.pre - curDeg;
           if (deltaPre > 3) deltaPre -= 7; if (deltaPre < -3) deltaPre += 7;
           localIdx += deltaPre;
         }
@@ -990,7 +1023,7 @@
         if (localPhraseStep === 15) {
           const curOct = Math.floor(localIdx / 7) * 7;
           const curDeg = ((localIdx - curOct) % 7 + 7) % 7;
-          let deltaEnd = cadencePlan.end - curDeg;
+          let deltaEnd = plan.end - curDeg;
           if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
@@ -1002,8 +1035,8 @@
         localIdx += (rand() < 0.5 ? 1 : -1);
       }
 
-      const cadencePlan = localCadenceType ? cadenceTargets(localCadenceType) : null;
-      const wantLT = cadencePlan ? cadencePlan.wantLT : false;
+      const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
+      const wantLT = plan ? plan.wantLT : false;
       const degNow = localDegreeFromIdx(localIdx);
       const raiseLT = localMinor && isCadence && wantLT && (degNow === 6);
 
@@ -1063,7 +1096,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v61-${Date.now()}.wav`;
+    a.download = `open-final-v62-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1103,17 +1136,15 @@
   }
 
   // =========================
-  // INIT
+  // INIT & LISTENERS
   // =========================
   document.addEventListener("DOMContentLoaded", () => {
     if (isLauncherPage()) {
       $("launchPlayer")?.addEventListener("click", launchPlayer);
       return;
     }
-
     if (!isPlayerPage()) return;
 
-    // Controls
     $("playNow")?.addEventListener("click", startFromUI);
     $("stop")?.addEventListener("click", () => stopAllManual(false));
 
@@ -1132,18 +1163,42 @@
       if(e.shiftKey && k === "e") renderWavExport();
     });
 
-    // Hard-stop on background/lock
+    // Patch 1: Robust Background Stop (Mobile Only)
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handleVisibilityChange, { capture: true });
+    window.addEventListener("blur", handleVisibilityChange, { capture: true });
+    if (document.addEventListener) document.addEventListener("freeze", handleVisibilityChange, { capture: true });
+
+    // iOS Back-Forward Cache Restore
+    window.addEventListener("pageshow", (e) => {
+      if (isMobileDevice() && e.persisted) {
+        closeCtxAfterStop = true;
+        stopAllManual(true, "Reset (restore)");
+        closeCtxAfterStop = false;
+      }
+    }, { capture: true });
 
     setButtonState("stopped");
     setRecordUI(false);
   });
 
-  // HARD STOP HANDLER (MOBILE ONLY)
-  function handleVisibilityChange() {
-    if (isMobileDevice() && document.hidden && isPlaying) {
+  // BACKGROUND HANDLER (Mobile Only)
+  function handleVisibilityChange(e) {
+    if (!isMobileDevice()) return; // Desktop is safe
+
+    const type = e?.type || "";
+    const isBackgrounding =
+      document.hidden ||
+      type === "pagehide" ||
+      type === "freeze" ||
+      type === "blur";
+
+    if (!isBackgrounding) return;
+
+    if (isPlaying || isEndingNaturally || bus) {
+      closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
+      closeCtxAfterStop = false;
     }
   }
 
