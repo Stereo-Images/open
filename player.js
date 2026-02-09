@@ -1,23 +1,21 @@
 /* ============================================================
-   OPEN — v56 (The Singleton)
-   - Solves "Doubling": Auto-detects and kills previous instances if 
-     the script is re-run without a page refresh.
-   - Solves "Stutter": Hard Stop (B1.1) on mobile background.
-   - Solves "Clicks": Micro-fade on stop.
-   - Features: Full v171 Audio + Export + AirPlay.
+   OPEN — v57 (Targeted Hard Stop)
+   - Mobile (iOS/Android): HARD STOP on background to prevent stutter.
+   - Desktop (Mac/PC): CONTINUOUS PLAY across tabs/desktops.
+   - Fix: Robust "iPad-as-Desktop" detection.
+   - Features: Full v171 Audio + Export + AirPlay Bridge.
    ============================================================ */
 
 (() => {
   "use strict";
 
-  // --- GLOBAL CLEANUP (The Fix for Doubling) ---
-  // If a previous version is running, kill it before starting this one.
+  // --- ANTI-DOUBLING KILL SWITCH ---
   if (window.__OPEN_PLAYER_KILL__) {
     console.log("Open Player: Stopping previous instance...");
     window.__OPEN_PLAYER_KILL__();
   }
 
-  const STATE_KEY = "open_player_settings_v56";
+  const STATE_KEY = "open_player_settings_v57";
 
   // =========================
   // TUNING
@@ -29,7 +27,7 @@
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
-  const LOOKAHEAD = 1.5;
+  const LOOKAHEAD_FG = 1.5;
   const SCHEDULER_INTERVAL_MS = 80;
   const MAX_EVENTS_PER_TICK = 900;
 
@@ -52,15 +50,29 @@
     live.textContent = msg;
   }
 
+  function isTypingTarget(el) {
+    if (!el) return false;
+    const tag = (el.tagName || "").toUpperCase();
+    return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || el.isContentEditable === true;
+  }
+
   // =========================
-  // VIEW / MODE
+  // VIEW & ROBUST MOBILE DETECTION
   // =========================
   function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
 
+  // FIX: Improved detection catches iPads requesting "Desktop Site"
   function isMobileDevice() {
-    return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") ||
-      (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
+    const ua = navigator.userAgent || "";
+    // 1. Standard User Agent check
+    const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
+    // 2. iPad OS 13+ check (reports as Mac but has touch points)
+    const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
+    // 3. Coarse pointer check (fallback)
+    const isCoarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
+    
+    return isBasicMobile || isIPadOS || isCoarse;
   }
 
   function launchPlayer() {
@@ -158,21 +170,6 @@
     audioContext = new Ctx();
   }
 
-  function ensureBridge() {
-    if (bridgeAudioEl) return;
-    bridgeAudioEl = document.createElement("audio");
-    bridgeAudioEl.id = "open-airplay-bridge";
-    bridgeAudioEl.setAttribute("playsinline", "true");
-    bridgeAudioEl.setAttribute("aria-hidden", "true");
-    bridgeAudioEl.loop = true;
-    bridgeAudioEl.muted = false;
-    Object.assign(bridgeAudioEl.style, {
-      position: "fixed", width: "1px", height: "1px",
-      opacity: "0.01", left: "-9999px", zIndex: "-1", pointerEvents: "none"
-    });
-    document.body.appendChild(bridgeAudioEl);
-  }
-
   function createImpulseResponse(ctx) {
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
     const duration = 10.0, decay = 2.8, rate = ctx.sampleRate;
@@ -187,6 +184,21 @@
     }
     cachedImpulseBuffer = impulse;
     return impulse;
+  }
+
+  function ensureBridge() {
+    if (bridgeAudioEl) return;
+    bridgeAudioEl = document.createElement("audio");
+    bridgeAudioEl.id = "open-airplay-bridge";
+    bridgeAudioEl.setAttribute("playsinline", "true");
+    bridgeAudioEl.setAttribute("aria-hidden", "true");
+    bridgeAudioEl.loop = true;
+    bridgeAudioEl.muted = false;
+    Object.assign(bridgeAudioEl.style, {
+      position: "fixed", width: "1px", height: "1px",
+      opacity: "0.01", left: "-9999px", zIndex: "-1", pointerEvents: "none"
+    });
+    document.body.appendChild(bridgeAudioEl);
   }
 
   function teardownBusHard() {
@@ -267,10 +279,10 @@
     }
 
     recordedChunks = [];
-    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
-    const mimeType = types.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || "";
-    
     try {
+      // Basic mime type support check
+      const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+      const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
       mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       return;
@@ -308,6 +320,7 @@
     };
   }
   function setSeed(seed) { sessionSeed = (seed >>> 0); rng = mulberry32(sessionSeed); }
+  function rngStream(tagInt) { return mulberry32((sessionSeed ^ tagInt) >>> 0); }
   function rand() { return rng(); }
   function chance(p) { return rand() < p; }
 
@@ -381,11 +394,11 @@
   function cadenceTargets(type) {
     switch (type) {
       case "authentic": return { pre: 6, end: 0, wantLT: true };
-      case "half":      return { pre: 1, end: 4, wantLT: false };
-      case "plagal":    return { pre: 3, end: 0, wantLT: false };
+      case "half": return { pre: 1, end: 4, wantLT: false };
+      case "plagal": return { pre: 3, end: 0, wantLT: false };
       case "deceptive": return { pre: 6, end: 5, wantLT: true };
-      case "evaded":    return { pre: 6, end: 2, wantLT: true };
-      default:          return { pre: 2, end: 0, wantLT: false };
+      case "evaded": return { pre: 6, end: 2, wantLT: true };
+      default: return { pre: 2, end: 0, wantLT: false };
     }
   }
 
@@ -548,7 +561,7 @@
 
     const durationInput = $("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
-    const boundary = now + LOOKAHEAD;
+    const boundary = now + LOOKAHEAD_FG;
 
     const elapsed = now - sessionStartTime;
     if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
@@ -719,7 +732,7 @@
   // BURST / HARD STOP HANDLER
   // =========================
   function handleVisibilityChange() {
-    // Only stop on mobile. Desktops can handle background audio.
+    // Only stop on mobile to avoid stutter. Desktops can handle background audio.
     if (isMobileDevice() && document.hidden && isPlaying) {
       stopAllManual(true, "Stopped (background)");
     }
