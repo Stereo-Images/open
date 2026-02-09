@@ -1,15 +1,27 @@
 /* ============================================================
-   OPEN — v59 (Mobile Guard + Rich Harmony)
-   - Behavior: Hard Stop ONLY on Mobile background (fixes stutter).
-   - Desktop: Continues playing in background/other spaces.
-   - Melody: Full v171 logic (Ambiguous resolutions, Deceptive cadences).
-   - Export: Full offline rendering included.
+   OPEN — v61 (Mobile Guard + Natural Fade)
+   - Mobile: Hard Stop on background (prevents stutter).
+   - Desktop: Continuous play in background.
+   - Natural End: Stops new notes but lets the last note ring out (v171 style).
+   - Audio: Full v171 Generative Engine + Export.
    ============================================================ */
 
 (() => {
   "use strict";
 
-  const STATE_KEY = "open_player_settings_v59";
+  // --- ANTI-DOUBLING KILL SWITCH ---
+  if (window.__OPEN_PLAYER_KILL__) {
+    console.log("Open Player: Stopping previous instance...");
+    window.__OPEN_PLAYER_KILL__();
+  }
+  
+  // Register cleanup for next time
+  window.__OPEN_PLAYER_KILL__ = () => {
+    stopAllManual(true);
+    if (audioContext) audioContext.close();
+  };
+
+  const STATE_KEY = "open_player_settings_v61";
 
   // =========================
   // TUNING
@@ -17,6 +29,7 @@
   const MELODY_FLOOR_HZ = 220;    // A3
   const DRONE_FLOOR_HZ  = 87.31;  // F2
   const DRONE_GAIN_MULT = 0.70;
+
   const MASTER_VOL = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
@@ -51,15 +64,16 @@
   }
 
   // =========================
-  // VIEW & ROBUST MOBILE DETECTION
+  // DEVICE DETECTION
   // =========================
   function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
 
-  // FIX: Robust check for iPads that claim to be Macintosh
   function isMobileDevice() {
     const ua = navigator.userAgent || "";
+    // Check standard mobile UAs
     const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
+    // Check iPad requesting desktop site (MacIntel + Touch Points)
     const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
     return isBasicMobile || isIPadOS;
   }
@@ -142,9 +156,10 @@
   // Active node tracking
   const activeNodes = new Set();
   function trackNode(n) { if (n) activeNodes.add(n); return n; }
-  function killAllActiveNodes() {
+  
+  function killAllActiveNodes(now = 0) {
     for (const n of Array.from(activeNodes)) {
-      try { n.stop?.(0); } catch {}
+      try { n.stop?.(now); } catch {}
       try { n.disconnect?.(); } catch {}
       activeNodes.delete(n);
     }
@@ -156,6 +171,21 @@
     if (audioContext) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     audioContext = new Ctx();
+  }
+
+  function ensureBridge() {
+    if (bridgeAudioEl) return;
+    bridgeAudioEl = document.createElement("audio");
+    bridgeAudioEl.id = "open-airplay-bridge";
+    bridgeAudioEl.setAttribute("playsinline", "true");
+    bridgeAudioEl.setAttribute("aria-hidden", "true");
+    bridgeAudioEl.loop = true;
+    bridgeAudioEl.muted = false;
+    Object.assign(bridgeAudioEl.style, {
+      position: "fixed", width: "1px", height: "1px", opacity: "0.01",
+      left: "-9999px", zIndex: "-1", pointerEvents: "none"
+    });
+    document.body.appendChild(bridgeAudioEl);
   }
 
   function createImpulseResponse(ctx) {
@@ -174,26 +204,13 @@
     return impulse;
   }
 
-  function ensureBridge() {
-    if (bridgeAudioEl) return;
-    bridgeAudioEl = document.createElement("audio");
-    bridgeAudioEl.id = "open-airplay-bridge";
-    bridgeAudioEl.setAttribute("playsinline", "true");
-    bridgeAudioEl.setAttribute("aria-hidden", "true");
-    bridgeAudioEl.loop = true;
-    bridgeAudioEl.muted = false;
-    Object.assign(bridgeAudioEl.style, {
-      position: "fixed", width: "1px", height: "1px", opacity: "0.01",
-      left: "-9999px", zIndex: "-1", pointerEvents: "none"
-    });
-    document.body.appendChild(bridgeAudioEl);
-  }
-
   function teardownBusHard() {
     if (!audioContext || !bus) return;
     try { bus.masterGain.gain.cancelScheduledValues(audioContext.currentTime); } catch {}
     try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
+    
     killAllActiveNodes(audioContext.currentTime);
+
     try { bus.reverbReturn.disconnect(); } catch {}
     try { bus.reverbSend.disconnect(); } catch {}
     try { bus.masterGain.disconnect(); } catch {}
@@ -312,7 +329,7 @@
   function chance(p) { return rand() < p; }
 
   // =========================
-  // MUSICAL STRUCTURE (v171 Full Logic)
+  // MUSICAL STRUCTURE
   // =========================
   function circDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 7 - d); }
 
@@ -356,15 +373,11 @@
     return 0.18;
   }
 
-  // COMPLEX MELODY LOGIC (Restored from v171)
   function pickCadenceTypeForPhrase() {
     const nearClimax = (arcPos === arcClimaxAt);
     const lateArc = (arcPos >= arcLen - 2);
-    
-    // Weights favoring ambiguity (Evaded/Deceptive/Plagal)
     let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
     
-    // Adjust weights based on arc position
     if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
     w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
     
@@ -576,13 +589,14 @@
       let pressure = Math.min(1.0, notesSinceModulation / 48.0);
       updateHarmonyState(durationInput);
 
+      // Natural End Handling (v171 Logic)
       if (isApproachingEnd && !isEndingNaturally) {
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          // End with long note (25s) + Natural Stop
+          // Play final long note and stop scheduling
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
-          beginNaturalEnd();
+          beginNaturalEnd(); 
           return;
         }
       }
@@ -724,7 +738,6 @@
   // =========================
   function handleVisibilityChange() {
     // ONLY stop on MOBILE devices to prevent stutter.
-    // Desktop continues playing in background tabs/spaces.
     if (isMobileDevice() && document.hidden && isPlaying) {
       stopAllManual(true, "Stopped (background)");
     }
@@ -761,6 +774,7 @@
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
 
+    // Fade in
     bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     bus.masterGain.gain.linearRampToValueAtTime(MASTER_VOL, audioContext.currentTime + 0.1);
 
@@ -773,6 +787,7 @@
 
   function stopAllManual(instant = false, statusMsg = "Stopped") {
     isPlaying = false;
+    isEndingNaturally = false; // Reset ending flag so stopped state is clean
     if (timerInterval) clearInterval(timerInterval);
     
     // Stop recording if active
@@ -797,11 +812,13 @@
     announce(statusMsg);
   }
 
+  // CORRECTED: Natural End stops scheduling but lets audio ring
   function beginNaturalEnd() {
     isEndingNaturally = true;
-    isPlaying = false;
+    isPlaying = false; // Stop scheduling new notes
     if (timerInterval) clearInterval(timerInterval);
     setButtonState("stopped");
+    // DO NOT kill audio bus here; let the last note fade naturally.
   }
 
   // =========================
@@ -839,7 +856,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Export simulation state
+    // Export simulation state (mirrors live)
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -1046,7 +1063,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v59-${Date.now()}.wav`;
+    a.download = `open-final-v61-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1096,6 +1113,7 @@
 
     if (!isPlayerPage()) return;
 
+    // Controls
     $("playNow")?.addEventListener("click", startFromUI);
     $("stop")?.addEventListener("click", () => stopAllManual(false));
 
