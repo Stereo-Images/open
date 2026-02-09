@@ -1,15 +1,23 @@
 /* ============================================================
-   OPEN — v171 (Restored & Fixed)
-   - Logic: Exact v171 generative engine (Ghost Downbeat, Natural Start).
-   - Fix 1: Natural End now lets the reverb tail ring out (doesn't cut audio).
-   - Fix 2: Hard Stop ONLY happens on background/stop button.
-   - Fix 3: Syntax errors (Smart Quotes) sanitized.
+   OPEN — v56 (The Singleton)
+   - Solves "Doubling": Auto-detects and kills previous instances if 
+     the script is re-run without a page refresh.
+   - Solves "Stutter": Hard Stop (B1.1) on mobile background.
+   - Solves "Clicks": Micro-fade on stop.
+   - Features: Full v171 Audio + Export + AirPlay.
    ============================================================ */
 
 (() => {
   "use strict";
 
-  const STATE_KEY = "open_player_settings_v171_fixed";
+  // --- GLOBAL CLEANUP (The Fix for Doubling) ---
+  // If a previous version is running, kill it before starting this one.
+  if (window.__OPEN_PLAYER_KILL__) {
+    console.log("Open Player: Stopping previous instance...");
+    window.__OPEN_PLAYER_KILL__();
+  }
+
+  const STATE_KEY = "open_player_settings_v56";
 
   // =========================
   // TUNING
@@ -17,7 +25,6 @@
   const MELODY_FLOOR_HZ = 220;    // A3
   const DRONE_FLOOR_HZ  = 87.31;  // F2
   const DRONE_GAIN_MULT = 0.70;
-
   const MASTER_VOL = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
@@ -46,7 +53,7 @@
   }
 
   // =========================
-  // PAGE ROUTING
+  // VIEW / MODE
   // =========================
   function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
@@ -131,6 +138,7 @@
   let bus = null;
   let bridgeAudioEl = null;
 
+  // Active node tracking
   const activeNodes = new Set();
   function trackNode(n) { if (n) activeNodes.add(n); return n; }
   
@@ -181,7 +189,6 @@
     return impulse;
   }
 
-  // --- Bus Management ---
   function teardownBusHard() {
     if (!audioContext || !bus) return;
     try { bus.masterGain.gain.cancelScheduledValues(audioContext.currentTime); } catch {}
@@ -243,8 +250,10 @@
 
   function setRecordUI(on) {
     const el = $("recordStatus");
-    if (!el) return;
-    el.textContent = on ? "Recording: ON" : "Recording: off";
+    if (el) {
+      el.textContent = on ? "Recording: ON" : "Recording: off";
+      el.classList.toggle("recording-on", on);
+    }
   }
 
   function toggleRecording() {
@@ -260,16 +269,14 @@
     recordedChunks = [];
     const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
     const mimeType = types.find(t => window.MediaRecorder?.isTypeSupported?.(t)) || "";
+    
     try {
       mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       return;
     }
 
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) recordedChunks.push(e.data);
-    };
-
+    mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
       const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
       const url = URL.createObjectURL(blob);
@@ -278,7 +285,7 @@
       a.download = `open-live-${Date.now()}.${blob.type.includes("ogg") ? "ogg" : "webm"}`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
+      setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 100);
     };
 
     try { mediaRecorder.start(250); } catch {}
@@ -304,8 +311,10 @@
   function rand() { return rng(); }
   function chance(p) { return rand() < p; }
 
+  let sessionSnapshot = null;
+
   // =========================
-  // MUSICAL STRUCTURE
+  // MUSIC STRUCTURE
   // =========================
   function circDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 7 - d); }
 
@@ -322,7 +331,7 @@
   let circlePosition = 0;
   let isMinor = false;
   let runDensity = 0.2;
-
+  
   let phraseStep = 0;
   let phraseCount = 0;
   let arcLen = 6;
@@ -334,7 +343,6 @@
 
   let lastDroneStart = -9999;
   let lastDroneDur = 0;
-  let sessionSnapshot = null;
 
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
@@ -353,16 +361,16 @@
     const nearClimax = (arcPos === arcClimaxAt);
     const lateArc = (arcPos >= arcLen - 2);
     let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
-
+    
     if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
     w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
-
+    
     if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
     if (lateArc && tension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
     if (isMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
 
     for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - cadenceRepeatPenalty(k));
-
+    
     const keys = Object.keys(w);
     const sum = keys.reduce((a, k) => a + w[k], 0);
     let r = rand() * sum;
@@ -384,22 +392,14 @@
   function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
     let pos = circlePos % 12; if (pos < 0) pos += 12;
     let semitones = (pos * 7) % 12;
-    let rootOffset = semitones;
-    if (minorMode) rootOffset = (semitones + 9) % 12;
-
+    let rootOffset = semitones; if (minorMode) rootOffset = (semitones + 9) % 12;
     const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
     const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
-
     const len = 7;
     const octave = Math.floor(scaleIndex / len);
     const degree = ((scaleIndex % len) + len) % len;
-
     let intervals = minorMode ? minorIntervals : majorIntervals;
-    if (minorMode && opts.raiseLeadingTone && degree === 6) {
-      intervals = minorIntervals.slice();
-      intervals[6] = 11;
-    }
-
+    if (minorMode && opts.raiseLeadingTone && degree === 6) { intervals = minorIntervals.slice(); intervals[6] = 11; }
     const noteValue = rootOffset + intervals[degree] + (octave * 12);
     return baseFreq * Math.pow(2, noteValue / 12);
   }
@@ -716,10 +716,10 @@
   }
 
   // =========================
-  // HARD STOP HANDLER
+  // BURST / HARD STOP HANDLER
   // =========================
   function handleVisibilityChange() {
-    // Only stop on mobile to avoid stutter. Desktop can handle background audio.
+    // Only stop on mobile. Desktops can handle background audio.
     if (isMobileDevice() && document.hidden && isPlaying) {
       stopAllManual(true, "Stopped (background)");
     }
@@ -756,7 +756,6 @@
     sessionStartTime = audioContext.currentTime;
     nextTimeA = audioContext.currentTime + 0.05;
 
-    // Fade in
     bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     bus.masterGain.gain.linearRampToValueAtTime(MASTER_VOL, audioContext.currentTime + 0.1);
 
@@ -785,9 +784,12 @@
             bus.masterGain.gain.setValueAtTime(bus.masterGain.gain.value, t);
             bus.masterGain.gain.linearRampToValueAtTime(0, t + 0.10);
         } catch {}
-        setTimeout(() => teardownBusHard(), 150);
+        setTimeout(() => killAllActiveNodes(), 150);
     } else {
-        teardownBusHard();
+        killAllActiveNodes();
+        if (bus?.masterGain && audioContext) {
+           try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
+        }
     }
     setButtonState("stopped");
     announce(statusMsg);
@@ -1043,7 +1045,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v55-${Date.now()}.wav`;
+    a.download = `open-final-v56-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1083,8 +1085,18 @@
   }
 
   // =========================
-  // INIT
+  // GLOBAL CLEANUP & INIT
   // =========================
+  if (window.__OPEN_PLAYER_STOP__) {
+    console.log("Stopping previous instance...");
+    window.__OPEN_PLAYER_STOP__();
+  }
+  
+  window.__OPEN_PLAYER_STOP__ = () => {
+    stopAllManual(true);
+    if (audioContext) audioContext.close();
+  };
+
   document.addEventListener("DOMContentLoaded", () => {
     if (isLauncherPage()) {
       $("launchPlayer")?.addEventListener("click", launchPlayer);
@@ -1105,7 +1117,7 @@
     });
     $("songDuration")?.addEventListener("change", () => saveState(readControls()));
 
-    // Hotkeys
+    // Hotkeys (Shift required)
     document.addEventListener("keydown", (e) => {
         if (isTypingTarget(e.target)) return;
         const k = (e.key || "").toLowerCase();
@@ -1121,7 +1133,7 @@
     setRecordUI(false);
   });
 
-  // HARD STOP HANDLER (FIXED FOR DESKTOP)
+  // HARD STOP HANDLER
   function handleVisibilityChange() {
     // Only force hard-stop on MOBILE. Desktop browsers can handle background audio fine.
     if (isMobileDevice() && document.hidden && isPlaying) {
