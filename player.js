@@ -1,21 +1,15 @@
 /* ============================================================
-   OPEN — v57 (Targeted Hard Stop)
-   - Mobile (iOS/Android): HARD STOP on background to prevent stutter.
-   - Desktop (Mac/PC): CONTINUOUS PLAY across tabs/desktops.
-   - Fix: Robust "iPad-as-Desktop" detection.
-   - Features: Full v171 Audio + Export + AirPlay Bridge.
+   OPEN — v59 (Mobile Guard + Rich Harmony)
+   - Behavior: Hard Stop ONLY on Mobile background (fixes stutter).
+   - Desktop: Continues playing in background/other spaces.
+   - Melody: Full v171 logic (Ambiguous resolutions, Deceptive cadences).
+   - Export: Full offline rendering included.
    ============================================================ */
 
 (() => {
   "use strict";
 
-  // --- ANTI-DOUBLING KILL SWITCH ---
-  if (window.__OPEN_PLAYER_KILL__) {
-    console.log("Open Player: Stopping previous instance...");
-    window.__OPEN_PLAYER_KILL__();
-  }
-
-  const STATE_KEY = "open_player_settings_v57";
+  const STATE_KEY = "open_player_settings_v59";
 
   // =========================
   // TUNING
@@ -27,7 +21,7 @@
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
-  const LOOKAHEAD_FG = 1.5;
+  const LOOKAHEAD = 1.5;
   const SCHEDULER_INTERVAL_MS = 80;
   const MAX_EVENTS_PER_TICK = 900;
 
@@ -62,17 +56,12 @@
   function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
 
-  // FIX: Improved detection catches iPads requesting "Desktop Site"
+  // FIX: Robust check for iPads that claim to be Macintosh
   function isMobileDevice() {
     const ua = navigator.userAgent || "";
-    // 1. Standard User Agent check
     const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
-    // 2. iPad OS 13+ check (reports as Mac but has touch points)
     const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
-    // 3. Coarse pointer check (fallback)
-    const isCoarse = window.matchMedia && window.matchMedia("(pointer: coarse)").matches;
-    
-    return isBasicMobile || isIPadOS || isCoarse;
+    return isBasicMobile || isIPadOS;
   }
 
   function launchPlayer() {
@@ -153,10 +142,9 @@
   // Active node tracking
   const activeNodes = new Set();
   function trackNode(n) { if (n) activeNodes.add(n); return n; }
-  
-  function killAllActiveNodes(now = 0) {
+  function killAllActiveNodes() {
     for (const n of Array.from(activeNodes)) {
-      try { n.stop?.(now); } catch {}
+      try { n.stop?.(0); } catch {}
       try { n.disconnect?.(); } catch {}
       activeNodes.delete(n);
     }
@@ -195,8 +183,8 @@
     bridgeAudioEl.loop = true;
     bridgeAudioEl.muted = false;
     Object.assign(bridgeAudioEl.style, {
-      position: "fixed", width: "1px", height: "1px",
-      opacity: "0.01", left: "-9999px", zIndex: "-1", pointerEvents: "none"
+      position: "fixed", width: "1px", height: "1px", opacity: "0.01",
+      left: "-9999px", zIndex: "-1", pointerEvents: "none"
     });
     document.body.appendChild(bridgeAudioEl);
   }
@@ -279,10 +267,10 @@
     }
 
     recordedChunks = [];
+    const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
+    const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+    
     try {
-      // Basic mime type support check
-      const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
-      const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
       mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       return;
@@ -297,7 +285,7 @@
       a.download = `open-live-${Date.now()}.${blob.type.includes("ogg") ? "ogg" : "webm"}`;
       document.body.appendChild(a);
       a.click();
-      setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 100);
+      setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
     };
 
     try { mediaRecorder.start(250); } catch {}
@@ -320,14 +308,11 @@
     };
   }
   function setSeed(seed) { sessionSeed = (seed >>> 0); rng = mulberry32(sessionSeed); }
-  function rngStream(tagInt) { return mulberry32((sessionSeed ^ tagInt) >>> 0); }
   function rand() { return rng(); }
   function chance(p) { return rand() < p; }
 
-  let sessionSnapshot = null;
-
   // =========================
-  // MUSIC STRUCTURE
+  // MUSICAL STRUCTURE (v171 Full Logic)
   // =========================
   function circDist(a, b) { const d = Math.abs(a - b); return Math.min(d, 7 - d); }
 
@@ -356,6 +341,7 @@
 
   let lastDroneStart = -9999;
   let lastDroneDur = 0;
+  let sessionSnapshot = null;
 
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
@@ -370,11 +356,15 @@
     return 0.18;
   }
 
+  // COMPLEX MELODY LOGIC (Restored from v171)
   function pickCadenceTypeForPhrase() {
     const nearClimax = (arcPos === arcClimaxAt);
     const lateArc = (arcPos >= arcLen - 2);
+    
+    // Weights favoring ambiguity (Evaded/Deceptive/Plagal)
     let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
     
+    // Adjust weights based on arc position
     if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
     w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
     
@@ -394,11 +384,11 @@
   function cadenceTargets(type) {
     switch (type) {
       case "authentic": return { pre: 6, end: 0, wantLT: true };
-      case "half": return { pre: 1, end: 4, wantLT: false };
-      case "plagal": return { pre: 3, end: 0, wantLT: false };
+      case "half":      return { pre: 1, end: 4, wantLT: false };
+      case "plagal":    return { pre: 3, end: 0, wantLT: false };
       case "deceptive": return { pre: 6, end: 5, wantLT: true };
-      case "evaded": return { pre: 6, end: 2, wantLT: true };
-      default: return { pre: 2, end: 0, wantLT: false };
+      case "evaded":    return { pre: 6, end: 2, wantLT: true };
+      default:          return { pre: 2, end: 0, wantLT: false };
     }
   }
 
@@ -561,7 +551,7 @@
 
     const durationInput = $("songDuration")?.value ?? "60";
     const now = audioContext.currentTime;
-    const boundary = now + LOOKAHEAD_FG;
+    const boundary = now + LOOKAHEAD;
 
     const elapsed = now - sessionStartTime;
     if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
@@ -590,6 +580,7 @@
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
+          // End with long note (25s) + Natural Stop
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
@@ -732,7 +723,8 @@
   // BURST / HARD STOP HANDLER
   // =========================
   function handleVisibilityChange() {
-    // Only stop on mobile to avoid stutter. Desktops can handle background audio.
+    // ONLY stop on MOBILE devices to prevent stutter.
+    // Desktop continues playing in background tabs/spaces.
     if (isMobileDevice() && document.hidden && isPlaying) {
       stopAllManual(true, "Stopped (background)");
     }
@@ -797,18 +789,14 @@
             bus.masterGain.gain.setValueAtTime(bus.masterGain.gain.value, t);
             bus.masterGain.gain.linearRampToValueAtTime(0, t + 0.10);
         } catch {}
-        setTimeout(() => killAllActiveNodes(), 150);
+        setTimeout(() => teardownBusHard(), 150);
     } else {
-        killAllActiveNodes();
-        if (bus?.masterGain && audioContext) {
-           try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
-        }
+        teardownBusHard();
     }
     setButtonState("stopped");
     announce(statusMsg);
   }
 
-  // CORRECTED: Natural End stops scheduling but lets audio ring
   function beginNaturalEnd() {
     isEndingNaturally = true;
     isPlaying = false;
@@ -851,7 +839,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Export simulation state (mirrors live)
+    // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -1058,7 +1046,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v56-${Date.now()}.wav`;
+    a.download = `open-final-v59-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1098,18 +1086,8 @@
   }
 
   // =========================
-  // GLOBAL CLEANUP & INIT
+  // INIT
   // =========================
-  if (window.__OPEN_PLAYER_STOP__) {
-    console.log("Stopping previous instance...");
-    window.__OPEN_PLAYER_STOP__();
-  }
-  
-  window.__OPEN_PLAYER_STOP__ = () => {
-    stopAllManual(true);
-    if (audioContext) audioContext.close();
-  };
-
   document.addEventListener("DOMContentLoaded", () => {
     if (isLauncherPage()) {
       $("launchPlayer")?.addEventListener("click", launchPlayer);
@@ -1118,7 +1096,6 @@
 
     if (!isPlayerPage()) return;
 
-    // Controls
     $("playNow")?.addEventListener("click", startFromUI);
     $("stop")?.addEventListener("click", () => stopAllManual(false));
 
@@ -1130,12 +1107,11 @@
     });
     $("songDuration")?.addEventListener("change", () => saveState(readControls()));
 
-    // Hotkeys (Shift required)
     document.addEventListener("keydown", (e) => {
-        if (isTypingTarget(e.target)) return;
-        const k = (e.key || "").toLowerCase();
-        if(e.shiftKey && k === "r") toggleRecording();
-        if(e.shiftKey && k === "e") renderWavExport();
+      if (isTypingTarget(e.target)) return;
+      const k = (e.key || "").toLowerCase();
+      if(e.shiftKey && k === "r") toggleRecording();
+      if(e.shiftKey && k === "e") renderWavExport();
     });
 
     // Hard-stop on background/lock
@@ -1146,9 +1122,8 @@
     setRecordUI(false);
   });
 
-  // HARD STOP HANDLER
+  // HARD STOP HANDLER (MOBILE ONLY)
   function handleVisibilityChange() {
-    // Only force hard-stop on MOBILE. Desktop browsers can handle background audio fine.
     if (isMobileDevice() && document.hidden && isPlaying) {
       stopAllManual(true, "Stopped (background)");
     }
