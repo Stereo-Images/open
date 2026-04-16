@@ -1,10 +1,10 @@
 /* ============================================================
-   OPEN — v62 (Surgical iOS Patch)
-   - Mobile: Aggressive Hard Stop + Context Close on background.
-   - Fix 1: Bridge tracks released properly (stops phantom CPU).
-   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
-   - Fix 3: Background stop catches tails/fades too.
-   - Desktop: Continuous play (background safe).
+   OPEN — v81 (Organ Interventions + Pity Rule)
+   - Base: v62 (Continuous playback, mobile background safe).
+   - Addition: Composed organ melody interrupts the generative flow.
+   - Trigger: Plays after EVERY minor key passage, OR forced via 
+     a 3-minute "Pity Rule" if the system stays major too long.
+   - Behavior: Plays 7-12 times in the current key.
    ============================================================ */
 
 (() => {
@@ -21,7 +21,35 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v62";
+  const STATE_KEY = "open_player_settings_v81";
+
+  // ========================================================
+  // THE COMPOSED MELODY ("nice organ thing.mid")
+  // ========================================================
+  // 'deg' is the scale degree relative to the current key (0 = root).
+  const MY_MELODY = [
+    { deg: 0, dur: 4.0 },  // Root 
+    { deg: 2, dur: 4.0 },  // Third
+    { deg: 0, dur: 4.0 },  // Root
+    { deg: -1, dur: 4.0 }, // Leading tone down
+    { deg: -2, dur: 8.0 }, 
+    { deg: -1, dur: 4.0 }, 
+    { deg: 0, dur: 4.0 },  
+    { deg: 1, dur: 4.0 },  
+    { deg: 2, dur: 8.0 },  // Swell to third
+    { deg: 3, dur: 4.0 },  
+    { deg: 4, dur: 4.0 },  
+    { deg: 5, dur: 6.0 },  
+    { deg: 7, dur: 8.0 },  // Octave peak
+    { deg: 5, dur: 4.0 },  
+    { deg: 4, dur: 4.0 },  
+    { deg: 3, dur: 4.0 },  
+    { deg: 2, dur: 6.0 },  
+    { deg: 0, dur: 4.0 },  
+    { deg: -4, dur: 6.0 }, // Drop down
+    { deg: -1, dur: 6.0 }, 
+    { deg: 1, dur: 16.0 }  // Linger
+  ];
 
   // =========================
   // TUNING
@@ -376,6 +404,12 @@
   let lastDroneDur = 0;
   let sessionSnapshot = null;
 
+  // -- ORGAN RECITAL STATE --
+  let playMelodyLoops = 0;
+  let melodyStepIndex = 0;
+  let melodyRootIdx = 0;
+  let lastRecitalTime = 0;
+
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
     arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
@@ -518,6 +552,29 @@
     });
   }
 
+  // Composed Organ Voice
+  function scheduleOrganLead(ctx, destination, wetSend, freq, time, duration, volume) {
+    const osc1 = trackNode(ctx, ctx.createOscillator()), osc2 = trackNode(ctx, ctx.createOscillator());
+    const ampGain = trackNode(ctx, ctx.createGain()), lp = trackNode(ctx, ctx.createBiquadFilter());
+    
+    osc1.type = "triangle"; osc2.type = "sawtooth"; 
+    osc1.frequency.value = freq; osc2.frequency.value = freq;
+    
+    ampGain.gain.setValueAtTime(0.0001, time);
+    ampGain.gain.linearRampToValueAtTime(volume, time + 0.5);
+    ampGain.gain.linearRampToValueAtTime(volume * 0.8, time + duration - 0.5);
+    ampGain.gain.linearRampToValueAtTime(0.0001, time + duration);
+
+    lp.type = "lowpass"; lp.frequency.value = 1200; lp.Q.value = 0.5;
+
+    const mixSaw = trackNode(ctx, ctx.createGain()); mixSaw.gain.value = 0.15;
+    osc1.connect(lp); osc2.connect(mixSaw); mixSaw.connect(lp); 
+    lp.connect(ampGain); ampGain.connect(destination); ampGain.connect(wetSend);
+    
+    osc1.start(time); osc2.start(time); 
+    osc1.stop(time + duration); osc2.stop(time + duration);
+  }
+
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
     // Patch 3: Context-aware tracking
     const carrier = trackNode(ctx, ctx.createOscillator());
@@ -603,6 +660,32 @@
     while (nextTimeA < boundary) {
       if (events++ > MAX_EVENTS_PER_TICK) break;
 
+      // --- ORGAN RECITAL LOOP ---
+      if (playMelodyLoops > 0) {
+         if (melodyStepIndex >= MY_MELODY.length) {
+            playMelodyLoops--;
+            melodyStepIndex = 0;
+            if (playMelodyLoops === 0) {
+               announce("Resuming Drift");
+               lastRecitalTime = audioContext.currentTime; // Reset pity timer
+               isMinor = false; // Force resolution to major
+               continue;
+            }
+         }
+         
+         const noteData = MY_MELODY[melodyStepIndex];
+         const absIdx = melodyRootIdx + noteData.deg;
+         
+         // Treat base root as minor for the recital translation
+         let freq = getScaleNote(baseFreq, absIdx, circlePosition, true); 
+         freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
+         
+         scheduleOrganLead(audioContext, bus.masterGain, bus.reverbSend, freq, nextTimeA, noteData.dur, 0.4);
+         nextTimeA += noteData.dur * 0.8;
+         melodyStepIndex++;
+         continue; // Skip generative bells while organ plays
+      }
+
       let appliedDur = noteDur;
       let pressure = Math.min(1.0, notesSinceModulation / 48.0);
       updateHarmonyState(durationInput);
@@ -672,8 +755,26 @@
                 patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
              }
              
-             if(ct === "authentic") tension = clamp01(tension - 0.22);
-             else tension = clamp01(tension + 0.10);
+             // --- TRIGGER LOGIC: EVERY MINOR PASSAGE + PITY RULE ---
+             let triggerRecital = false;
+             if (isMinor && ct === "authentic") triggerRecital = true;
+             
+             // Pity Rule: If 3 minutes (180s) pass without playing, force it.
+             const timeSinceLast = audioContext.currentTime - lastRecitalTime;
+             if (timeSinceLast > 180) triggerRecital = true;
+             
+             if (triggerRecital && playMelodyLoops === 0) {
+                 playMelodyLoops = 7 + Math.floor(rand() * 6); // Loops 7 to 12 times
+                 melodyStepIndex = 0;
+                 melodyRootIdx = Math.floor(patternIdxA / 7) * 7;
+                 announce("Playing: Organ Theme");
+                 tension = clamp01(tension - 0.22);
+             } else if (ct === "authentic") {
+                 tension = clamp01(tension - 0.22);
+             } else { 
+                 tension = clamp01(tension + 0.10); 
+             }
+             
              lastCadenceType = ct;
           }
       } else {
@@ -788,6 +889,10 @@
     isApproachingEnd = false;
     patternIdxA = 0; circlePosition = 0; isMinor = false; tension = 0.0;
     notesSinceModulation = 0; arcPos = -1; arcLen = 6; arcClimaxAt = 4;
+    
+    playMelodyLoops = 0;
+    melodyStepIndex = 0;
+    lastRecitalTime = audioContext.currentTime;
 
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
     setSeed(seed);
@@ -900,6 +1005,12 @@
     let localLastDroneStart = -9999;
     let localLastDroneDur = 0;
     let usedSnapshotArc = false;
+    
+    // Export Recital State
+    let localPlayMelodyLoops = 0;
+    let localMelodyStepIndex = 0;
+    let localMelodyRootIdx = 0;
+    let localLastRecitalTime = 0;
 
     function localStartNewArc() {
       if (!usedSnapshotArc && sessionSnapshot.arcLen != null) {
@@ -974,6 +1085,26 @@
     silentInitPhraseExport();
 
     while (localTime < exportDuration - 2.0) {
+      if (localPlayMelodyLoops > 0) {
+         if (localMelodyStepIndex >= MY_MELODY.length) {
+            localPlayMelodyLoops--;
+            localMelodyStepIndex = 0;
+            if (localPlayMelodyLoops === 0) {
+               localLastRecitalTime = localTime;
+               localMinor = false;
+               continue;
+            }
+         }
+         const noteData = MY_MELODY[localMelodyStepIndex];
+         const absIdx = localMelodyRootIdx + noteData.deg;
+         let freq = getScaleNote(baseFreq, absIdx, localCircle, true); 
+         freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
+         scheduleOrganLead(offlineCtx, offlineMaster, offlineSend, freq, localTime, noteData.dur, 0.4);
+         localTime += noteData.dur * 0.8;
+         localMelodyStepIndex++;
+         continue;
+      }
+
       localPhraseStep = (localPhraseStep + 1) % 16;
       if (localPhraseStep === 0) {
         localPhraseCount++;
@@ -1027,8 +1158,21 @@
           if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
-          if (ct === "authentic") localTension = clamp01(localTension - 0.22);
-          else localTension = clamp01(localTension + 0.10);
+          
+          let triggerRecital = false;
+          if (localMinor && ct === "authentic") triggerRecital = true;
+          if (localTime - localLastRecitalTime > 180) triggerRecital = true;
+
+          if (triggerRecital && localPlayMelodyLoops === 0) {
+              localPlayMelodyLoops = 7 + Math.floor(rand() * 6);
+              localMelodyStepIndex = 0;
+              localMelodyRootIdx = Math.floor(localIdx / 7) * 7;
+              localTension = clamp01(localTension - 0.22);
+          } else if (ct === "authentic") {
+              localTension = clamp01(localTension - 0.22);
+          } else { 
+              localTension = clamp01(localTension + 0.10); 
+          }
           localLastCadenceType = ct;
         }
       } else {
@@ -1096,7 +1240,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v62-${Date.now()}.wav`;
+    a.download = `open-final-v81-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
