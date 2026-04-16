@@ -1,10 +1,11 @@
 /* ============================================================
-   OPEN — v81 (Organ Interventions + Pity Rule)
+   OPEN — v82 (Gravitational Pull Modulation)
    - Base: v62 (Continuous playback, mobile background safe).
    - Addition: Composed organ melody interrupts the generative flow.
-   - Trigger: Plays after EVERY minor key passage, OR forced via 
-     a 3-minute "Pity Rule" if the system stays major too long.
-   - Behavior: Plays 7-12 times in the current key.
+   - Trigger Logic: "Gravitational Pull". If 3 minutes pass without 
+     the organ, the system forces a smooth relative modulation into 
+     a minor key to prepare a harmonic "runway" before triggering.
+   - Behavior: Plays 7-12 times in the current minor key.
    ============================================================ */
 
 (() => {
@@ -21,7 +22,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v81";
+  const STATE_KEY = "open_player_settings_v82";
 
   // ========================================================
   // THE COMPOSED MELODY ("nice organ thing.mid")
@@ -667,8 +668,8 @@
             melodyStepIndex = 0;
             if (playMelodyLoops === 0) {
                announce("Resuming Drift");
-               lastRecitalTime = audioContext.currentTime; // Reset pity timer
-               isMinor = false; // Force resolution to major
+               lastRecitalTime = audioContext.currentTime; 
+               isMinor = false; // Resolve to major after the recital
                continue;
             }
          }
@@ -676,14 +677,13 @@
          const noteData = MY_MELODY[melodyStepIndex];
          const absIdx = melodyRootIdx + noteData.deg;
          
-         // Treat base root as minor for the recital translation
          let freq = getScaleNote(baseFreq, absIdx, circlePosition, true); 
          freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
          
          scheduleOrganLead(audioContext, bus.masterGain, bus.reverbSend, freq, nextTimeA, noteData.dur, 0.4);
          nextTimeA += noteData.dur * 0.8;
          melodyStepIndex++;
-         continue; // Skip generative bells while organ plays
+         continue; 
       }
 
       let appliedDur = noteDur;
@@ -755,16 +755,20 @@
                 patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
              }
              
-             // --- TRIGGER LOGIC: EVERY MINOR PASSAGE + PITY RULE ---
-             let triggerRecital = false;
-             if (isMinor && ct === "authentic") triggerRecital = true;
-             
-             // Pity Rule: If 3 minutes (180s) pass without playing, force it.
+             // --- GRAVITATIONAL PULL LOGIC ---
              const timeSinceLast = audioContext.currentTime - lastRecitalTime;
-             if (timeSinceLast > 180) triggerRecital = true;
+             let triggerRecital = false;
+             
+             if (isMinor && ct === "authentic") {
+                 // Trigger if 3 mins passed, OR natural 15% chance
+                 if (timeSinceLast > 180 || chance(0.15)) triggerRecital = true;
+             } else if (!isMinor && ct === "authentic" && timeSinceLast > 180) {
+                 // The Gravitational Pull: Prepare the runway by forcing a modulation to minor
+                 isMinor = true;
+             }
              
              if (triggerRecital && playMelodyLoops === 0) {
-                 playMelodyLoops = 7 + Math.floor(rand() * 6); // Loops 7 to 12 times
+                 playMelodyLoops = 7 + Math.floor(rand() * 6); 
                  melodyStepIndex = 0;
                  melodyRootIdx = Math.floor(patternIdxA / 7) * 7;
                  announce("Playing: Organ Theme");
@@ -1159,9 +1163,14 @@
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
           
+          const timeSinceLast = localTime - localLastRecitalTime;
           let triggerRecital = false;
-          if (localMinor && ct === "authentic") triggerRecital = true;
-          if (localTime - localLastRecitalTime > 180) triggerRecital = true;
+
+          if (localMinor && ct === "authentic") {
+              if (timeSinceLast > 180 || chance(0.15)) triggerRecital = true;
+          } else if (!localMinor && ct === "authentic" && timeSinceLast > 180) {
+              localMinor = true; // Gravitational Pull
+          }
 
           if (triggerRecital && localPlayMelodyLoops === 0) {
               localPlayMelodyLoops = 7 + Math.floor(rand() * 6);
@@ -1240,7 +1249,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v81-${Date.now()}.wav`;
+    a.download = `open-final-v82-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
