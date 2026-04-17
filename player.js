@@ -1,9 +1,10 @@
 /* ============================================================
-   OPEN — v84 (Sine Organ & Polyphonic Chords)
-   - Fix 1: Polyphonic sequence array. `MY_MELODY` triggers chords.
-   - Fix 2: Additive Sine Waves (drawbar) for glassy organ tone.
-   - Fix 3: Stereo Chorus & Humanization applied.
-   - Base: Continues v62 background safety + Gravitational Pull (3m).
+   OPEN — v62 (Surgical iOS Patch)
+   - Mobile: Aggressive Hard Stop + Context Close on background.
+   - Fix 1: Bridge tracks released properly (stops phantom CPU).
+   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
+   - Fix 3: Background stop catches tails/fades too.
+   - Desktop: Continuous play (background safe).
    ============================================================ */
 
 (() => {
@@ -20,37 +21,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v84";
-
-  // ========================================================
-  // THE COMPOSED CHORDS ("nice organ thing.mid")
-  // ========================================================
-  const MY_MELODY = [
-    { degs: [0, 2, 4], dur: 4.0 },      // Am
-    { degs: [2, 4, 6], dur: 4.0 },      // C
-    { degs: [0, 2, 4], dur: 4.0 },      // Am
-    { degs: [-1, 1, 3], dur: 4.0 },     // G
-    { degs: [-2, 0, 2], dur: 8.0 },     // F
-    { degs: [-1, 1, 3], dur: 4.0 },     // G
-    { degs: [0, 2, 4], dur: 4.0 },      // Am
-    { degs: [1, 3, 5], dur: 4.0 },      // Bdim
-    { degs: [2, 4, 6], dur: 8.0 },      // C
-    // The Climb
-    { degs: [3, 5, 7], dur: 4.0 },      // Dm
-    { degs: [4, 6, 8], dur: 4.0 },      // Em
-    { degs: [5, 7, 9], dur: 6.0 },      // F
-    { degs: [7, 9, 11, 14], dur: 8.0 }, // Am (High Octave Peak)
-    // The Cascade
-    { degs: [5, 7, 9], dur: 4.0 },      // F
-    { degs: [4, 6, 8], dur: 4.0 },      // Em
-    { degs: [3, 5, 7], dur: 4.0 },      // Dm
-    { degs: [2, 4, 6], dur: 6.0 },      // C
-    { degs: [0, 2, 4], dur: 4.0 },      // Am
-    { degs: [-3, -1, 1], dur: 6.0 },    // Em (Low)
-    // Resolution to G (Half Cadence preparing for major)
-    { degs: [-1, 1, 3], dur: 6.0 },     // G
-    { degs: [-1, 1, 3, 6], dur: 16.0 }  // G (Hanging with 7th)
-  ];
+  const STATE_KEY = "open_player_settings_v62";
 
   // =========================
   // TUNING
@@ -176,16 +147,17 @@
   }
 
   // =========================
-  // AUDIO CORE & ROUTING
+  // AUDIO CORE
   // =========================
   let audioContext = null;
   let bus = null;
   let bridgeAudioEl = null;
 
-  // Active node tracking
+  // Active node tracking (Patch 3: Context Aware)
   const activeNodes = new Set();
   
   function trackNode(ctx, n) {
+    // Only track LIVE nodes. Do not track Offline/Export nodes.
     if (n && ctx === audioContext) activeNodes.add(n);
     return n;
   }
@@ -224,12 +196,13 @@
   function createImpulseResponse(ctx) {
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
     
+    // Patch 5 (Optional): Shorter IR on mobile to save CPU
     const duration = isMobileDevice() ? 4.0 : 10.0;
+    
     const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
     const r = mulberry32((sessionSeed ^ 0xC0FFEE) >>> 0);
-    
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
       for (let i = 0; i < length; i++) {
@@ -249,10 +222,10 @@
 
     try { bus.reverbReturn.disconnect(); } catch {}
     try { bus.reverbSend.disconnect(); } catch {}
-    try { bus.organIn.disconnect(); } catch {}
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
     
+    // Patch 2: Release bridge stream (Crucial for iOS)
     if (bridgeAudioEl?.srcObject) {
       try { bridgeAudioEl.pause(); } catch {}
       try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
@@ -273,7 +246,6 @@
     const streamDest = audioContext.createMediaStreamDestination();
     masterGain.connect(streamDest);
 
-    // --- REVERB BUS ---
     const reverbPreDelay = audioContext.createDelay(0.1);
     reverbPreDelay.delayTime.value = 0.045;
 
@@ -297,63 +269,7 @@
     reverbLP.connect(reverbReturn);
     reverbReturn.connect(masterGain);
 
-    // --- STEREO CHORUS ORGAN BUS ---
-    const organIn = audioContext.createGain();
-    
-    // Dry Path
-    const organDry = audioContext.createGain();
-    organDry.gain.value = 0.7;
-    organIn.connect(organDry);
-    organDry.connect(masterGain);
-    organDry.connect(reverbSend);
-
-    // Left Chorus Path
-    const delayL = audioContext.createDelay(0.1);
-    delayL.delayTime.value = 0.02;
-    const lfoL = trackNode(audioContext, audioContext.createOscillator());
-    lfoL.type = "sine";
-    lfoL.frequency.value = 0.3;
-    const depthL = audioContext.createGain();
-    depthL.gain.value = 0.007;
-    lfoL.connect(depthL);
-    depthL.connect(delayL.delayTime);
-    
-    const panL = audioContext.createStereoPanner();
-    panL.pan.value = -0.7;
-    const gainL = audioContext.createGain();
-    gainL.gain.value = 0.5;
-    
-    organIn.connect(delayL);
-    delayL.connect(panL);
-    panL.connect(gainL);
-    gainL.connect(masterGain);
-    gainL.connect(reverbSend);
-    lfoL.start();
-
-    // Right Chorus Path
-    const delayR = audioContext.createDelay(0.1);
-    delayR.delayTime.value = 0.025;
-    const lfoR = trackNode(audioContext, audioContext.createOscillator());
-    lfoR.type = "sine";
-    lfoR.frequency.value = 0.41;
-    const depthR = audioContext.createGain();
-    depthR.gain.value = 0.008;
-    lfoR.connect(depthR);
-    depthR.connect(delayR.delayTime);
-    
-    const panR = audioContext.createStereoPanner();
-    panR.pan.value = 0.7;
-    const gainR = audioContext.createGain();
-    gainR.gain.value = 0.5;
-    
-    organIn.connect(delayR);
-    delayR.connect(panR);
-    panR.connect(gainR);
-    gainR.connect(masterGain);
-    gainR.connect(reverbSend);
-    lfoR.start();
-
-    bus = { masterGain, reverbSend, reverbReturn, streamDest, organIn };
+    bus = { masterGain, reverbSend, reverbReturn, streamDest };
 
     ensureBridge();
     bridgeAudioEl.srcObject = streamDest.stream;
@@ -460,12 +376,6 @@
   let lastDroneDur = 0;
   let sessionSnapshot = null;
 
-  // -- ORGAN RECITAL STATE --
-  let playMelodyLoops = 0;
-  let melodyStepIndex = 0;
-  let melodyRootIdx = 0;
-  let lastRecitalTime = 0;
-
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
     arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
@@ -551,9 +461,8 @@
   }
 
   // =========================
-  // SYNTH ENGINES
+  // SYNTH
   // =========================
-
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
@@ -575,6 +484,7 @@
     });
 
     voices.forEach(voice => {
+      // Patch 3: Context-aware tracking
       const carrier = trackNode(ctx, ctx.createOscillator());
       const modulator = trackNode(ctx, ctx.createOscillator());
       const modGain = trackNode(ctx, ctx.createGain());
@@ -601,52 +511,15 @@
       carrier.connect(ampGain);
       ampGain.connect(filter);
       filter.connect(destination);
-      if (wetSend) filter.connect(wetSend);
+      filter.connect(wetSend);
 
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
     });
   }
 
-  // --- ADDITIVE SINE ORGAN (Drawbar Style) ---
-  function scheduleOrganLead(ctx, dest, wetSend, freq, time, duration, volume) {
-    const stopTime = time + duration;
-    const ampGain = trackNode(ctx, ctx.createGain());
-    
-    // Organ Swell Envelope (No hard attack clicks)
-    ampGain.gain.setValueAtTime(0.0001, time);
-    ampGain.gain.linearRampToValueAtTime(volume, time + 0.4);
-    ampGain.gain.linearRampToValueAtTime(volume * 0.8, stopTime - 0.4);
-    ampGain.gain.linearRampToValueAtTime(0.0001, stopTime);
-
-    // Stacking pure sine waves to mimic drawbars
-    const harmonics = [
-      { mult: 1.0, vol: 1.0 },   // 8' Fundamental
-      { mult: 2.0, vol: 0.5 },   // 4' Octave
-      { mult: 3.0, vol: 0.25 },  // 2 2/3' Twelfth
-      { mult: 4.0, vol: 0.12 }   // 2' Super Octave
-    ];
-
-    harmonics.forEach(h => {
-      const osc = trackNode(ctx, ctx.createOscillator());
-      osc.type = "sine";
-      osc.frequency.value = freq * h.mult;
-      
-      const hGain = trackNode(ctx, ctx.createGain());
-      hGain.gain.value = h.vol;
-      
-      osc.connect(hGain);
-      hGain.connect(ampGain);
-      
-      osc.start(time);
-      osc.stop(stopTime);
-    });
-
-    ampGain.connect(dest);
-    if (wetSend) ampGain.connect(wetSend);
-  }
-
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
+    // Patch 3: Context-aware tracking
     const carrier = trackNode(ctx, ctx.createOscillator());
     const modulator = trackNode(ctx, ctx.createOscillator());
     const modGain = trackNode(ctx, ctx.createGain());
@@ -673,8 +546,7 @@
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
     carrier.connect(ampGain); ampGain.connect(lp);
-    lp.connect(destination); 
-    if (wetSend) lp.connect(wetSend);
+    lp.connect(destination); lp.connect(wetSend);
 
     modulator.start(time); carrier.start(time);
     modulator.stop(time + duration); carrier.stop(time + duration);
@@ -730,40 +602,6 @@
     let events = 0;
     while (nextTimeA < boundary) {
       if (events++ > MAX_EVENTS_PER_TICK) break;
-
-      // --- POLYPHONIC ORGAN RECITAL LOOP ---
-      if (playMelodyLoops > 0) {
-         if (melodyStepIndex >= MY_MELODY.length) {
-            playMelodyLoops--;
-            melodyStepIndex = 0;
-            if (playMelodyLoops === 0) {
-               announce("Resuming Drift");
-               lastRecitalTime = audioContext.currentTime; 
-               isMinor = false; // Prepare a major shift after the recital
-               continue;
-            }
-         }
-         
-         const noteData = MY_MELODY[melodyStepIndex];
-         
-         // SUBTLE VELOCITY HUMANIZATION
-         const humVel = 0.85 + (rand() * 0.3);
-         const voiceVol = (0.4 / noteData.degs.length) * humVel; 
-         
-         // Iterate the chord array to stack the additive sines
-         noteData.degs.forEach(deg => {
-             const absIdx = melodyRootIdx + deg;
-             let freq = getScaleNote(baseFreq, absIdx, circlePosition, true); 
-             freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
-             
-             // Route directly into the Stereo Chorus Bus
-             scheduleOrganLead(audioContext, bus.organIn, null, freq, nextTimeA, noteData.dur, voiceVol);
-         });
-
-         nextTimeA += noteData.dur * 0.8;
-         melodyStepIndex++;
-         continue; 
-      }
 
       let appliedDur = noteDur;
       let pressure = Math.min(1.0, notesSinceModulation / 48.0);
@@ -834,30 +672,8 @@
                 patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
              }
              
-             // --- GRAVITATIONAL PULL LOGIC ---
-             const timeSinceLast = audioContext.currentTime - lastRecitalTime;
-             let triggerRecital = false;
-
-             if (isMinor && ct === "authentic") {
-                 // Trigger naturally if 3 mins passed, or 15% dice roll
-                 if (timeSinceLast > 180 || chance(0.15)) triggerRecital = true;
-             } else if (!isMinor && ct === "authentic" && timeSinceLast > 180) {
-                 // Gravitational Pull: Prepare the runway by forcing minor key
-                 isMinor = true;
-             }
-
-             if (triggerRecital && playMelodyLoops === 0) {
-                 playMelodyLoops = 7 + Math.floor(rand() * 6); 
-                 melodyStepIndex = 0;
-                 melodyRootIdx = Math.floor(patternIdxA / 7) * 7;
-                 announce("Playing: Organ Theme");
-                 tension = clamp01(tension - 0.22);
-             } else if (ct === "authentic") {
-                 tension = clamp01(tension - 0.22);
-             } else { 
-                 tension = clamp01(tension + 0.10); 
-             }
-             
+             if(ct === "authentic") tension = clamp01(tension - 0.22);
+             else tension = clamp01(tension + 0.10);
              lastCadenceType = ct;
           }
       } else {
@@ -916,8 +732,7 @@
          const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
          const quality = isMinor ? "min" : "maj";
 
-         // Note: Sending Drones to the Chorus Bus (`bus.organIn`) too
-         scheduleDroneChord(audioContext, bus.organIn, null, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
+         scheduleDroneChord(audioContext, bus.masterGain, bus.reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
       // Schedule melody
@@ -973,10 +788,6 @@
     isApproachingEnd = false;
     patternIdxA = 0; circlePosition = 0; isMinor = false; tension = 0.0;
     notesSinceModulation = 0; arcPos = -1; arcLen = 6; arcClimaxAt = 4;
-    
-    playMelodyLoops = 0;
-    melodyStepIndex = 0;
-    lastRecitalTime = audioContext.currentTime;
 
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
     setSeed(seed);
@@ -1078,59 +889,6 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // --- OFFLINE STEREO CHORUS ORGAN BUS ---
-    const offlineOrganIn = offlineCtx.createGain();
-    
-    const offlineOrganDry = offlineCtx.createGain();
-    offlineOrganDry.gain.value = 0.7;
-    offlineOrganIn.connect(offlineOrganDry); 
-    offlineOrganDry.connect(offlineMaster); 
-    offlineOrganDry.connect(offlineSend);
-
-    const oDelayL = offlineCtx.createDelay(0.1);
-    oDelayL.delayTime.value = 0.02;
-    const oLfoL = trackNode(offlineCtx, offlineCtx.createOscillator());
-    oLfoL.type = "sine";
-    oLfoL.frequency.value = 0.3;
-    const oDepthL = offlineCtx.createGain();
-    oDepthL.gain.value = 0.007;
-    oLfoL.connect(oDepthL);
-    oDepthL.connect(oDelayL.delayTime);
-    
-    const oPanL = offlineCtx.createStereoPanner();
-    oPanL.pan.value = -0.7;
-    const oGainL = offlineCtx.createGain();
-    oGainL.gain.value = 0.5;
-    
-    offlineOrganIn.connect(oDelayL);
-    oDelayL.connect(oPanL);
-    oPanL.connect(oGainL);
-    oGainL.connect(offlineMaster);
-    oGainL.connect(offlineSend);
-    oLfoL.start();
-
-    const oDelayR = offlineCtx.createDelay(0.1);
-    oDelayR.delayTime.value = 0.025;
-    const oLfoR = trackNode(offlineCtx, offlineCtx.createOscillator());
-    oLfoR.type = "sine";
-    oLfoR.frequency.value = 0.41;
-    const oDepthR = offlineCtx.createGain();
-    oDepthR.gain.value = 0.008;
-    oLfoR.connect(oDepthR);
-    oDepthR.connect(oDelayR.delayTime);
-    
-    const oPanR = offlineCtx.createStereoPanner();
-    oPanR.pan.value = 0.7;
-    const oGainR = offlineCtx.createGain();
-    oGainR.gain.value = 0.5;
-    
-    offlineOrganIn.connect(oDelayR);
-    oDelayR.connect(oPanR);
-    oPanR.connect(oGainR);
-    oGainR.connect(offlineMaster);
-    oGainR.connect(offlineSend);
-    oLfoR.start();
-
     // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
@@ -1142,12 +900,6 @@
     let localLastDroneStart = -9999;
     let localLastDroneDur = 0;
     let usedSnapshotArc = false;
-    
-    // Export Recital State
-    let localPlayMelodyLoops = 0;
-    let localMelodyStepIndex = 0;
-    let localMelodyRootIdx = 0;
-    let localLastRecitalTime = 0;
 
     function localStartNewArc() {
       if (!usedSnapshotArc && sessionSnapshot.arcLen != null) {
@@ -1222,33 +974,6 @@
     silentInitPhraseExport();
 
     while (localTime < exportDuration - 2.0) {
-      if (localPlayMelodyLoops > 0) {
-         if (localMelodyStepIndex >= MY_MELODY.length) {
-            localPlayMelodyLoops--;
-            localMelodyStepIndex = 0;
-            if (localPlayMelodyLoops === 0) {
-               localLastRecitalTime = localTime;
-               localMinor = false;
-               continue;
-            }
-         }
-         
-         const noteData = MY_MELODY[localMelodyStepIndex];
-         const humVel = 0.85 + (rand() * 0.3);
-         const voiceVol = (0.4 / noteData.degs.length) * humVel;
-
-         noteData.degs.forEach(deg => {
-             const absIdx = localMelodyRootIdx + deg;
-             let freq = getScaleNote(baseFreq, absIdx, localCircle, true); 
-             freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
-             scheduleOrganLead(offlineCtx, offlineOrganIn, null, freq, localTime, noteData.dur, voiceVol);
-         });
-
-         localTime += noteData.dur * 0.8;
-         localMelodyStepIndex++;
-         continue;
-      }
-
       localPhraseStep = (localPhraseStep + 1) % 16;
       if (localPhraseStep === 0) {
         localPhraseCount++;
@@ -1302,26 +1027,8 @@
           if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
-          
-          const timeSinceLast = localTime - localLastRecitalTime;
-          let triggerRecital = false;
-
-          if (localMinor && ct === "authentic") {
-              if (timeSinceLast > 180 || chance(0.15)) triggerRecital = true;
-          } else if (!localMinor && ct === "authentic" && timeSinceLast > 180) {
-              localMinor = true; // Gravitational Pull
-          }
-
-          if (triggerRecital && localPlayMelodyLoops === 0) {
-              localPlayMelodyLoops = 7 + Math.floor(rand() * 6);
-              localMelodyStepIndex = 0;
-              localMelodyRootIdx = Math.floor(localIdx / 7) * 7;
-              localTension = clamp01(localTension - 0.22);
-          } else if (ct === "authentic") {
-              localTension = clamp01(localTension - 0.22);
-          } else { 
-              localTension = clamp01(localTension + 0.10); 
-          }
+          if (ct === "authentic") localTension = clamp01(localTension - 0.22);
+          else localTension = clamp01(localTension + 0.10);
           localLastCadenceType = ct;
         }
       } else {
@@ -1368,8 +1075,7 @@
         localLastDroneStart = t0; localLastDroneDur = droneDur;
         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
         const quality = localMinor ? "min" : "maj";
-        
-        scheduleDroneChord(offlineCtx, offlineOrganIn, null, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
+        scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12 && localPhraseCount > 0);
@@ -1390,7 +1096,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v84-${Date.now()}.wav`;
+    a.download = `open-final-v62-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
