@@ -1,18 +1,18 @@
-// --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v87 (The Pure Neroli Cut)
-   - Base: v62 (Continuous playback, pure generative, mobile safe)
-   - Tones: Consistent 2.0 FM ratio with resonant filter "ping".
-   - Range: "Soft walls" apply gravity to the random walk, forcing 
-     the melody to stay in low/mid registers without teleporting.
+   OPEN — v62 (Surgical iOS Patch)
+   - Mobile: Aggressive Hard Stop + Context Close on background.
+   - Fix 1: Bridge tracks released properly (stops phantom CPU).
+   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
+   - Fix 3: Background stop catches tails/fades too.
+   - Desktop: Continuous play (background safe).
    ============================================================ */
 
 (() => {
-  "use strict";
+  “use strict”;
 
-  // --- ANTI-DOUBLING KILL SWITCH ---
+  // — ANTI-DOUBLING KILL SWITCH —
   if (window.__OPEN_PLAYER_KILL__) {
-    console.log("Open Player: Stopping previous instance...");
+    console.log(“Open Player: Stopping previous instance...”);
     window.__OPEN_PLAYER_KILL__();
   }
   
@@ -21,15 +21,15 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v87";
+  const STATE_KEY = “open_player_settings_v62”;
 
   // =========================
   // TUNING
   // =========================
-  const MELODY_FLOOR_HZ = 146.83; // D3 - Lowered to allow deeper wandering
+  const MELODY_FLOOR_HZ = 220;    // A3
   const DRONE_FLOOR_HZ  = 87.31;  // F2
   const DRONE_GAIN_MULT = 0.70;
-  const MASTER_VOL = 0.35;        // Slightly boosted for the darker tone
+  const MASTER_VOL = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
@@ -52,7 +52,7 @@
   function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
   function announce(msg) {
-    const live = $("playerStatus") || $("recordStatus");
+    const live = $(“playerStatus”) || $(“recordStatus”);
     if (!live) return;
     if (live._lastMsg === msg) return;
     live._lastMsg = msg;
@@ -61,18 +61,18 @@
 
   function isTypingTarget(el) {
     if (!el) return false;
-    const tag = (el.tagName || "").toUpperCase();
-    return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || el.isContentEditable === true;
+    const tag = (el.tagName || “”).toUpperCase();
+    return tag === “INPUT” || tag === “SELECT” || tag === “TEXTAREA” || el.isContentEditable === true;
   }
 
   // =========================
   // DEVICE DETECTION
   // =========================
-  function isLauncherPage() { return !!$("launchPlayer"); }
-  function isPlayerPage() { return !!$("playNow"); }
+  function isLauncherPage() { return !!$(“launchPlayer”); }
+  function isPlayerPage() { return !!$(“playNow”); }
 
   function isMobileDevice() {
-    const ua = navigator.userAgent || "";
+    const ua = navigator.userAgent || “”;
     const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
     const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
     return isBasicMobile || isIPadOS;
@@ -80,15 +80,15 @@
 
   function launchPlayer() {
     if (isMobileDevice()) {
-      window.location.href = "player.html";
+      window.location.href = “player.html”;
       return;
     }
     const width = 520, height = 720;
     const left = Math.max(0, (window.screen.width / 2) - (width / 2));
     const top  = Math.max(0, (window.screen.height / 2) - (height / 2));
     window.open(
-      "player.html",
-      "open_player",
+      “player.html”,
+      “open_player”,
       `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
     );
   }
@@ -101,21 +101,21 @@
 
   function readControls() {
     return {
-      songDuration: $("songDuration")?.value ?? "60",
-      tone: $("tone")?.value ?? "110",
+      songDuration: $(“songDuration”)?.value ?? “60”,
+      tone: $(“tone”)?.value ?? “110”,
       updatedAt: Date.now()
     };
   }
 
   function applyControls(state) {
-    const sd = $("songDuration");
-    const tone = $("tone");
-    const hzReadout = $("hzReadout");
+    const sd = $(“songDuration”);
+    const tone = $(“tone”);
+    const hzReadout = $(“hzReadout”);
 
     if (sd) {
-      const allowed = new Set(["60", "300", "600", "1800", "infinite"]);
-      const v = state?.songDuration != null ? String(state.songDuration) : "60";
-      sd.value = allowed.has(v) ? v : "60";
+      const allowed = new Set([“60”, “300”, “600”, “1800”, “infinite”]);
+      const v = state?.songDuration != null ? String(state.songDuration) : “60”;
+      sd.value = allowed.has(v) ? v : “60”;
     }
 
     let toneVal = 110;
@@ -128,22 +128,22 @@
   }
 
   function setButtonState(state) {
-    const playBtn = $("playNow");
-    const stopBtn = $("stop");
-    const toneInput = $("tone");
-    const playing = (state === "playing");
+    const playBtn = $(“playNow”);
+    const stopBtn = $(“stop”);
+    const toneInput = $(“tone”);
+    const playing = (state === “playing”);
 
     if (playBtn) {
-      playBtn.classList.toggle("filled", playing);
-      playBtn.setAttribute("aria-pressed", playing ? "true" : "false");
+      playBtn.classList.toggle(“filled”, playing);
+      playBtn.setAttribute(“aria-pressed”, playing ? “true” : “false”);
     }
     if (stopBtn) {
-      stopBtn.classList.toggle("filled", !playing);
-      stopBtn.setAttribute("aria-pressed", playing ? "false" : "true");
+      stopBtn.classList.toggle(“filled”, !playing);
+      stopBtn.setAttribute(“aria-pressed”, playing ? “false” : “true”);
     }
     if (toneInput) toneInput.disabled = playing;
 
-    announce(playing ? "Playing" : "Stopped");
+    announce(playing ? “Playing” : “Stopped”);
   }
 
   // =========================
@@ -180,15 +180,15 @@
 
   function ensureBridge() {
     if (bridgeAudioEl) return;
-    bridgeAudioEl = document.createElement("audio");
-    bridgeAudioEl.id = "open-airplay-bridge";
-    bridgeAudioEl.setAttribute("playsinline", "true");
-    bridgeAudioEl.setAttribute("aria-hidden", "true");
+    bridgeAudioEl = document.createElement(“audio”);
+    bridgeAudioEl.id = “open-airplay-bridge”;
+    bridgeAudioEl.setAttribute(“playsinline”, “true”);
+    bridgeAudioEl.setAttribute(“aria-hidden”, “true”);
     bridgeAudioEl.loop = true;
     bridgeAudioEl.muted = false;
     Object.assign(bridgeAudioEl.style, {
-      position: "fixed", width: "1px", height: "1px", opacity: "0.01",
-      left: "-9999px", zIndex: "-1", pointerEvents: "none"
+      position: “fixed”, width: “1px”, height: “1px”, opacity: “0.01”,
+      left: “-9999px”, zIndex: “-1”, pointerEvents: “none”
     });
     document.body.appendChild(bridgeAudioEl);
   }
@@ -253,7 +253,7 @@
     reverbNode.buffer = createImpulseResponse(audioContext);
 
     const reverbLP = audioContext.createBiquadFilter();
-    reverbLP.type = "lowpass";
+    reverbLP.type = “lowpass”;
     reverbLP.frequency.value = 4200;
     reverbLP.Q.value = 0.7;
 
@@ -283,10 +283,10 @@
   let isRecording = false;
 
   function setRecordUI(on) {
-    const el = $("recordStatus");
+    const el = $(“recordStatus”);
     if (el) {
-      el.textContent = on ? "Recording: ON" : "Recording: off";
-      el.classList.toggle("recording-on", on);
+      el.textContent = on ? “Recording: ON” : “Recording: off”;
+      el.classList.toggle(“recording-on”, on);
     }
   }
 
@@ -302,8 +302,8 @@
 
     recordedChunks = [];
     try {
-      const types = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg"];
-      const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
+      const types = [“audio/webm;codecs=opus”, “audio/webm”, “audio/ogg”];
+      const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || “”;
       mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
       return;
@@ -311,11 +311,11 @@
 
     mediaRecorder.ondataavailable = e => { if (e.data.size > 0) recordedChunks.push(e.data); };
     mediaRecorder.onstop = () => {
-      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || "audio/webm" });
+      const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || “audio/webm” });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const a = document.createElement(“a”);
       a.href = url;
-      a.download = `open-live-${Date.now()}.${blob.type.includes("ogg") ? "ogg" : "webm"}`;
+      a.download = `open-live-${Date.now()}.${blob.type.includes(“ogg”) ? “ogg” : “webm”}`;
       document.body.appendChild(a);
       a.click();
       setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 100);
@@ -369,8 +369,8 @@
   let arcPos = -1;
   let arcClimaxAt = 4;
   let tension = 0.0;
-  let lastCadenceType = "none";
-  let currentCadenceType = "none";
+  let lastCadenceType = “none”;
+  let currentCadenceType = “none”;
 
   let lastDroneStart = -9999;
   let lastDroneDur = 0;
@@ -385,7 +385,7 @@
 
   function cadenceRepeatPenalty(type) {
     if (type !== lastCadenceType) return 0.0;
-    if (type === "authentic") return 0.30;
+    if (type === “authentic”) return 0.30;
     return 0.18;
   }
 
@@ -407,16 +407,16 @@
     const sum = keys.reduce((a, k) => a + w[k], 0);
     let r = rand() * sum;
     for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
-    return "authentic";
+    return “authentic”;
   }
 
   function cadenceTargets(type) {
     switch (type) {
-      case "authentic": return { pre: 6, end: 0, wantLT: true };
-      case "half":      return { pre: 1, end: 4, wantLT: false };
-      case "plagal":    return { pre: 3, end: 0, wantLT: false };
-      case "deceptive": return { pre: 6, end: 5, wantLT: true };
-      case "evaded":    return { pre: 6, end: 2, wantLT: true };
+      case “authentic”: return { pre: 6, end: 0, wantLT: true };
+      case “half”:      return { pre: 1, end: 4, wantLT: false };
+      case “plagal”:    return { pre: 3, end: 0, wantLT: false };
+      case “deceptive”: return { pre: 6, end: 5, wantLT: true };
+      case “evaded”:    return { pre: 6, end: 2, wantLT: true };
       default:          return { pre: 2, end: 0, wantLT: false };
     }
   }
@@ -456,61 +456,78 @@
   function shouldUseThirdDrone({ atCadenceZone, tensionVal, cadenceType, melodyDeg }) {
     if (atCadenceZone) return false;
     if (tensionVal >= 0.55) return false;
-    if (cadenceType === "half" || cadenceType === "deceptive" || cadenceType === "evaded") return false;
+    if (cadenceType === “half” || cadenceType === “deceptive” || cadenceType === “evaded”) return false;
     return (melodyDeg === 0 || melodyDeg === 2 || melodyDeg === 4);
   }
 
   // =========================
-  // SYNTH ENGINES (NEROLI MIX)
+  // SYNTH
   // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-    const carrier = trackNode(ctx, ctx.createOscillator());
-    const modulator = trackNode(ctx, ctx.createOscillator());
-    const modGain = trackNode(ctx, ctx.createGain());
-    const ampGain = trackNode(ctx, ctx.createGain());
-    const filter = trackNode(ctx, ctx.createBiquadFilter());
+    const numVoices = 2 + Math.floor(rand() * 2);
+    let totalAmp = 0;
+    const isFractured = (tensionAmt > 0.75);
+    const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
+    const ratioFuzz = isFractured ? 0.08 : 0.0;
 
-    // Consistent, warm FM Ratio (2.0 = exact octave)
-    carrier.frequency.value = freq;
-    modulator.frequency.value = freq * 2.0;
+    const voices = Array.from({ length: numVoices }, () => {
+      let mRatio = isFractured
+        ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
+        : (1.5 + rand() * 2.5);
+      if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
+      const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
+      const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
+      totalAmp += v.amp;
+      return v;
+    });
 
-    // Mod Envelope: Creates the subtle "ping" attack
-    modGain.gain.setValueAtTime(freq * 1.5, time);
-    modGain.gain.exponentialRampToValueAtTime(1, time + 0.4);
+    voices.forEach(voice => {
+      // Patch 3: Context-aware tracking
+      const carrier = trackNode(ctx, ctx.createOscillator());
+      const modulator = trackNode(ctx, ctx.createOscillator());
+      const modGain = trackNode(ctx, ctx.createGain());
+      const ampGain = trackNode(ctx, ctx.createGain());
+      const filter = trackNode(ctx, ctx.createBiquadFilter());
 
-    // Amp Envelope: Soft attack, long natural decay
-    ampGain.gain.setValueAtTime(0.0001, time);
-    ampGain.gain.exponentialRampToValueAtTime(volume * 1.2, time + 0.05);
-    ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      filter.type = “lowpass”;
+      filter.frequency.value = Math.min(freq * 3.5, 6000);
+      filter.Q.value = 0.6;
 
-    // Resonant Filter Sweep: High Q to cut through the dark mix
-    filter.type = "lowpass";
-    filter.Q.value = 3.5; 
-    filter.frequency.setValueAtTime(freq * 2.5, time); 
-    filter.frequency.exponentialRampToValueAtTime(freq * 1.1, time + 0.2); 
+      const drift = (rand() - 0.5) * (2 + (instability * (isFractured ? 15 : 10)));
+      carrier.frequency.value = freq + drift;
+      modulator.frequency.value = freq * voice.modRatio;
 
-    modulator.connect(modGain);
-    modGain.connect(carrier.frequency);
-    carrier.connect(ampGain);
-    ampGain.connect(filter);
-    filter.connect(destination);
-    filter.connect(wetSend);
+      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
 
-    modulator.start(time); carrier.start(time);
-    modulator.stop(time + duration); carrier.stop(time + duration);
+      ampGain.gain.setValueAtTime(0.0001, time);
+      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+      modulator.connect(modGain);
+      modGain.connect(carrier.frequency);
+      carrier.connect(ampGain);
+      ampGain.connect(filter);
+      filter.connect(destination);
+      filter.connect(wetSend);
+
+      modulator.start(time); carrier.start(time);
+      modulator.stop(time + duration); carrier.stop(time + duration);
+    });
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
+    // Patch 3: Context-aware tracking
     const carrier = trackNode(ctx, ctx.createOscillator());
     const modulator = trackNode(ctx, ctx.createOscillator());
     const modGain = trackNode(ctx, ctx.createGain());
     const ampGain = trackNode(ctx, ctx.createGain());
     const lp = trackNode(ctx, ctx.createBiquadFilter());
 
-    carrier.type = "sine";
-    modulator.type = "sine";
+    carrier.type = “sine”;
+    modulator.type = “sine”;
     carrier.frequency.value = freq;
     modulator.frequency.value = freq * 2.0; 
     modulator.detune.value = (rand() - 0.5) * 8; 
@@ -523,9 +540,8 @@
     ampGain.gain.exponentialRampToValueAtTime(volume, time + 2.0); 
     ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-    // Slightly darker cutoff for the drones to let the bells breathe
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(500, time);
+    lp.type = “lowpass”;
+    lp.frequency.setValueAtTime(600, time);
     lp.Q.value = 0.6;
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
@@ -538,7 +554,7 @@
 
   function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality, includeThird = true) {
      let f0 = clampFreqMin(rootFreq, DRONE_FLOOR_HZ);
-     const thirdRatio = (quality === "min") ? Math.pow(2, 3/12) : Math.pow(2, 4/12);
+     const thirdRatio = (quality === “min”) ? Math.pow(2, 3/12) : Math.pow(2, 4/12);
      const fifthRatio = Math.pow(2, 7/12); 
      const vol = baseVolume * DRONE_GAIN_MULT;
 
@@ -564,14 +580,14 @@
   function scheduler() {
     if (!isPlaying || !audioContext || !bus) return;
 
-    const durationInput = $("songDuration")?.value ?? "60";
+    const durationInput = $(“songDuration”)?.value ?? “60”;
     const now = audioContext.currentTime;
     const boundary = now + LOOKAHEAD;
 
     const elapsed = now - sessionStartTime;
-    if (durationInput !== "infinite" && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
+    if (durationInput !== “infinite” && elapsed >= parseFloat(durationInput)) isApproachingEnd = true;
 
-    let baseFreq = Number($("tone")?.value ?? 110);
+    let baseFreq = Number($(“tone”)?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
 
@@ -656,18 +672,12 @@
                 patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
              }
              
-             if(ct === "authentic") tension = clamp01(tension - 0.22);
+             if(ct === “authentic”) tension = clamp01(tension - 0.22);
              else tension = clamp01(tension + 0.10);
              lastCadenceType = ct;
           }
       } else {
-          // --- GRAVITY WALLS ---
-          // Step-by-step random walk with soft limits to trap the tone in low registers
-          let upChance = 0.5;
-          if (patternIdxA >= 7) upChance = 0.15; // Heavily favor walking down if getting high
-          else if (patternIdxA <= -7) upChance = 0.85; // Heavily favor walking up if too low
-          
-          patternIdxA += (rand() < upChance ? 1 : -1);
+          patternIdxA += (rand() < 0.5 ? 1 : -1);
       }
       
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
@@ -689,12 +699,12 @@
       const canStartDrone = (nextTimeA >= lastDroneStart + lastDroneDur * 0.65);
 
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
-         const ct = currentCadenceType || "authentic";
+         const ct = currentCadenceType || “authentic”;
          let droneRootDegree = 0;
          if (!isArcStart && !isClimax) {
-           if (ct === "half") droneRootDegree = 4;
-           else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
-           else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
+           if (ct === “half”) droneRootDegree = 4;
+           else if (ct === “deceptive”) droneRootDegree = chance(0.6) ? 0 : 5;
+           else if (ct === “plagal”) droneRootDegree = chance(0.6) ? 3 : 0;
            else droneRootDegree = 0;
          }
 
@@ -720,7 +730,7 @@
          lastDroneDur = droneDur;
 
          const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
-         const quality = isMinor ? "min" : "maj";
+         const quality = isMinor ? “min” : “maj”;
 
          scheduleDroneChord(audioContext, bus.masterGain, bus.reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
@@ -745,19 +755,19 @@
   function handleVisibilityChange(e) {
     if (!isMobileDevice()) return;
 
-    const type = e?.type || "";
+    const type = e?.type || “”;
     const isBackgrounding =
       document.hidden ||
-      type === "pagehide" ||
-      type === "freeze" ||
-      type === "blur";
+      type === “pagehide” ||
+      type === “freeze” ||
+      type === “blur”;
 
     if (!isBackgrounding) return;
 
     // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
-      stopAllManual(true, "Stopped (background)");
+      stopAllManual(true, “Stopped (background)”);
       closeCtxAfterStop = false;
     }
   }
@@ -767,7 +777,7 @@
   // =========================
   async function startFromUI() {
     ensureAudioContext();
-    if (audioContext.state === "suspended") await audioContext.resume();
+    if (audioContext.state === “suspended”) await audioContext.resume();
     
     stopAllManual(true);
     buildMixBus();
@@ -796,14 +806,14 @@
     bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime);
     bus.masterGain.gain.linearRampToValueAtTime(MASTER_VOL, audioContext.currentTime + 0.1);
 
-    setButtonState("playing");
+    setButtonState(“playing”);
 
     if (timerInterval) clearInterval(timerInterval);
     timerInterval = setInterval(scheduler, SCHEDULER_INTERVAL_MS);
     scheduler();
   }
 
-  function stopAllManual(instant = false, statusMsg = "Stopped") {
+  function stopAllManual(instant = false, statusMsg = “Stopped”) {
     isPlaying = false;
     isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
@@ -832,7 +842,7 @@
         audioContext = null; 
     }
 
-    setButtonState("stopped");
+    setButtonState(“stopped”);
     announce(statusMsg);
   }
 
@@ -840,7 +850,7 @@
     isEndingNaturally = true;
     isPlaying = false; // Stop scheduler
     if (timerInterval) clearInterval(timerInterval);
-    setButtonState("stopped");
+    setButtonState(“stopped”);
     // Bus remains active for reverb tail
   }
 
@@ -848,11 +858,11 @@
   // EXPORT WAV (Full Logic)
   // =========================
   async function renderWavExport() {
-    if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
+    if (!sessionSnapshot?.seed) { alert(“Press Play once first.”); return; }
     setSeed(sessionSnapshot.seed);
 
-    const durationInput = $("songDuration")?.value ?? "60";
-    const exportDuration = (durationInput === "infinite") ? 180 : Math.min(180, parseFloat(durationInput));
+    const durationInput = $(“songDuration”)?.value ?? “60”;
+    const exportDuration = (durationInput === “infinite”) ? 180 : Math.min(180, parseFloat(durationInput));
     const sampleRate = 44100;
     const offlineCtx = new OfflineAudioContext(2, sampleRate * exportDuration, sampleRate);
 
@@ -865,7 +875,7 @@
     const offlineReverb = offlineCtx.createConvolver();
     offlineReverb.buffer = createImpulseResponse(offlineCtx); 
     const offlineReverbLP = offlineCtx.createBiquadFilter();
-    offlineReverbLP.type = "lowpass";
+    offlineReverbLP.type = “lowpass”;
     offlineReverbLP.frequency.value = 4200;
     offlineReverbLP.Q.value = 0.7;
     const offlineSend = offlineCtx.createGain();
@@ -885,8 +895,8 @@
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
     let localArcPos = -1;
     let localTension = 0.0;
-    let localLastCadenceType = "none";
-    let localCadenceType = "none";
+    let localLastCadenceType = “none”;
+    let localCadenceType = “none”;
     let localLastDroneStart = -9999;
     let localLastDroneDur = 0;
     let usedSnapshotArc = false;
@@ -906,7 +916,7 @@
     localStartNewArc();
 
     const exportDensity = sessionSnapshot.density;
-    let baseFreq = Number($("tone")?.value ?? 110);
+    let baseFreq = Number($(“tone”)?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(100, Math.min(200, baseFreq));
 
@@ -924,7 +934,7 @@
     }
     function localCadenceRepeatPenalty(type) {
       if (type !== localLastCadenceType) return 0.0;
-      if (type === "authentic") return 0.30;
+      if (type === “authentic”) return 0.30;
       return 0.18;
     }
     function localPickCadenceType() {
@@ -940,7 +950,7 @@
       const keys = Object.keys(w); const sum = keys.reduce((a, k) => a + w[k], 0);
       let r = rand() * sum;
       for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
-      return "authentic";
+      return “authentic”;
     }
     function localUpdateHarmony() {
       const r = rand();
@@ -1017,16 +1027,12 @@
           if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
           if (chance(0.35)) localIdx += deltaEnd;
           else if (chance(0.25)) localIdx += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
-          if (ct === "authentic") localTension = clamp01(localTension - 0.22);
+          if (ct === “authentic”) localTension = clamp01(localTension - 0.22);
           else localTension = clamp01(localTension + 0.10);
           localLastCadenceType = ct;
         }
       } else {
-        // --- OFFLINE GRAVITY WALLS ---
-        let upChance = 0.5;
-        if (localIdx >= 7) upChance = 0.15;
-        else if (localIdx <= -7) upChance = 0.85;
-        localIdx += (rand() < upChance ? 1 : -1);
+        localIdx += (rand() < 0.5 ? 1 : -1);
       }
 
       const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
@@ -1045,11 +1051,11 @@
 
       if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
         let droneRootDegree = 0;
-        const ct = localCadenceType || "authentic";
+        const ct = localCadenceType || “authentic”;
         if (!isArcStart && !isClimax) {
-          if (ct === "half") droneRootDegree = 4;
-          else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
-          else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
+          if (ct === “half”) droneRootDegree = 4;
+          else if (ct === “deceptive”) droneRootDegree = chance(0.6) ? 0 : 5;
+          else if (ct === “plagal”) droneRootDegree = chance(0.6) ? 3 : 0;
         }
         const melodyDegNow = localDegreeFromIdx(localIdx);
         const useThirdColor = shouldUseThirdDrone({
@@ -1068,8 +1074,7 @@
         let droneDur = isArcStart ? 32.0 : 22.0;
         localLastDroneStart = t0; localLastDroneDur = droneDur;
         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
-        const quality = localMinor ? "min" : "maj";
-        
+        const quality = localMinor ? “min” : “maj”;
         scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
@@ -1088,14 +1093,14 @@
     const renderedBuffer = await offlineCtx.startRendering();
     const wavBlob = bufferToWave(renderedBuffer, exportDuration * sampleRate);
     const url = URL.createObjectURL(wavBlob);
-    const a = document.createElement("a");
-    a.style.display = "none";
+    const a = document.createElement(“a”);
+    a.style.display = “none”;
     a.href = url;
-    a.download = `open-final-v87-${Date.now()}.wav`;
+    a.download = `open-final-v62-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
-    announce("WAV downloaded");
+    announce(“WAV downloaded”);
   }
 
   function bufferToWave(abuffer, len) {
@@ -1127,53 +1132,53 @@
       }
       offset++;
     }
-    return new Blob([buffer], { type: "audio/wav" });
+    return new Blob([buffer], { type: “audio/wav” });
   }
 
   // =========================
   // INIT & LISTENERS
   // =========================
-  document.addEventListener("DOMContentLoaded", () => {
+  document.addEventListener(“DOMContentLoaded”, () => {
     if (isLauncherPage()) {
-      $("launchPlayer")?.addEventListener("click", launchPlayer);
+      $(“launchPlayer”)?.addEventListener(“click”, launchPlayer);
       return;
     }
     if (!isPlayerPage()) return;
 
-    $("playNow")?.addEventListener("click", startFromUI);
-    $("stop")?.addEventListener("click", () => stopAllManual(false));
+    $(“playNow”)?.addEventListener(“click”, startFromUI);
+    $(“stop”)?.addEventListener(“click”, () => stopAllManual(false));
 
     applyControls(loadState());
 
-    $("tone")?.addEventListener("input", (e) => {
-      if ($("hzReadout")) $("hzReadout").textContent = e.target.value;
+    $(“tone”)?.addEventListener(“input”, (e) => {
+      if ($(“hzReadout”)) $(“hzReadout”).textContent = e.target.value;
       saveState(readControls());
     });
-    $("songDuration")?.addEventListener("change", () => saveState(readControls()));
+    $(“songDuration”)?.addEventListener(“change”, () => saveState(readControls()));
 
-    document.addEventListener("keydown", (e) => {
+    document.addEventListener(“keydown”, (e) => {
       if (isTypingTarget(e.target)) return;
-      const k = (e.key || "").toLowerCase();
-      if(e.shiftKey && k === "r") toggleRecording();
-      if(e.shiftKey && k === "e") renderWavExport();
+      const k = (e.key || “”).toLowerCase();
+      if(e.shiftKey && k === “r”) toggleRecording();
+      if(e.shiftKey && k === “e”) renderWavExport();
     });
 
     // Patch 1: Robust Background Stop (Mobile Only)
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    window.addEventListener("pagehide", handleVisibilityChange, { capture: true });
-    window.addEventListener("blur", handleVisibilityChange, { capture: true });
-    if (document.addEventListener) document.addEventListener("freeze", handleVisibilityChange, { capture: true });
+    document.addEventListener(“visibilitychange”, handleVisibilityChange);
+    window.addEventListener(“pagehide”, handleVisibilityChange, { capture: true });
+    window.addEventListener(“blur”, handleVisibilityChange, { capture: true });
+    if (document.addEventListener) document.addEventListener(“freeze”, handleVisibilityChange, { capture: true });
 
     // iOS Back-Forward Cache Restore
-    window.addEventListener("pageshow", (e) => {
+    window.addEventListener(“pageshow”, (e) => {
       if (isMobileDevice() && e.persisted) {
         closeCtxAfterStop = true;
-        stopAllManual(true, "Reset (restore)");
+        stopAllManual(true, “Reset (restore)”);
         closeCtxAfterStop = false;
       }
     }, { capture: true });
 
-    setButtonState("stopped");
+    setButtonState(“stopped”);
     setRecordUI(false);
   });
 
@@ -1181,21 +1186,20 @@
   function handleVisibilityChange(e) {
     if (!isMobileDevice()) return; // Desktop is safe
 
-    const type = e?.type || "";
+    const type = e?.type || “”;
     const isBackgrounding =
       document.hidden ||
-      type === "pagehide" ||
-      type === "freeze" ||
-      type === "blur";
+      type === “pagehide” ||
+      type === “freeze” ||
+      type === “blur”;
 
     if (!isBackgrounding) return;
 
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
-      stopAllManual(true, "Stopped (background)");
+      stopAllManual(true, “Stopped (background)”);
       closeCtxAfterStop = false;
     }
   }
 
 })();
-// --- END OF SCRIPT ---
