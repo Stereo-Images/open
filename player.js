@@ -1,10 +1,10 @@
+// --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v62 (Surgical iOS Patch)
-   - Mobile: Aggressive Hard Stop + Context Close on background.
-   - Fix 1: Bridge tracks released properly (stops phantom CPU).
-   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
-   - Fix 3: Background stop catches tails/fades too.
-   - Desktop: Continuous play (background safe).
+   OPEN — v87 (The Pure Neroli Cut)
+   - Base: v62 (Continuous playback, pure generative, mobile safe)
+   - Tones: Consistent 2.0 FM ratio with resonant filter "ping".
+   - Range: "Soft walls" apply gravity to the random walk, forcing 
+     the melody to stay in low/mid registers without teleporting.
    ============================================================ */
 
 (() => {
@@ -21,15 +21,15 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v62";
+  const STATE_KEY = "open_player_settings_v87";
 
   // =========================
   // TUNING
   // =========================
-  const MELODY_FLOOR_HZ = 220;    // A3
+  const MELODY_FLOOR_HZ = 146.83; // D3 - Lowered to allow deeper wandering
   const DRONE_FLOOR_HZ  = 87.31;  // F2
   const DRONE_GAIN_MULT = 0.70;
-  const MASTER_VOL = 0.30;
+  const MASTER_VOL = 0.35;        // Slightly boosted for the darker tone
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
@@ -461,65 +461,48 @@
   }
 
   // =========================
-  // SYNTH
+  // SYNTH ENGINES (NEROLI MIX)
   // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-    const numVoices = 2 + Math.floor(rand() * 2);
-    let totalAmp = 0;
-    const isFractured = (tensionAmt > 0.75);
-    const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
-    const ratioFuzz = isFractured ? 0.08 : 0.0;
+    const carrier = trackNode(ctx, ctx.createOscillator());
+    const modulator = trackNode(ctx, ctx.createOscillator());
+    const modGain = trackNode(ctx, ctx.createGain());
+    const ampGain = trackNode(ctx, ctx.createGain());
+    const filter = trackNode(ctx, ctx.createBiquadFilter());
 
-    const voices = Array.from({ length: numVoices }, () => {
-      let mRatio = isFractured
-        ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
-        : (1.5 + rand() * 2.5);
-      if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
-      const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
-      const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
-      totalAmp += v.amp;
-      return v;
-    });
+    // Consistent, warm FM Ratio (2.0 = exact octave)
+    carrier.frequency.value = freq;
+    modulator.frequency.value = freq * 2.0;
 
-    voices.forEach(voice => {
-      // Patch 3: Context-aware tracking
-      const carrier = trackNode(ctx, ctx.createOscillator());
-      const modulator = trackNode(ctx, ctx.createOscillator());
-      const modGain = trackNode(ctx, ctx.createGain());
-      const ampGain = trackNode(ctx, ctx.createGain());
-      const filter = trackNode(ctx, ctx.createBiquadFilter());
+    // Mod Envelope: Creates the subtle "ping" attack
+    modGain.gain.setValueAtTime(freq * 1.5, time);
+    modGain.gain.exponentialRampToValueAtTime(1, time + 0.4);
 
-      filter.type = "lowpass";
-      filter.frequency.value = Math.min(freq * 3.5, 6000);
-      filter.Q.value = 0.6;
+    // Amp Envelope: Soft attack, long natural decay
+    ampGain.gain.setValueAtTime(0.0001, time);
+    ampGain.gain.exponentialRampToValueAtTime(volume * 1.2, time + 0.05);
+    ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-      const drift = (rand() - 0.5) * (2 + (instability * (isFractured ? 15 : 10)));
-      carrier.frequency.value = freq + drift;
-      modulator.frequency.value = freq * voice.modRatio;
+    // Resonant Filter Sweep: High Q to cut through the dark mix
+    filter.type = "lowpass";
+    filter.Q.value = 3.5; 
+    filter.frequency.setValueAtTime(freq * 2.5, time); 
+    filter.frequency.exponentialRampToValueAtTime(freq * 1.1, time + 0.2); 
 
-      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
+    modulator.connect(modGain);
+    modGain.connect(carrier.frequency);
+    carrier.connect(ampGain);
+    ampGain.connect(filter);
+    filter.connect(destination);
+    filter.connect(wetSend);
 
-      ampGain.gain.setValueAtTime(0.0001, time);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
-
-      modulator.connect(modGain);
-      modGain.connect(carrier.frequency);
-      carrier.connect(ampGain);
-      ampGain.connect(filter);
-      filter.connect(destination);
-      filter.connect(wetSend);
-
-      modulator.start(time); carrier.start(time);
-      modulator.stop(time + duration); carrier.stop(time + duration);
-    });
+    modulator.start(time); carrier.start(time);
+    modulator.stop(time + duration); carrier.stop(time + duration);
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
-    // Patch 3: Context-aware tracking
     const carrier = trackNode(ctx, ctx.createOscillator());
     const modulator = trackNode(ctx, ctx.createOscillator());
     const modGain = trackNode(ctx, ctx.createGain());
@@ -540,8 +523,9 @@
     ampGain.gain.exponentialRampToValueAtTime(volume, time + 2.0); 
     ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
+    // Slightly darker cutoff for the drones to let the bells breathe
     lp.type = "lowpass";
-    lp.frequency.setValueAtTime(600, time);
+    lp.frequency.setValueAtTime(500, time);
     lp.Q.value = 0.6;
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
@@ -677,7 +661,13 @@
              lastCadenceType = ct;
           }
       } else {
-          patternIdxA += (rand() < 0.5 ? 1 : -1);
+          // --- GRAVITY WALLS ---
+          // Step-by-step random walk with soft limits to trap the tone in low registers
+          let upChance = 0.5;
+          if (patternIdxA >= 7) upChance = 0.15; // Heavily favor walking down if getting high
+          else if (patternIdxA <= -7) upChance = 0.85; // Heavily favor walking up if too low
+          
+          patternIdxA += (rand() < upChance ? 1 : -1);
       }
       
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
@@ -1032,7 +1022,11 @@
           localLastCadenceType = ct;
         }
       } else {
-        localIdx += (rand() < 0.5 ? 1 : -1);
+        // --- OFFLINE GRAVITY WALLS ---
+        let upChance = 0.5;
+        if (localIdx >= 7) upChance = 0.15;
+        else if (localIdx <= -7) upChance = 0.85;
+        localIdx += (rand() < upChance ? 1 : -1);
       }
 
       const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
@@ -1075,6 +1069,7 @@
         localLastDroneStart = t0; localLastDroneDur = droneDur;
         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
         const quality = localMinor ? "min" : "maj";
+        
         scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
@@ -1096,7 +1091,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v62-${Date.now()}.wav`;
+    a.download = `open-final-v87-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1203,3 +1198,4 @@
   }
 
 })();
+// --- END OF SCRIPT ---
