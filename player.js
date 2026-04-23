@@ -1,10 +1,11 @@
+// --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v62 (Surgical iOS Patch)
-   - Mobile: Aggressive Hard Stop + Context Close on background.
-   - Fix 1: Bridge tracks released properly (stops phantom CPU).
-   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
-   - Fix 3: Background stop catches tails/fades too.
-   - Desktop: Continuous play (background safe).
+   OPEN — v63 (High Frequency Ceiling Patch)
+   - Base: v62 (Continuous play, aggressive iOS background safety).
+   - Fix 1: Added "Gravity" to the random walk. The melody now 
+     naturally resists wandering into the higher octaves.
+   - Fix 2: Added a Hard Ceiling to cadence jumps to completely 
+     prevent disruptive high frequencies.
    ============================================================ */
 
 (() => {
@@ -21,7 +22,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v62";
+  const STATE_KEY = "open_player_settings_v63";
 
   // =========================
   // TUNING
@@ -677,9 +678,21 @@
              lastCadenceType = ct;
           }
       } else {
-          patternIdxA += (rand() < 0.5 ? 1 : -1);
+          // --- HIGH FREQUENCY CAP: GRAVITY RULE ---
+          // Dynamically adjust the random walk probability.
+          // If it climbs >1 octave up (+8), strictly force it downwards (95% chance).
+          // If it drops low, bounce it back up.
+          let upChance = 0.5;
+          if (patternIdxA >= 8) upChance = 0.05; // Gravity takes hold
+          else if (patternIdxA <= -7) upChance = 0.85; // Floor bounce
+          
+          patternIdxA += (rand() < upChance ? 1 : -1);
       }
       
+      // --- HIGH FREQUENCY CAP: HARD CEILING ---
+      // Ensures that a cadence jump doesn't bypass the gravity rule
+      if (patternIdxA > 12) patternIdxA -= 7;
+
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
       const wantLT = cadencePlan ? cadencePlan.wantLT : false;
       const degNow = degreeFromIdx(patternIdxA);
@@ -1032,8 +1045,15 @@
           localLastCadenceType = ct;
         }
       } else {
-        localIdx += (rand() < 0.5 ? 1 : -1);
+        // --- HIGH FREQUENCY CAP: GRAVITY RULE (OFFLINE) ---
+        let upChance = 0.5;
+        if (localIdx >= 8) upChance = 0.05;
+        else if (localIdx <= -7) upChance = 0.85;
+        localIdx += (rand() < upChance ? 1 : -1);
       }
+
+      // --- HIGH FREQUENCY CAP: HARD CEILING (OFFLINE) ---
+      if (localIdx > 12) localIdx -= 7;
 
       const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
       const wantLT = plan ? plan.wantLT : false;
@@ -1096,7 +1116,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v62-${Date.now()}.wav`;
+    a.download = `open-final-v63-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1203,3 +1223,4 @@
   }
 
 })();
+// --- END OF SCRIPT ---
