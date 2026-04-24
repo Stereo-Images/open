@@ -1,10 +1,10 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v65 (The Ambient Glass Ceiling)
-   - Base: v62 (Continuous play, mobile safety, high-fi export).
-   - Update: MELODY_CEILING_HZ raised to C5 (523.25 Hz) for a 
-     touch more breathing room and emotional lift without harshness.
-   - Retains: Hz-based Gravity and Hard Folding from v64.
+   OPEN — v66 (The C6 Expansion)
+   - Base: v65 (Continuous play, mobile safety, high-fi export).
+   - Update: MELODY_CEILING_HZ raised an octave to C6 (1046.50 Hz).
+     This opens up the "crystalline" register for the bells while 
+     still using gravity to prevent painful, piercing frequencies.
    ============================================================ */
 
 (() => {
@@ -21,14 +21,14 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v65";
+  const STATE_KEY = "open_player_settings_v66";
 
   // =========================
   // TUNING & THRESHOLDS
   // =========================
-  const MELODY_FLOOR_HZ   = 110.00; // A2 - Deep fundamental range
-  const MELODY_CEILING_HZ = 523.25; // C5 - The Ambient Glass Ceiling
-  const DRONE_FLOOR_HZ    = 87.31;  // F2
+  const MELODY_FLOOR_HZ   = 110.00;  // A2 - Deep fundamental range
+  const MELODY_CEILING_HZ = 1046.50; // C6 - The Crystalline Ceiling
+  const DRONE_FLOOR_HZ    = 87.31;   // F2
   const DRONE_GAIN_MULT   = 0.70;
   const MASTER_VOL        = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
@@ -459,60 +459,45 @@
   }
 
   // =========================
-  // SYNTH
+  // SYNTH ENGINES 
   // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-    const numVoices = 2 + Math.floor(rand() * 2);
-    let totalAmp = 0;
-    const isFractured = (tensionAmt > 0.75);
-    const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
-    const ratioFuzz = isFractured ? 0.08 : 0.0;
+    const carrier = trackNode(ctx, ctx.createOscillator());
+    const modulator = trackNode(ctx, ctx.createOscillator());
+    const modGain = trackNode(ctx, ctx.createGain());
+    const ampGain = trackNode(ctx, ctx.createGain());
+    const filter = trackNode(ctx, ctx.createBiquadFilter());
 
-    const voices = Array.from({ length: numVoices }, () => {
-      let mRatio = isFractured
-        ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
-        : (1.5 + rand() * 2.5);
-      if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
-      const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
-      const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
-      totalAmp += v.amp;
-      return v;
-    });
+    // Consistent, warm FM Ratio (2.0 = exact octave)
+    carrier.frequency.value = freq;
+    modulator.frequency.value = freq * 2.0;
 
-    voices.forEach(voice => {
-      const carrier = trackNode(ctx, ctx.createOscillator());
-      const modulator = trackNode(ctx, ctx.createOscillator());
-      const modGain = trackNode(ctx, ctx.createGain());
-      const ampGain = trackNode(ctx, ctx.createGain());
-      const filter = trackNode(ctx, ctx.createBiquadFilter());
+    // Mod Envelope: Creates the subtle "ping" attack
+    modGain.gain.setValueAtTime(freq * 1.5, time);
+    modGain.gain.exponentialRampToValueAtTime(1, time + 0.4);
 
-      filter.type = "lowpass";
-      filter.frequency.value = Math.min(freq * 3.5, 6000);
-      filter.Q.value = 0.6;
+    // Amp Envelope: Soft attack, long natural decay
+    ampGain.gain.setValueAtTime(0.0001, time);
+    ampGain.gain.exponentialRampToValueAtTime(volume * 1.2, time + 0.05);
+    ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
-      const drift = (rand() - 0.5) * (2 + (instability * (isFractured ? 15 : 10)));
-      carrier.frequency.value = freq + drift;
-      modulator.frequency.value = freq * voice.modRatio;
+    // Resonant Filter Sweep: High Q to cut through the dark mix
+    filter.type = "lowpass";
+    filter.Q.value = 3.5; 
+    filter.frequency.setValueAtTime(freq * 2.5, time); 
+    filter.frequency.exponentialRampToValueAtTime(freq * 1.1, time + 0.2); 
 
-      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
+    modulator.connect(modGain);
+    modGain.connect(carrier.frequency);
+    carrier.connect(ampGain);
+    ampGain.connect(filter);
+    filter.connect(destination);
+    filter.connect(wetSend);
 
-      ampGain.gain.setValueAtTime(0.0001, time);
-      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
-      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
-
-      modulator.connect(modGain);
-      modGain.connect(carrier.frequency);
-      carrier.connect(ampGain);
-      ampGain.connect(filter);
-      filter.connect(destination);
-      filter.connect(wetSend);
-
-      modulator.start(time); carrier.start(time);
-      modulator.stop(time + duration); carrier.stop(time + duration);
-    });
+    modulator.start(time); carrier.start(time);
+    modulator.stop(time + duration); carrier.stop(time + duration);
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
@@ -537,7 +522,7 @@
     ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
     lp.type = "lowpass";
-    lp.frequency.setValueAtTime(600, time);
+    lp.frequency.setValueAtTime(500, time);
     lp.Q.value = 0.6;
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
@@ -784,6 +769,7 @@
 
     if (!isBackgrounding) return;
 
+    // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
@@ -866,7 +852,7 @@
 
   function beginNaturalEnd() {
     isEndingNaturally = true;
-    isPlaying = false;
+    isPlaying = false; 
     if (timerInterval) clearInterval(timerInterval);
     setButtonState("stopped");
   }
@@ -906,6 +892,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
+    // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -1126,7 +1113,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v65-${Date.now()}.wav`;
+    a.download = `open-final-v66-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
