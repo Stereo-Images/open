@@ -1,11 +1,12 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v63 (High Frequency Ceiling Patch)
-   - Base: v62 (Continuous play, aggressive iOS background safety).
-   - Fix 1: Added "Gravity" to the random walk. The melody now 
-     naturally resists wandering into the higher octaves.
-   - Fix 2: Added a Hard Ceiling to cadence jumps to completely 
-     prevent disruptive high frequencies.
+   OPEN — v64 (Absolute Hz Thresholds & Gravity)
+   - Base: v62 (Continuous play, mobile safety, high-fi export).
+   - Fix 1: Added `MELODY_CEILING_HZ` (415.30 Hz).
+   - Fix 2: Lowered `MELODY_FLOOR_HZ` to 110 Hz (A2) to give the 
+     algorithm 2 octaves to breathe beneath the new ceiling.
+   - Fix 3: Implemented Hz-based Gravity and Hard Folding to 
+     keep the random walk fluid but strictly contained.
    ============================================================ */
 
 (() => {
@@ -22,15 +23,16 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v63";
+  const STATE_KEY = "open_player_settings_v64";
 
   // =========================
-  // TUNING
+  // TUNING & THRESHOLDS
   // =========================
-  const MELODY_FLOOR_HZ = 220;    // A3
-  const DRONE_FLOOR_HZ  = 87.31;  // F2
-  const DRONE_GAIN_MULT = 0.70;
-  const MASTER_VOL = 0.30;
+  const MELODY_FLOOR_HZ   = 110.00; // A2 - Lowered so the melody has room to breathe
+  const MELODY_CEILING_HZ = 415.30; // G#4 / Ab4 - The Absolute Upper Threshold
+  const DRONE_FLOOR_HZ    = 87.31;  // F2
+  const DRONE_GAIN_MULT   = 0.70;
+  const MASTER_VOL        = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
@@ -154,11 +156,10 @@
   let bus = null;
   let bridgeAudioEl = null;
 
-  // Active node tracking (Patch 3: Context Aware)
+  // Active node tracking
   const activeNodes = new Set();
   
   function trackNode(ctx, n) {
-    // Only track LIVE nodes. Do not track Offline/Export nodes.
     if (n && ctx === audioContext) activeNodes.add(n);
     return n;
   }
@@ -197,9 +198,7 @@
   function createImpulseResponse(ctx) {
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
     
-    // Patch 5 (Optional): Shorter IR on mobile to save CPU
     const duration = isMobileDevice() ? 4.0 : 10.0;
-    
     const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
@@ -226,7 +225,6 @@
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
     
-    // Patch 2: Release bridge stream (Crucial for iOS)
     if (bridgeAudioEl?.srcObject) {
       try { bridgeAudioEl.pause(); } catch {}
       try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
@@ -485,7 +483,6 @@
     });
 
     voices.forEach(voice => {
-      // Patch 3: Context-aware tracking
       const carrier = trackNode(ctx, ctx.createOscillator());
       const modulator = trackNode(ctx, ctx.createOscillator());
       const modGain = trackNode(ctx, ctx.createGain());
@@ -520,7 +517,6 @@
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
-    // Patch 3: Context-aware tracking
     const carrier = trackNode(ctx, ctx.createOscillator());
     const modulator = trackNode(ctx, ctx.createOscillator());
     const modGain = trackNode(ctx, ctx.createGain());
@@ -612,6 +608,14 @@
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
+          
+          // Fold down if approaching end note is too high
+          while (fEnd > MELODY_CEILING_HZ && patternIdxA > 0) {
+              patternIdxA -= 7;
+              fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+              fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
+          }
+          
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
@@ -678,27 +682,36 @@
              lastCadenceType = ct;
           }
       } else {
-          // --- HIGH FREQUENCY CAP: GRAVITY RULE ---
-          // Dynamically adjust the random walk probability.
-          // If it climbs >1 octave up (+8), strictly force it downwards (95% chance).
-          // If it drops low, bounce it back up.
+          // --- HZ GRAVITY ENGINE ---
+          // Evaluate what the frequency would be if we stayed here
+          let currentEvalFreq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           let upChance = 0.5;
-          if (patternIdxA >= 8) upChance = 0.05; // Gravity takes hold
-          else if (patternIdxA <= -7) upChance = 0.85; // Floor bounce
           
+          if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) {
+              // As it gets within 20% of the ceiling, apply massive gravity
+              upChance = 0.10;
+          } else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) {
+              // Bounce away from the floor
+              upChance = 0.90;
+          }
           patternIdxA += (rand() < upChance ? 1 : -1);
       }
       
-      // --- HIGH FREQUENCY CAP: HARD CEILING ---
-      // Ensures that a cadence jump doesn't bypass the gravity rule
-      if (patternIdxA > 12) patternIdxA -= 7;
-
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
       const wantLT = cadencePlan ? cadencePlan.wantLT : false;
       const degNow = degreeFromIdx(patternIdxA);
       const raiseLT = isMinor && isCadence && wantLT && (degNow === 6);
 
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
+      
+      // --- THE HARD CEILING FOLD ---
+      // If a cadence forced a jump that broke through the ceiling, fold it down an octave
+      while (freq > MELODY_CEILING_HZ && patternIdxA > 0) {
+          patternIdxA -= 7;
+          freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
+      }
+      
+      // Enforce absolute floor
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       // Drone Logic
@@ -1045,15 +1058,15 @@
           localLastCadenceType = ct;
         }
       } else {
-        // --- HIGH FREQUENCY CAP: GRAVITY RULE (OFFLINE) ---
+        // --- HZ GRAVITY ENGINE (OFFLINE) ---
+        let currentEvalFreq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
         let upChance = 0.5;
-        if (localIdx >= 8) upChance = 0.05;
-        else if (localIdx <= -7) upChance = 0.85;
+        
+        if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) upChance = 0.10;
+        else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) upChance = 0.90;
+        
         localIdx += (rand() < upChance ? 1 : -1);
       }
-
-      // --- HIGH FREQUENCY CAP: HARD CEILING (OFFLINE) ---
-      if (localIdx > 12) localIdx -= 7;
 
       const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
       const wantLT = plan ? plan.wantLT : false;
@@ -1061,6 +1074,12 @@
       const raiseLT = localMinor && isCadence && wantLT && (degNow === 6);
 
       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
+      
+      // --- THE HARD CEILING FOLD (OFFLINE) ---
+      while (freq > MELODY_CEILING_HZ && localIdx > 0) {
+          localIdx -= 7;
+          freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
+      }
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
@@ -1116,7 +1135,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v63-${Date.now()}.wav`;
+    a.download = `open-final-v64-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1215,6 +1234,7 @@
 
     if (!isBackgrounding) return;
 
+    // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
