@@ -1,12 +1,10 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v64 (Absolute Hz Thresholds & Gravity)
+   OPEN — v65 (The Ambient Glass Ceiling)
    - Base: v62 (Continuous play, mobile safety, high-fi export).
-   - Fix 1: Added `MELODY_CEILING_HZ` (415.30 Hz).
-   - Fix 2: Lowered `MELODY_FLOOR_HZ` to 110 Hz (A2) to give the 
-     algorithm 2 octaves to breathe beneath the new ceiling.
-   - Fix 3: Implemented Hz-based Gravity and Hard Folding to 
-     keep the random walk fluid but strictly contained.
+   - Update: MELODY_CEILING_HZ raised to C5 (523.25 Hz) for a 
+     touch more breathing room and emotional lift without harshness.
+   - Retains: Hz-based Gravity and Hard Folding from v64.
    ============================================================ */
 
 (() => {
@@ -23,13 +21,13 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v64";
+  const STATE_KEY = "open_player_settings_v65";
 
   // =========================
   // TUNING & THRESHOLDS
   // =========================
-  const MELODY_FLOOR_HZ   = 110.00; // A2 - Lowered so the melody has room to breathe
-  const MELODY_CEILING_HZ = 415.30; // G#4 / Ab4 - The Absolute Upper Threshold
+  const MELODY_FLOOR_HZ   = 110.00; // A2 - Deep fundamental range
+  const MELODY_CEILING_HZ = 523.25; // C5 - The Ambient Glass Ceiling
   const DRONE_FLOOR_HZ    = 87.31;  // F2
   const DRONE_GAIN_MULT   = 0.70;
   const MASTER_VOL        = 0.30;
@@ -203,6 +201,7 @@
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
     const r = mulberry32((sessionSeed ^ 0xC0FFEE) >>> 0);
+    
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
       for (let i = 0; i < length; i++) {
@@ -609,13 +608,13 @@
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
           
-          // Fold down if approaching end note is too high
+          // --- CEILING FOLD ---
           while (fEnd > MELODY_CEILING_HZ && patternIdxA > 0) {
               patternIdxA -= 7;
               fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
               fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
           }
-          
+
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
@@ -683,15 +682,12 @@
           }
       } else {
           // --- HZ GRAVITY ENGINE ---
-          // Evaluate what the frequency would be if we stayed here
           let currentEvalFreq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           let upChance = 0.5;
           
           if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) {
-              // As it gets within 20% of the ceiling, apply massive gravity
               upChance = 0.10;
           } else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) {
-              // Bounce away from the floor
               upChance = 0.90;
           }
           patternIdxA += (rand() < upChance ? 1 : -1);
@@ -704,14 +700,12 @@
 
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
       
-      // --- THE HARD CEILING FOLD ---
-      // If a cadence forced a jump that broke through the ceiling, fold it down an octave
+      // --- CEILING FOLD ---
       while (freq > MELODY_CEILING_HZ && patternIdxA > 0) {
           patternIdxA -= 7;
           freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
       }
       
-      // Enforce absolute floor
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       // Drone Logic
@@ -790,7 +784,6 @@
 
     if (!isBackgrounding) return;
 
-    // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
@@ -862,7 +855,6 @@
         teardownBusHard();
     }
 
-    // Patch 4: True Hard Context Close on Mobile
     if (instant && closeCtxAfterStop && audioContext) {
         try { audioContext.close(); } catch {}
         audioContext = null; 
@@ -874,10 +866,9 @@
 
   function beginNaturalEnd() {
     isEndingNaturally = true;
-    isPlaying = false; // Stop scheduler
+    isPlaying = false;
     if (timerInterval) clearInterval(timerInterval);
     setButtonState("stopped");
-    // Bus remains active for reverb tail
   }
 
   // =========================
@@ -915,7 +906,6 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -1075,11 +1065,12 @@
 
       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
       
-      // --- THE HARD CEILING FOLD (OFFLINE) ---
+      // --- CEILING FOLD (OFFLINE) ---
       while (freq > MELODY_CEILING_HZ && localIdx > 0) {
           localIdx -= 7;
           freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
       }
+      
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
@@ -1135,7 +1126,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v64-${Date.now()}.wav`;
+    a.download = `open-final-v65-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1234,7 +1225,6 @@
 
     if (!isBackgrounding) return;
 
-    // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
