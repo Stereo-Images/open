@@ -1,10 +1,12 @@
+// --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v62 (Surgical iOS Patch)
-   - Mobile: Aggressive Hard Stop + Context Close on background.
-   - Fix 1: Bridge tracks released properly (stops phantom CPU).
-   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
-   - Fix 3: Background stop catches tails/fades too.
-   - Desktop: Continuous play (background safe).
+   OPEN — v69 (The G#4 Root Ceiling)
+   - Base: Pure v62 generative engine. Wild, chaotic FM math retained.
+   - Fix 1: Added a strict MELODY_CEILING_HZ for the root fundamental 
+     at 415.30 Hz (G#4). The FM harmonics will still splash higher.
+   - Fix 2: Lowered MELODY_FLOOR_HZ to 110 Hz (A2) so the random walk 
+     has two full octaves to breathe between the floor and ceiling.
+   - Fix 3: Gravity added to the random walk to keep the drift natural.
    ============================================================ */
 
 (() => {
@@ -21,15 +23,16 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v62";
+  const STATE_KEY = "open_player_settings_v69";
 
   // =========================
   // TUNING
   // =========================
-  const MELODY_FLOOR_HZ = 220;    // A3
-  const DRONE_FLOOR_HZ  = 87.31;  // F2
-  const DRONE_GAIN_MULT = 0.70;
-  const MASTER_VOL = 0.30;
+  const MELODY_FLOOR_HZ   = 110.00; // A2 (Lowered to allow room to wander)
+  const MELODY_CEILING_HZ = 415.30; // G#4 (The Absolute Root Ceiling)
+  const DRONE_FLOOR_HZ    = 87.31;  // F2
+  const DRONE_GAIN_MULT   = 0.70;
+  const MASTER_VOL        = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
@@ -464,6 +467,7 @@
   // SYNTH
   // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
+    // The Fundamental Root is strictly clamped to the Floor
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
     const numVoices = 2 + Math.floor(rand() * 2);
@@ -473,6 +477,7 @@
     const ratioFuzz = isFractured ? 0.08 : 0.0;
 
     const voices = Array.from({ length: numVoices }, () => {
+      // The wild, unconstrained FM math remains exactly as you had it in v62
       let mRatio = isFractured
         ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
         : (1.5 + rand() * 2.5);
@@ -610,7 +615,14 @@
       if (isApproachingEnd && !isEndingNaturally) {
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+          
+          // Fold the end note if it's too high
+          while (fEnd > MELODY_CEILING_HZ && patternIdxA > -14) {
+              patternIdxA -= 7;
+              fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+          }
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
+          
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
@@ -677,7 +689,16 @@
              lastCadenceType = ct;
           }
       } else {
-          patternIdxA += (rand() < 0.5 ? 1 : -1);
+          // --- GRAVITY CHECK ---
+          // Evaluate prospective frequency to apply soft bounds
+          let currentEvalFreq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+          let upChance = 0.5;
+          if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) {
+              upChance = 0.15; // Pull down if nearing G#4
+          } else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) {
+              upChance = 0.85; // Push up if nearing A2
+          }
+          patternIdxA += (rand() < upChance ? 1 : -1);
       }
       
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
@@ -686,6 +707,14 @@
       const raiseLT = isMinor && isCadence && wantLT && (degNow === 6);
 
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
+      
+      // --- HARD CEILING FOLD ---
+      // If a cadence jump crosses the G#4 threshold, fold the octave down
+      while (freq > MELODY_CEILING_HZ && patternIdxA > -14) {
+          patternIdxA -= 7;
+          freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
+      }
+      // Ensure the floor is absolutely respected
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       // Drone Logic
@@ -1032,7 +1061,12 @@
           localLastCadenceType = ct;
         }
       } else {
-        localIdx += (rand() < 0.5 ? 1 : -1);
+        // --- OFFLINE GRAVITY ---
+        let currentEvalFreq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
+        let upChance = 0.5;
+        if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) upChance = 0.15;
+        else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) upChance = 0.85;
+        localIdx += (rand() < upChance ? 1 : -1);
       }
 
       const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
@@ -1041,6 +1075,12 @@
       const raiseLT = localMinor && isCadence && wantLT && (degNow === 6);
 
       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
+      
+      // --- OFFLINE FOLD ---
+      while (freq > MELODY_CEILING_HZ && localIdx > -14) {
+          localIdx -= 7;
+          freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
+      }
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
@@ -1096,7 +1136,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v62-${Date.now()}.wav`;
+    a.download = `open-final-v69-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1203,3 +1243,4 @@
   }
 
 })();
+// --- END OF SCRIPT ---
