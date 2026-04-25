@@ -1,10 +1,10 @@
-// --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v68 (Tethered FM Drift + C6 Gravity)
-   - Base: v67 (C6 Ceiling, A2 Floor, Gravity limits).
-   - Fix: Restored the FM ratio variation from v62 to bring back
-     the organic drift, but bound the randomness between 1.75 
-     and 2.5 to prevent piercing harmonics in the C6 register.
+   OPEN — v62 (Surgical iOS Patch)
+   - Mobile: Aggressive Hard Stop + Context Close on background.
+   - Fix 1: Bridge tracks released properly (stops phantom CPU).
+   - Fix 2: Offline nodes ignored by tracker (stops memory leak).
+   - Fix 3: Background stop catches tails/fades too.
+   - Desktop: Continuous play (background safe).
    ============================================================ */
 
 (() => {
@@ -21,16 +21,15 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v68";
+  const STATE_KEY = "open_player_settings_v62";
 
   // =========================
-  // TUNING & THRESHOLDS
+  // TUNING
   // =========================
-  const MELODY_FLOOR_HZ   = 110.00;  // A2 - Deep fundamental range
-  const MELODY_CEILING_HZ = 1046.50; // C6 - The Crystalline Ceiling
-  const DRONE_FLOOR_HZ    = 87.31;   // F2
-  const DRONE_GAIN_MULT   = 0.70;
-  const MASTER_VOL        = 0.30;
+  const MELODY_FLOOR_HZ = 220;    // A3
+  const DRONE_FLOOR_HZ  = 87.31;  // F2
+  const DRONE_GAIN_MULT = 0.70;
+  const MASTER_VOL = 0.30;
   const REVERB_RETURN_LEVEL = 0.80;
 
   // Scheduler
@@ -154,10 +153,11 @@
   let bus = null;
   let bridgeAudioEl = null;
 
-  // Active node tracking
+  // Active node tracking (Patch 3: Context Aware)
   const activeNodes = new Set();
   
   function trackNode(ctx, n) {
+    // Only track LIVE nodes. Do not track Offline/Export nodes.
     if (n && ctx === audioContext) activeNodes.add(n);
     return n;
   }
@@ -196,12 +196,13 @@
   function createImpulseResponse(ctx) {
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
     
+    // Patch 5 (Optional): Shorter IR on mobile to save CPU
     const duration = isMobileDevice() ? 4.0 : 10.0;
+    
     const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
     const r = mulberry32((sessionSeed ^ 0xC0FFEE) >>> 0);
-    
     for (let ch = 0; ch < 2; ch++) {
       const data = impulse.getChannelData(ch);
       for (let i = 0; i < length; i++) {
@@ -224,6 +225,7 @@
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
     
+    // Patch 2: Release bridge stream (Crucial for iOS)
     if (bridgeAudioEl?.srcObject) {
       try { bridgeAudioEl.pause(); } catch {}
       try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
@@ -459,7 +461,7 @@
   }
 
   // =========================
-  // SYNTH ENGINES 
+  // SYNTH
   // =========================
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
@@ -471,14 +473,9 @@
     const ratioFuzz = isFractured ? 0.08 : 0.0;
 
     const voices = Array.from({ length: numVoices }, () => {
-      // --- TETHERED FM DRIFT ---
-      // We restore the original v62 drift to get organic variation back, 
-      // but constrain the bounds (1.75 to 2.5) so it doesn't generate 
-      // piercingly high math when the note wanders up to C6.
       let mRatio = isFractured
         ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
-        : (1.75 + rand() * 0.75); 
-        
+        : (1.5 + rand() * 2.5);
       if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
       const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
       const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
@@ -487,13 +484,13 @@
     });
 
     voices.forEach(voice => {
+      // Patch 3: Context-aware tracking
       const carrier = trackNode(ctx, ctx.createOscillator());
       const modulator = trackNode(ctx, ctx.createOscillator());
       const modGain = trackNode(ctx, ctx.createGain());
       const ampGain = trackNode(ctx, ctx.createGain());
       const filter = trackNode(ctx, ctx.createBiquadFilter());
 
-      // Filter helps tame the high end further
       filter.type = "lowpass";
       filter.frequency.value = Math.min(freq * 3.5, 6000);
       filter.Q.value = 0.6;
@@ -514,7 +511,7 @@
       carrier.connect(ampGain);
       ampGain.connect(filter);
       filter.connect(destination);
-      if (wetSend) filter.connect(wetSend);
+      filter.connect(wetSend);
 
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
@@ -522,6 +519,7 @@
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
+    // Patch 3: Context-aware tracking
     const carrier = trackNode(ctx, ctx.createOscillator());
     const modulator = trackNode(ctx, ctx.createOscillator());
     const modGain = trackNode(ctx, ctx.createGain());
@@ -613,13 +611,6 @@
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          
-          while (fEnd > MELODY_CEILING_HZ && patternIdxA > 0) {
-              patternIdxA -= 7;
-              fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-              fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          }
-
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
@@ -686,16 +677,7 @@
              lastCadenceType = ct;
           }
       } else {
-          // --- HZ GRAVITY ENGINE ---
-          let currentEvalFreq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-          let upChance = 0.5;
-          
-          if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) {
-              upChance = 0.10;
-          } else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) {
-              upChance = 0.90;
-          }
-          patternIdxA += (rand() < upChance ? 1 : -1);
+          patternIdxA += (rand() < 0.5 ? 1 : -1);
       }
       
       const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
@@ -704,13 +686,6 @@
       const raiseLT = isMinor && isCadence && wantLT && (degNow === 6);
 
       let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
-      
-      // --- CEILING FOLD ---
-      while (freq > MELODY_CEILING_HZ && patternIdxA > 0) {
-          patternIdxA -= 7;
-          freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
-      }
-      
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       // Drone Logic
@@ -789,6 +764,7 @@
 
     if (!isBackgrounding) return;
 
+    // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
@@ -860,6 +836,7 @@
         teardownBusHard();
     }
 
+    // Patch 4: True Hard Context Close on Mobile
     if (instant && closeCtxAfterStop && audioContext) {
         try { audioContext.close(); } catch {}
         audioContext = null; 
@@ -874,6 +851,7 @@
     isPlaying = false; // Stop scheduler
     if (timerInterval) clearInterval(timerInterval);
     setButtonState("stopped");
+    // Bus remains active for reverb tail
   }
 
   // =========================
@@ -911,6 +889,7 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
+    // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -1053,14 +1032,7 @@
           localLastCadenceType = ct;
         }
       } else {
-        // --- HZ GRAVITY ENGINE (OFFLINE) ---
-        let currentEvalFreq = getScaleNote(baseFreq, localIdx, localCircle, localMinor);
-        let upChance = 0.5;
-        
-        if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) upChance = 0.10;
-        else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) upChance = 0.90;
-        
-        localIdx += (rand() < upChance ? 1 : -1);
+        localIdx += (rand() < 0.5 ? 1 : -1);
       }
 
       const plan = localCadenceType ? cadenceTargets(localCadenceType) : null;
@@ -1069,13 +1041,6 @@
       const raiseLT = localMinor && isCadence && wantLT && (degNow === 6);
 
       let freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
-      
-      // --- CEILING FOLD (OFFLINE) ---
-      while (freq > MELODY_CEILING_HZ && localIdx > 0) {
-          localIdx -= 7;
-          freq = getScaleNote(baseFreq, localIdx, localCircle, localMinor, { raiseLeadingTone: raiseLT });
-      }
-      
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
       const isArcStart = (localArcPos === 0 && localPhraseStep === 0);
@@ -1110,81 +1075,15 @@
         localLastDroneStart = t0; localLastDroneDur = droneDur;
         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
         const quality = localMinor ? "min" : "maj";
-        
-        // Export Drones
-        const carrier = trackNode(offlineCtx, offlineCtx.createOscillator());
-        const modulator = trackNode(offlineCtx, offlineCtx.createOscillator());
-        const modGain = trackNode(offlineCtx, offlineCtx.createGain());
-        const ampGain = trackNode(offlineCtx, offlineCtx.createGain());
-        const lp = trackNode(offlineCtx, offlineCtx.createBiquadFilter());
-
-        carrier.type = "sine"; modulator.type = "sine"; carrier.frequency.value = droneRootFreq; modulator.frequency.value = droneRootFreq * 2.0; modulator.detune.value = (rand() - 0.5) * 8; 
-        modGain.gain.setValueAtTime(0, t0); modGain.gain.linearRampToValueAtTime(droneRootFreq * 1.8, t0 + (droneDur * 0.5)); modGain.gain.linearRampToValueAtTime(0, t0 + droneDur);
-        ampGain.gain.setValueAtTime(0.0001, t0); ampGain.gain.exponentialRampToValueAtTime(baseVol * 0.5 * DRONE_GAIN_MULT, t0 + 2.0); ampGain.gain.exponentialRampToValueAtTime(0.0001, t0 + droneDur);
-        lp.type = "lowpass"; lp.frequency.setValueAtTime(600, t0); lp.Q.value = 0.6;
-
-        modulator.connect(modGain); modGain.connect(carrier.frequency); carrier.connect(ampGain); ampGain.connect(lp); 
-        lp.connect(offlineMaster); lp.connect(offlineSend);
-        modulator.start(t0); carrier.start(t0); modulator.stop(t0 + droneDur); carrier.stop(t0 + droneDur);
+        scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12 && localPhraseCount > 0);
       if (!isDroneSolo) {
-        
-        // Export Melody (Tethered FM Drift)
-        const playExportNote = (f, v) => {
-            const numVoices = 2 + Math.floor(rand() * 2);
-            let totalAmp = 0;
-            const isFractured = (localTension > 0.75);
-            const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
-            const ratioFuzz = isFractured ? 0.08 : 0.0;
-
-            const voices = Array.from({ length: numVoices }, () => {
-              let mRatio = isFractured
-                ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
-                : (1.75 + rand() * 0.75); 
-              if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
-              const mIndex = 1.0 + (localTension * 2.0) + (rand() * 3.0);
-              const volVoice = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
-              totalAmp += volVoice.amp;
-              return volVoice;
-            });
-
-            voices.forEach(voice => {
-                const carrier = trackNode(offlineCtx, offlineCtx.createOscillator());
-                const modulator = trackNode(offlineCtx, offlineCtx.createOscillator());
-                const modGain = trackNode(offlineCtx, offlineCtx.createGain());
-                const ampGain = trackNode(offlineCtx, offlineCtx.createGain());
-                const filter = trackNode(offlineCtx, offlineCtx.createBiquadFilter());
-
-                filter.type = "lowpass";
-                filter.frequency.value = Math.min(f * 3.5, 6000);
-                filter.Q.value = 0.6;
-
-                const drift = (rand() - 0.5) * (2 + (pressure * (isFractured ? 15 : 10)));
-                carrier.frequency.value = f + drift;
-                modulator.frequency.value = f * voice.modRatio;
-
-                modGain.gain.setValueAtTime(f * voice.modIndex, localTime);
-                modGain.gain.exponentialRampToValueAtTime(f * 0.01, localTime + (appliedDur * 0.3));
-
-                ampGain.gain.setValueAtTime(0.0001, localTime);
-                ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * v, localTime + 0.01);
-                ampGain.gain.exponentialRampToValueAtTime(0.0001, localTime + appliedDur);
-
-                modulator.connect(modGain); modGain.connect(carrier.frequency);
-                carrier.connect(ampGain); ampGain.connect(filter);
-                filter.connect(offlineMaster); filter.connect(offlineSend);
-
-                modulator.start(localTime); carrier.start(localTime);
-                modulator.stop(localTime + appliedDur); carrier.stop(localTime + appliedDur);
-            });
-        };
-
         if (isCadence && localArcPos === localArcClimaxAt && localPhraseStep === 15) {
-          playExportNote(freq * 2.0, 0.35);
+          scheduleNote(offlineCtx, offlineMaster, offlineSend, freq * 2.0, localTime, appliedDur, 0.35, pressure, localTension);
         }
-        playExportNote(freq, 0.4);
+        scheduleNote(offlineCtx, offlineMaster, offlineSend, freq, localTime, appliedDur, 0.4, pressure, localTension);
       }
 
       localModCount++;
@@ -1197,7 +1096,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v68-${Date.now()}.wav`;
+    a.download = `open-final-v62-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1304,4 +1203,3 @@
   }
 
 })();
-// --- END OF SCRIPT ---
