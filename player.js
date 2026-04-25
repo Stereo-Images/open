@@ -599,7 +599,7 @@
     const noteDur = (1 / runDensity) * 2.5;
 
     if (bus.reverbSend && arcPos !== arcClimaxAt - 1) {
-        let targetSend = 0.65 - (0.25 * clamp01((runDensity - 0.05) / 0.375)); 
+        let targetSend = 0.65 - (0.25 * clamp01((runDensity - 0.05) / 0.2)); 
         targetSend = Math.max(0, Math.min(0.95, targetSend));
         bus.reverbSend.gain.setTargetAtTime(targetSend, now, 2.5); 
     }
@@ -820,7 +820,7 @@
 
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
     setSeed(seed);
-    runDensity = 0.05 + rand() * 0.375;
+    runDensity = 0.05 + rand() * 0.2;
     
     startNewArc();
     sessionSnapshot = { seed, density: runDensity, arcLen, arcClimaxAt };
@@ -1015,7 +1015,7 @@
       let pressure = Math.min(1.0, localModCount / 48.0);
       localUpdateHarmony();
 
-      const normDensity = clamp01((exportDensity - 0.05) / 0.375);
+      const normDensity = clamp01((exportDensity - 0.05) / 0.2);
       let targetSend = 0.65 - (0.25 * normDensity);
       targetSend = Math.max(0, Math.min(0.95, targetSend));
       offlineSend.gain.setValueAtTime(targetSend, localTime);
