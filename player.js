@@ -1,10 +1,10 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v66 (The C6 Expansion)
-   - Base: v65 (Continuous play, mobile safety, high-fi export).
-   - Update: MELODY_CEILING_HZ raised an octave to C6 (1046.50 Hz).
-     This opens up the "crystalline" register for the bells while 
-     still using gravity to prevent painful, piercing frequencies.
+   OPEN — v68 (Tethered FM Drift + C6 Gravity)
+   - Base: v67 (C6 Ceiling, A2 Floor, Gravity limits).
+   - Fix: Restored the FM ratio variation from v62 to bring back
+     the organic drift, but bound the randomness between 1.75 
+     and 2.5 to prevent piercing harmonics in the C6 register.
    ============================================================ */
 
 (() => {
@@ -21,7 +21,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v66";
+  const STATE_KEY = "open_player_settings_v68";
 
   // =========================
   // TUNING & THRESHOLDS
@@ -464,40 +464,61 @@
   function scheduleNote(ctx, destination, wetSend, freq, time, duration, volume, instability = 0, tensionAmt = 0) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-    const carrier = trackNode(ctx, ctx.createOscillator());
-    const modulator = trackNode(ctx, ctx.createOscillator());
-    const modGain = trackNode(ctx, ctx.createGain());
-    const ampGain = trackNode(ctx, ctx.createGain());
-    const filter = trackNode(ctx, ctx.createBiquadFilter());
+    const numVoices = 2 + Math.floor(rand() * 2);
+    let totalAmp = 0;
+    const isFractured = (tensionAmt > 0.75);
+    const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
+    const ratioFuzz = isFractured ? 0.08 : 0.0;
 
-    // Consistent, warm FM Ratio (2.0 = exact octave)
-    carrier.frequency.value = freq;
-    modulator.frequency.value = freq * 2.0;
+    const voices = Array.from({ length: numVoices }, () => {
+      // --- TETHERED FM DRIFT ---
+      // We restore the original v62 drift to get organic variation back, 
+      // but constrain the bounds (1.75 to 2.5) so it doesn't generate 
+      // piercingly high math when the note wanders up to C6.
+      let mRatio = isFractured
+        ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
+        : (1.75 + rand() * 0.75); 
+        
+      if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
+      const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
+      const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
+      totalAmp += v.amp;
+      return v;
+    });
 
-    // Mod Envelope: Creates the subtle "ping" attack
-    modGain.gain.setValueAtTime(freq * 1.5, time);
-    modGain.gain.exponentialRampToValueAtTime(1, time + 0.4);
+    voices.forEach(voice => {
+      const carrier = trackNode(ctx, ctx.createOscillator());
+      const modulator = trackNode(ctx, ctx.createOscillator());
+      const modGain = trackNode(ctx, ctx.createGain());
+      const ampGain = trackNode(ctx, ctx.createGain());
+      const filter = trackNode(ctx, ctx.createBiquadFilter());
 
-    // Amp Envelope: Soft attack, long natural decay
-    ampGain.gain.setValueAtTime(0.0001, time);
-    ampGain.gain.exponentialRampToValueAtTime(volume * 1.2, time + 0.05);
-    ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+      // Filter helps tame the high end further
+      filter.type = "lowpass";
+      filter.frequency.value = Math.min(freq * 3.5, 6000);
+      filter.Q.value = 0.6;
 
-    // Resonant Filter Sweep: High Q to cut through the dark mix
-    filter.type = "lowpass";
-    filter.Q.value = 3.5; 
-    filter.frequency.setValueAtTime(freq * 2.5, time); 
-    filter.frequency.exponentialRampToValueAtTime(freq * 1.1, time + 0.2); 
+      const drift = (rand() - 0.5) * (2 + (instability * (isFractured ? 15 : 10)));
+      carrier.frequency.value = freq + drift;
+      modulator.frequency.value = freq * voice.modRatio;
 
-    modulator.connect(modGain);
-    modGain.connect(carrier.frequency);
-    carrier.connect(ampGain);
-    ampGain.connect(filter);
-    filter.connect(destination);
-    filter.connect(wetSend);
+      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
 
-    modulator.start(time); carrier.start(time);
-    modulator.stop(time + duration); carrier.stop(time + duration);
+      ampGain.gain.setValueAtTime(0.0001, time);
+      ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
+      ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
+
+      modulator.connect(modGain);
+      modGain.connect(carrier.frequency);
+      carrier.connect(ampGain);
+      ampGain.connect(filter);
+      filter.connect(destination);
+      if (wetSend) filter.connect(wetSend);
+
+      modulator.start(time); carrier.start(time);
+      modulator.stop(time + duration); carrier.stop(time + duration);
+    });
   }
 
   function scheduleBassVoice(ctx, destination, wetSend, freq, time, duration, volume) {
@@ -522,7 +543,7 @@
     ampGain.gain.exponentialRampToValueAtTime(0.0001, time + duration);
 
     lp.type = "lowpass";
-    lp.frequency.setValueAtTime(500, time);
+    lp.frequency.setValueAtTime(600, time);
     lp.Q.value = 0.6;
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
@@ -593,7 +614,6 @@
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
           
-          // --- CEILING FOLD ---
           while (fEnd > MELODY_CEILING_HZ && patternIdxA > 0) {
               patternIdxA -= 7;
               fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
@@ -769,7 +789,6 @@
 
     if (!isBackgrounding) return;
 
-    // Patch 3: Stop even if ending naturally, capturing tails
     if (isPlaying || isEndingNaturally || bus) {
       closeCtxAfterStop = true;
       stopAllManual(true, "Stopped (background)");
@@ -852,7 +871,7 @@
 
   function beginNaturalEnd() {
     isEndingNaturally = true;
-    isPlaying = false; 
+    isPlaying = false; // Stop scheduler
     if (timerInterval) clearInterval(timerInterval);
     setButtonState("stopped");
   }
@@ -892,7 +911,6 @@
     offlineReverbLP.connect(offlineReturn);
     offlineReturn.connect(offlineMaster);
 
-    // Export simulation state
     let localPhraseCount = 0;
     let localArcLen = sessionSnapshot.arcLen ?? 6;
     let localArcClimaxAt = sessionSnapshot.arcClimaxAt ?? 4;
@@ -1092,15 +1110,81 @@
         localLastDroneStart = t0; localLastDroneDur = droneDur;
         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
         const quality = localMinor ? "min" : "maj";
-        scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
+        
+        // Export Drones
+        const carrier = trackNode(offlineCtx, offlineCtx.createOscillator());
+        const modulator = trackNode(offlineCtx, offlineCtx.createOscillator());
+        const modGain = trackNode(offlineCtx, offlineCtx.createGain());
+        const ampGain = trackNode(offlineCtx, offlineCtx.createGain());
+        const lp = trackNode(offlineCtx, offlineCtx.createBiquadFilter());
+
+        carrier.type = "sine"; modulator.type = "sine"; carrier.frequency.value = droneRootFreq; modulator.frequency.value = droneRootFreq * 2.0; modulator.detune.value = (rand() - 0.5) * 8; 
+        modGain.gain.setValueAtTime(0, t0); modGain.gain.linearRampToValueAtTime(droneRootFreq * 1.8, t0 + (droneDur * 0.5)); modGain.gain.linearRampToValueAtTime(0, t0 + droneDur);
+        ampGain.gain.setValueAtTime(0.0001, t0); ampGain.gain.exponentialRampToValueAtTime(baseVol * 0.5 * DRONE_GAIN_MULT, t0 + 2.0); ampGain.gain.exponentialRampToValueAtTime(0.0001, t0 + droneDur);
+        lp.type = "lowpass"; lp.frequency.setValueAtTime(600, t0); lp.Q.value = 0.6;
+
+        modulator.connect(modGain); modGain.connect(carrier.frequency); carrier.connect(ampGain); ampGain.connect(lp); 
+        lp.connect(offlineMaster); lp.connect(offlineSend);
+        modulator.start(t0); carrier.start(t0); modulator.stop(t0 + droneDur); carrier.stop(t0 + droneDur);
       }
 
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12 && localPhraseCount > 0);
       if (!isDroneSolo) {
+        
+        // Export Melody (Tethered FM Drift)
+        const playExportNote = (f, v) => {
+            const numVoices = 2 + Math.floor(rand() * 2);
+            let totalAmp = 0;
+            const isFractured = (localTension > 0.75);
+            const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
+            const ratioFuzz = isFractured ? 0.08 : 0.0;
+
+            const voices = Array.from({ length: numVoices }, () => {
+              let mRatio = isFractured
+                ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
+                : (1.75 + rand() * 0.75); 
+              if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
+              const mIndex = 1.0 + (localTension * 2.0) + (rand() * 3.0);
+              const volVoice = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
+              totalAmp += volVoice.amp;
+              return volVoice;
+            });
+
+            voices.forEach(voice => {
+                const carrier = trackNode(offlineCtx, offlineCtx.createOscillator());
+                const modulator = trackNode(offlineCtx, offlineCtx.createOscillator());
+                const modGain = trackNode(offlineCtx, offlineCtx.createGain());
+                const ampGain = trackNode(offlineCtx, offlineCtx.createGain());
+                const filter = trackNode(offlineCtx, offlineCtx.createBiquadFilter());
+
+                filter.type = "lowpass";
+                filter.frequency.value = Math.min(f * 3.5, 6000);
+                filter.Q.value = 0.6;
+
+                const drift = (rand() - 0.5) * (2 + (pressure * (isFractured ? 15 : 10)));
+                carrier.frequency.value = f + drift;
+                modulator.frequency.value = f * voice.modRatio;
+
+                modGain.gain.setValueAtTime(f * voice.modIndex, localTime);
+                modGain.gain.exponentialRampToValueAtTime(f * 0.01, localTime + (appliedDur * 0.3));
+
+                ampGain.gain.setValueAtTime(0.0001, localTime);
+                ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * v, localTime + 0.01);
+                ampGain.gain.exponentialRampToValueAtTime(0.0001, localTime + appliedDur);
+
+                modulator.connect(modGain); modGain.connect(carrier.frequency);
+                carrier.connect(ampGain); ampGain.connect(filter);
+                filter.connect(offlineMaster); filter.connect(offlineSend);
+
+                modulator.start(localTime); carrier.start(localTime);
+                modulator.stop(localTime + appliedDur); carrier.stop(localTime + appliedDur);
+            });
+        };
+
         if (isCadence && localArcPos === localArcClimaxAt && localPhraseStep === 15) {
-          scheduleNote(offlineCtx, offlineMaster, offlineSend, freq * 2.0, localTime, appliedDur, 0.35, pressure, localTension);
+          playExportNote(freq * 2.0, 0.35);
         }
-        scheduleNote(offlineCtx, offlineMaster, offlineSend, freq, localTime, appliedDur, 0.4, pressure, localTension);
+        playExportNote(freq, 0.4);
       }
 
       localModCount++;
@@ -1113,7 +1197,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v66-${Date.now()}.wav`;
+    a.download = `open-final-v68-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
