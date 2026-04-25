@@ -1,12 +1,10 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v69 (The G#4 Root Ceiling)
-   - Base: Pure v62 generative engine. Wild, chaotic FM math retained.
-   - Fix 1: Added a strict MELODY_CEILING_HZ for the root fundamental 
-     at 415.30 Hz (G#4). The FM harmonics will still splash higher.
-   - Fix 2: Lowered MELODY_FLOOR_HZ to 110 Hz (A2) so the random walk 
-     has two full octaves to breathe between the floor and ceiling.
-   - Fix 3: Gravity added to the random walk to keep the drift natural.
+   OPEN — v70 (Release Candidate)
+   - Base: v69 (G#4 Root Ceiling, Tethered FM Drift, Gravity).
+   - Final Polish: Max BPM capped (runDensity variance set to 0.20).
+     Reverb scaling normalized across live and offline renderers 
+     to match the new, spacious timing thresholds.
    ============================================================ */
 
 (() => {
