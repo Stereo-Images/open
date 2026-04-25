@@ -122,7 +122,7 @@
     let toneVal = 110;
     if (state?.tone != null) {
       const n = Number(state.tone);
-      if (Number.isFinite(n)) toneVal = Math.max(100, Math.min(200, n));
+      if (Number.isFinite(n)) toneVal = Math.max(110, Math.min(200, n));
     }
     if (tone) tone.value = String(toneVal);
     if (hzReadout) hzReadout.textContent = String(toneVal);
@@ -592,7 +592,7 @@
 
     let baseFreq = Number($("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
-    baseFreq = Math.max(100, Math.min(200, baseFreq));
+    baseFreq = Math.max(110, Math.min(200, baseFreq));
 
     const noteDur = (1 / runDensity) * 2.5;
 
@@ -945,7 +945,7 @@
     const exportDensity = sessionSnapshot.density;
     let baseFreq = Number($("tone")?.value ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
-    baseFreq = Math.max(100, Math.min(200, baseFreq));
+    baseFreq = Math.max(110, Math.min(200, baseFreq));
 
     const noteDur = (1 / exportDensity) * 2.5;
     let localCircle = 0;
