@@ -4,13 +4,13 @@
 
 [*Open*](https://stereo-images.github.io/open/) began with the sound of cathedral bells drifting through an open window. The sound belonged in that room, and I felt its absence when I moved. That memory became the wellspring for this piece.
 
-Instead of recording bells, I went in the opposite direction: a “window” that’s blank on purpose: a browser window. No particular scene, no particular place, just a clean space for sound to travel through. This music is my way of experiencing what can come through that digital window, and what I can build inside it.
+Instead of recording bells, I went in the opposite direction: a window that’s blank on purpose: a browser window. No particular scene, no particular place, just a clean space for sound to travel through. This music is my way of experiencing what can come through that digital window, and what I can build inside it.
 
-The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* deliberately anchors itself in familiar Western harmonic cadences. This predictability isn't a lack of imagination; it’s a psychoacoustic anchor. Because the chords resolve in comforting, expected ways, your mind is freed to stop tracking the notes and instead focus entirely on the texture—the microscopic detuning of the FM voices, the wild inharmonic smear of the attack, and the physical space of the reverb. The stability of the harmony is precisely what allows the chaos of the bell to be felt.
+The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* deliberately anchors itself in familiar Western harmonic cadences. This predictability isn't a lack of imagination; it’s a psychoacoustic anchor. Because the chords resolve in comforting, expected ways, your mind is freed to stop tracking the notes and instead focus entirely on the texture: the microscopic detuning of the FM voices, the wild inharmonic smear of the attack, and the physical space of the reverb. The stability of the harmony is precisely what allows the chaos of the bell to be felt.
 
 The sounds do not ask for your attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
 
-*Open* is meant to run quietly in the background with minimal fuss: no logins and no accounts—only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
+*Open* is meant to run quietly in the background with minimal fuss: no logins and no accounts, only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
 
 ### "Infinite" Mode & Structure
 When set to "Infinite", the piece creates a non-repeating journey using specific harmonic logic:
