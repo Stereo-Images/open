@@ -8,7 +8,7 @@ Instead of recording bells, I went in the opposite direction: a window that’s 
 
 The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* deliberately anchors itself in familiar Western harmonic cadences. This predictability is an anchor. Because the chords resolve in comforting, expected ways, focus shifts towards the texture: the microscopic detuning of the FM voices, the wild inharmonic smear of the attack, and the physical space of the reverb. The stability of the harmony allows the chaos of the bell to be felt.
 
-The sounds do not ask for your attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
+The sounds do not ask for your full attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
 
 *Open* is meant to run quietly in the background with minimal fuss: no logins and no accounts, only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
 
