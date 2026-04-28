@@ -1,13 +1,14 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v71 (The Anti-Doubling Patch)
-   - Base: v70 (G#4 Root Ceiling, Max BPM capped).
-   - Fix 1: Muted the background bridgeAudioEl to stop a 50ms 
-     slapback echo caused by dual-output rendering.
-   - Fix 2: FM base ratios are now calculated ONCE per note 
-     rather than per-voice, stopping the notes from "splitting."
-   - Fix 3: Removed the explicit octave-doubling chord that was 
-     hard-coded to strike during the phrase climax.
+   OPEN — v72 (The Replay Patch)
+   - Base: v71 (Anti-Doubling).
+   - Fix 1: Added clearTimeout to prevent the Stop fade-out 
+     from accidentally destroying a newly created Play bus.
+   - Fix 2: Reset drone timers on Play so the bass triggers.
+   - Fix 3: Stopped explicitly killing MediaStream tracks on 
+     teardown to prevent iOS/Safari audio output crashes.
+   - Fix 4: Added onended garbage collection to activeNodes 
+     to prevent massive memory leaks on long infinite sessions.
    ============================================================ */
 
 (() => {
@@ -24,13 +25,13 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v71";
+  const STATE_KEY = "open_player_settings_v72";
 
   // =========================
   // TUNING
   // =========================
-  const MELODY_FLOOR_HZ   = 110.00; // A2 (Lowered to allow room to wander)
-  const MELODY_CEILING_HZ = 415.30; // G#4 (The Absolute Root Ceiling)
+  const MELODY_FLOOR_HZ   = 110.00; // A2 
+  const MELODY_CEILING_HZ = 415.30; // G#4 
   const DRONE_FLOOR_HZ    = 87.31;  // F2
   const DRONE_GAIN_MULT   = 0.70;
   const MASTER_VOL        = 0.30;
@@ -41,7 +42,6 @@
   const SCHEDULER_INTERVAL_MS = 80;
   const MAX_EVENTS_PER_TICK = 900;
 
-  // Global flag for mobile hard reset
   let closeCtxAfterStop = false;
 
   // =========================
@@ -69,9 +69,6 @@
     return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || el.isContentEditable === true;
   }
 
-  // =========================
-  // DEVICE DETECTION
-  // =========================
   function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
 
@@ -97,9 +94,6 @@
     );
   }
 
-  // =========================
-  // STATE & CONTROLS
-  // =========================
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
   function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
 
@@ -157,7 +151,6 @@
   let bus = null;
   let bridgeAudioEl = null;
 
-  // Active node tracking (Patch 3: Context Aware)
   const activeNodes = new Set();
   
   function trackNode(ctx, n) {
@@ -188,7 +181,7 @@
     bridgeAudioEl.setAttribute("playsinline", "true");
     bridgeAudioEl.setAttribute("aria-hidden", "true");
     bridgeAudioEl.loop = true;
-    bridgeAudioEl.muted = true; // FIX 1: Prevents dual-audio slapback echo
+    bridgeAudioEl.muted = true; 
     Object.assign(bridgeAudioEl.style, {
       position: "fixed", width: "1px", height: "1px", opacity: "0.01",
       left: "-9999px", zIndex: "-1", pointerEvents: "none"
@@ -226,12 +219,8 @@
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
     
-    if (bridgeAudioEl?.srcObject) {
-      try { bridgeAudioEl.pause(); } catch {}
-      try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
-      try { bridgeAudioEl.srcObject = null; } catch {}
-    }
-
+    // FIX 3: Removed explicit track killing to prevent Safari/iOS media crashes
+    
     bus = null;
   }
 
@@ -375,6 +364,7 @@
   let lastDroneStart = -9999;
   let lastDroneDur = 0;
   let sessionSnapshot = null;
+  let stopFadeTimeout = null; // FIX 1: Tracker for race conditions
 
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
@@ -472,14 +462,12 @@
     const FRACTURE_RATIOS = [Math.SQRT2, 1.618, 2.414, 2.718, 3.1415];
     const ratioFuzz = isFractured ? 0.08 : 0.0;
 
-    // FIX 2: Calculate the base FM ratio ONCE per note so the voices don't split
     const baseRatio = isFractured
       ? FRACTURE_RATIOS[Math.floor(rand() * FRACTURE_RATIOS.length)]
       : (1.5 + rand() * 2.5);
 
     const voices = Array.from({ length: numVoices }, () => {
       let mRatio = baseRatio;
-      // Voices only get a tiny detune to thicken the sound, not a whole new ratio
       if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz; 
       const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
       const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
@@ -516,6 +504,15 @@
       filter.connect(destination);
       filter.connect(wetSend);
 
+      // FIX 4: Garbage collect dead nodes so activeNodes doesn't bloat memory
+      carrier.onended = () => {
+          activeNodes.delete(carrier);
+          activeNodes.delete(modulator);
+          activeNodes.delete(modGain);
+          activeNodes.delete(ampGain);
+          activeNodes.delete(filter);
+      };
+
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
     });
@@ -549,6 +546,14 @@
     modulator.connect(modGain); modGain.connect(carrier.frequency);
     carrier.connect(ampGain); ampGain.connect(lp);
     lp.connect(destination); lp.connect(wetSend);
+
+    carrier.onended = () => {
+        activeNodes.delete(carrier);
+        activeNodes.delete(modulator);
+        activeNodes.delete(modGain);
+        activeNodes.delete(ampGain);
+        activeNodes.delete(lp);
+    };
 
     modulator.start(time); carrier.start(time);
     modulator.stop(time + duration); carrier.stop(time + duration);
@@ -755,7 +760,6 @@
 
       const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
       if (!isDroneSolo) {
-        // FIX 3: Removed explicit octave-doubling chord at the climax
         scheduleNote(audioContext, bus.masterGain, bus.reverbSend, freq, nextTimeA, appliedDur, 0.4, pressure, tension);
       }
 
@@ -764,9 +768,6 @@
     }
   }
 
-  // =========================
-  // PATCH 1: ROBUST BACKGROUND HANDLER
-  // =========================
   function handleVisibilityChange(e) {
     if (!isMobileDevice()) return;
 
@@ -802,6 +803,10 @@
     isApproachingEnd = false;
     patternIdxA = 0; circlePosition = 0; isMinor = false; tension = 0.0;
     notesSinceModulation = 0; arcPos = -1; arcLen = 6; arcClimaxAt = 4;
+    
+    // FIX 2: Reset drone timers so the bass works on replay
+    lastDroneStart = -9999; 
+    lastDroneDur = 0;
 
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
     setSeed(seed);
@@ -832,6 +837,12 @@
     isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
     
+    // FIX 1: Clear the timeout to prevent race-condition bus destruction
+    if (stopFadeTimeout) {
+        clearTimeout(stopFadeTimeout);
+        stopFadeTimeout = null;
+    }
+    
     if (isRecording) {
       try { mediaRecorder?.stop(); } catch {}
       isRecording = false;
@@ -845,7 +856,7 @@
             bus.masterGain.gain.setValueAtTime(bus.masterGain.gain.value, t);
             bus.masterGain.gain.linearRampToValueAtTime(0, t + 0.10);
         } catch {}
-        setTimeout(() => teardownBusHard(), 150);
+        stopFadeTimeout = setTimeout(() => teardownBusHard(), 150);
     } else {
         teardownBusHard();
     }
@@ -1164,7 +1175,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v71-${Date.now()}.wav`;
+    a.download = `open-final-v72-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
@@ -1231,13 +1242,11 @@
       if(e.shiftKey && k === "e") renderWavExport();
     });
 
-    // Patch 1: Robust Background Stop (Mobile Only)
     document.addEventListener("visibilitychange", handleVisibilityChange);
     window.addEventListener("pagehide", handleVisibilityChange, { capture: true });
     window.addEventListener("blur", handleVisibilityChange, { capture: true });
     if (document.addEventListener) document.addEventListener("freeze", handleVisibilityChange, { capture: true });
 
-    // iOS Back-Forward Cache Restore
     window.addEventListener("pageshow", (e) => {
       if (isMobileDevice() && e.persisted) {
         closeCtxAfterStop = true;
@@ -1249,26 +1258,6 @@
     setButtonState("stopped");
     setRecordUI(false);
   });
-
-  // BACKGROUND HANDLER (Mobile Only)
-  function handleVisibilityChange(e) {
-    if (!isMobileDevice()) return; // Desktop is safe
-
-    const type = e?.type || "";
-    const isBackgrounding =
-      document.hidden ||
-      type === "pagehide" ||
-      type === "freeze" ||
-      type === "blur";
-
-    if (!isBackgrounding) return;
-
-    if (isPlaying || isEndingNaturally || bus) {
-      closeCtxAfterStop = true;
-      stopAllManual(true, "Stopped (background)");
-      closeCtxAfterStop = false;
-    }
-  }
 
 })();
 // --- END OF SCRIPT ---
