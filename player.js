@@ -1,14 +1,11 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v72 (The Replay Patch)
-   - Base: v71 (Anti-Doubling).
-   - Fix 1: Added clearTimeout to prevent the Stop fade-out 
-     from accidentally destroying a newly created Play bus.
-   - Fix 2: Reset drone timers on Play so the bass triggers.
-   - Fix 3: Stopped explicitly killing MediaStream tracks on 
-     teardown to prevent iOS/Safari audio output crashes.
-   - Fix 4: Added onended garbage collection to activeNodes 
-     to prevent massive memory leaks on long infinite sessions.
+   OPEN — v74 (The v62 Stability Rollback)
+   - Reverted garbage collection back to v62 logic.
+   - Removed asynchronous `onended` callbacks which were 
+     causing race conditions and muting subsequent playbacks.
+   - Maintained v71 musical upgrades (110Hz floor, BPM cap, 
+     and Anti-Doubling math).
    ============================================================ */
 
 (() => {
@@ -25,7 +22,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v72";
+  const STATE_KEY = "open_player_settings_v74";
 
   // =========================
   // TUNING
@@ -169,9 +166,11 @@
   let cachedImpulseBuffer = null;
 
   function ensureAudioContext() {
-    if (audioContext) return;
+    if (audioContext && audioContext.state !== "closed") return;
+    
     const Ctx = window.AudioContext || window.webkitAudioContext;
     audioContext = new Ctx();
+    cachedImpulseBuffer = null; 
   }
 
   function ensureBridge() {
@@ -218,8 +217,6 @@
     try { bus.reverbSend.disconnect(); } catch {}
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
-    
-    // FIX 3: Removed explicit track killing to prevent Safari/iOS media crashes
     
     bus = null;
   }
@@ -364,7 +361,7 @@
   let lastDroneStart = -9999;
   let lastDroneDur = 0;
   let sessionSnapshot = null;
-  let stopFadeTimeout = null; // FIX 1: Tracker for race conditions
+  let stopFadeTimeout = null;
 
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
@@ -504,15 +501,9 @@
       filter.connect(destination);
       filter.connect(wetSend);
 
-      // FIX 4: Garbage collect dead nodes so activeNodes doesn't bloat memory
-      carrier.onended = () => {
-          activeNodes.delete(carrier);
-          activeNodes.delete(modulator);
-          activeNodes.delete(modGain);
-          activeNodes.delete(ampGain);
-          activeNodes.delete(filter);
-      };
-
+      // Reverted: No asynchronous onended callbacks.
+      // Handled synchronously in killAllActiveNodes.
+      
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
     });
@@ -547,13 +538,7 @@
     carrier.connect(ampGain); ampGain.connect(lp);
     lp.connect(destination); lp.connect(wetSend);
 
-    carrier.onended = () => {
-        activeNodes.delete(carrier);
-        activeNodes.delete(modulator);
-        activeNodes.delete(modGain);
-        activeNodes.delete(ampGain);
-        activeNodes.delete(lp);
-    };
+    // Reverted: No asynchronous onended callbacks.
 
     modulator.start(time); carrier.start(time);
     modulator.stop(time + duration); carrier.stop(time + duration);
@@ -790,9 +775,12 @@
   // =========================
   // CONTROLS
   // =========================
-  async function startFromUI() {
+  function startFromUI() {
     ensureAudioContext();
-    if (audioContext.state === "suspended") await audioContext.resume();
+    
+    if (audioContext.state === "suspended" || audioContext.state === "interrupted") {
+        audioContext.resume().catch(() => {});
+    }
     
     stopAllManual(true);
     buildMixBus();
@@ -804,7 +792,6 @@
     patternIdxA = 0; circlePosition = 0; isMinor = false; tension = 0.0;
     notesSinceModulation = 0; arcPos = -1; arcLen = 6; arcClimaxAt = 4;
     
-    // FIX 2: Reset drone timers so the bass works on replay
     lastDroneStart = -9999; 
     lastDroneDur = 0;
 
@@ -837,7 +824,6 @@
     isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
     
-    // FIX 1: Clear the timeout to prevent race-condition bus destruction
     if (stopFadeTimeout) {
         clearTimeout(stopFadeTimeout);
         stopFadeTimeout = null;
@@ -1175,7 +1161,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v72-${Date.now()}.wav`;
+    a.download = `open-final-v74-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
