@@ -4,7 +4,7 @@
 
 [*Open*](https://stereo-images.github.io/open/) began with the sound of cathedral bells drifting through an open window. The sound belonged in that room, and I felt its absence when I moved. That memory became the wellspring for this piece.
 
-Instead of recording bells, I chose an empty frame, in the form of a digital window. No particular scene, no particular place, just an open space for sound to travel and resonate through. This music is my way of experiencing that.
+Instead of recording bells, I chose an empty frame: a browser window. No particular scene, no particular place, just an open space for sound to travel and resonate through. This music is my way of experiencing that.
 
 The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* deliberately anchors itself in familiar Western harmonic cadences. This predictability is an anchor. Because the chords resolve in comforting, expected ways, focus shifts towards the texture: the microscopic detuning of the FM voices, the wild inharmonic smear of the attack, and the physical space of the reverb. The stability of the harmony allows the chaos of the bell to be felt.
 
