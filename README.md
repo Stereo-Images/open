@@ -6,7 +6,7 @@
 
 Instead of recording bells, I chose an empty frame: a browser window. No particular scene, no particular place, just an open space for sound to travel and resonate through. This music is my way of experiencing that.
 
-The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* deliberately anchors itself in familiar Western harmonic cadences. This predictability is an anchor. Because the chords resolve in comforting, expected ways, focus shifts towards texture: the microscopic detuning of the FM voices, the wild inharmonic smear of the attack, and the physical space of the reverb. The stability of the harmony allows the chaos of the bells to be felt.
+The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* anchors itself in familiar Western harmonic cadences. Because notes resolve in comforting, expected ways, focus shifts towards texture: the microscopic detuning of the FM voices, the wild inharmonic smear of the attack, and the physical space of the reverb. The stability of the harmony allows the chaos of the bells to be felt.
 
 The sounds do not ask for your full attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
 
