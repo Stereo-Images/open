@@ -1,11 +1,11 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v74 (The v62 Stability Rollback)
-   - Reverted garbage collection back to v62 logic.
-   - Removed asynchronous `onended` callbacks which were 
-     causing race conditions and muting subsequent playbacks.
-   - Maintained v71 musical upgrades (110Hz floor, BPM cap, 
-     and Anti-Doubling math).
+   OPEN — v75 (The Long-Idle Wakeup Patch)
+   - Base: v74 (Stability Rollback).
+   - Fix: Restored the `await` logic from v62 to audioContext.resume().
+     This forces the script to wait for the browser's audio hardware 
+     to fully wake up from a deep sleep before capturing the clock time,
+     preventing the browser from silently dropping notes scheduled in the past.
    ============================================================ */
 
 (() => {
@@ -22,7 +22,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v74";
+  const STATE_KEY = "open_player_settings_v75";
 
   // =========================
   // TUNING
@@ -501,9 +501,6 @@
       filter.connect(destination);
       filter.connect(wetSend);
 
-      // Reverted: No asynchronous onended callbacks.
-      // Handled synchronously in killAllActiveNodes.
-      
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
     });
@@ -537,8 +534,6 @@
     modulator.connect(modGain); modGain.connect(carrier.frequency);
     carrier.connect(ampGain); ampGain.connect(lp);
     lp.connect(destination); lp.connect(wetSend);
-
-    // Reverted: No asynchronous onended callbacks.
 
     modulator.start(time); carrier.start(time);
     modulator.stop(time + duration); carrier.stop(time + duration);
@@ -697,7 +692,7 @@
       }
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-      const isArcStart = (arcPos === 0 && phraseStep === 0);
+      const isArcStart = (localArcPos === 0 && phraseStep === 0);
       const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
       const atPhraseStart = (phraseStep === 0);
 
@@ -775,11 +770,13 @@
   // =========================
   // CONTROLS
   // =========================
-  function startFromUI() {
+  async function startFromUI() {
     ensureAudioContext();
     
+    // FIX: Restored async/await. This forces the engine to wait for the 
+    // hardware clock to unfreeze before scheduling notes, preventing dropouts.
     if (audioContext.state === "suspended" || audioContext.state === "interrupted") {
-        audioContext.resume().catch(() => {});
+        await audioContext.resume();
     }
     
     stopAllManual(true);
@@ -1161,7 +1158,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v74-${Date.now()}.wav`;
+    a.download = `open-final-v75-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
