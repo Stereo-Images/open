@@ -1,10 +1,11 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v76 (The Definite Wakeup Patch)
-   - Base: v74 (Stability Rollback).
-   - Fix 1: Restored `async/await` syntax to startFromUI(). 
-     This guarantees the script waits for the browser's hardware 
-     clock to unfreeze from deep sleep before scheduling notes.
+   OPEN — v77 (The True v62 Rollback)
+   - Base: The exact v62 script (Surgical iOS Patch).
+   - Lifecycle: 100% reverted to v62 teardown, track-killing, 
+     and background bridging logic to prevent 20-minute silent hardware locks.
+   - Music Updates Applied: 110Hz Floor/415.30Hz Ceiling, 
+     0.20 runDensity cap, and Anti-Doubling FM math.
    ============================================================ */
 
 (() => {
@@ -21,7 +22,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v76";
+  const STATE_KEY = "open_player_settings_v77";
 
   // =========================
   // TUNING
@@ -38,6 +39,7 @@
   const SCHEDULER_INTERVAL_MS = 80;
   const MAX_EVENTS_PER_TICK = 900;
 
+  // Global flag for mobile hard reset
   let closeCtxAfterStop = false;
 
   // =========================
@@ -65,6 +67,9 @@
     return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || el.isContentEditable === true;
   }
 
+  // =========================
+  // DEVICE DETECTION
+  // =========================
   function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
 
@@ -90,6 +95,9 @@
     );
   }
 
+  // =========================
+  // STATE & CONTROLS
+  // =========================
   function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
   function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
 
@@ -147,6 +155,7 @@
   let bus = null;
   let bridgeAudioEl = null;
 
+  // Active node tracking
   const activeNodes = new Set();
   
   function trackNode(ctx, n) {
@@ -165,11 +174,9 @@
   let cachedImpulseBuffer = null;
 
   function ensureAudioContext() {
-    if (audioContext && audioContext.state !== "closed") return;
-    
+    if (audioContext) return;
     const Ctx = window.AudioContext || window.webkitAudioContext;
     audioContext = new Ctx();
-    cachedImpulseBuffer = null; 
   }
 
   function ensureBridge() {
@@ -179,7 +186,7 @@
     bridgeAudioEl.setAttribute("playsinline", "true");
     bridgeAudioEl.setAttribute("aria-hidden", "true");
     bridgeAudioEl.loop = true;
-    bridgeAudioEl.muted = true; 
+    bridgeAudioEl.muted = false; // V62 intact Keepalive
     Object.assign(bridgeAudioEl.style, {
       position: "fixed", width: "1px", height: "1px", opacity: "0.01",
       left: "-9999px", zIndex: "-1", pointerEvents: "none"
@@ -191,6 +198,7 @@
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
     
     const duration = isMobileDevice() ? 4.0 : 10.0;
+    
     const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
@@ -217,6 +225,13 @@
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
     
+    // V62: Crucial for stopping iOS Phantom CPU / Hardware Locks
+    if (bridgeAudioEl?.srcObject) {
+      try { bridgeAudioEl.pause(); } catch {}
+      try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
+      try { bridgeAudioEl.srcObject = null; } catch {}
+    }
+
     bus = null;
   }
 
@@ -360,7 +375,6 @@
   let lastDroneStart = -9999;
   let lastDroneDur = 0;
   let sessionSnapshot = null;
-  let stopFadeTimeout = null;
 
   function startNewArc() {
     arcLen = 4 + Math.floor(rand() * 5);
@@ -464,7 +478,7 @@
 
     const voices = Array.from({ length: numVoices }, () => {
       let mRatio = baseRatio;
-      if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz; 
+      if (isFractured) mRatio += (rand() - 0.5) * ratioFuzz;
       const mIndex = 1.0 + (tensionAmt * 2.0) + (rand() * 3.0);
       const v = { modRatio: mRatio, modIndex: mIndex, amp: rand() };
       totalAmp += v.amp;
@@ -580,7 +594,7 @@
     const noteDur = (1 / runDensity) * 2.5;
 
     if (bus.reverbSend && arcPos !== arcClimaxAt - 1) {
-        let targetSend = 0.65 - (0.25 * clamp01((runDensity - 0.05) / 0.2)); 
+        let targetSend = 0.65 - (0.25 * clamp01((runDensity - 0.05) / 0.20)); 
         targetSend = Math.max(0, Math.min(0.95, targetSend));
         bus.reverbSend.gain.setTargetAtTime(targetSend, now, 2.5); 
     }
@@ -596,13 +610,11 @@
       if (isApproachingEnd && !isEndingNaturally) {
         if (patternIdxA % 7 === 0) {
           let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-          
           while (fEnd > MELODY_CEILING_HZ && patternIdxA > -14) {
               patternIdxA -= 7;
               fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           }
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          
           scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
@@ -691,7 +703,7 @@
       }
       freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-      const isArcStart = (localArcPos === 0 && phraseStep === 0);
+      const isArcStart = (arcPos === 0 && phraseStep === 0);
       const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
       const atPhraseStart = (phraseStep === 0);
 
@@ -771,12 +783,7 @@
   // =========================
   async function startFromUI() {
     ensureAudioContext();
-    
-    // FIX 1: Restored async/await logic from v62 so the engine safely 
-    // waits for the hardware clock to wake up before generating audio.
-    if (audioContext.state === "suspended" || audioContext.state === "interrupted") {
-        try { await audioContext.resume(); } catch(e) {}
-    }
+    if (audioContext.state === "suspended") await audioContext.resume();
     
     stopAllManual(true);
     buildMixBus();
@@ -787,13 +794,10 @@
     isApproachingEnd = false;
     patternIdxA = 0; circlePosition = 0; isMinor = false; tension = 0.0;
     notesSinceModulation = 0; arcPos = -1; arcLen = 6; arcClimaxAt = 4;
-    
-    lastDroneStart = -9999; 
-    lastDroneDur = 0;
 
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
     setSeed(seed);
-    runDensity = 0.05 + rand() * 0.2;
+    runDensity = 0.05 + rand() * 0.20;
     
     startNewArc();
     sessionSnapshot = { seed, density: runDensity, arcLen, arcClimaxAt };
@@ -820,11 +824,6 @@
     isEndingNaturally = false;
     if (timerInterval) clearInterval(timerInterval);
     
-    if (stopFadeTimeout) {
-        clearTimeout(stopFadeTimeout);
-        stopFadeTimeout = null;
-    }
-    
     if (isRecording) {
       try { mediaRecorder?.stop(); } catch {}
       isRecording = false;
@@ -838,7 +837,7 @@
             bus.masterGain.gain.setValueAtTime(bus.masterGain.gain.value, t);
             bus.masterGain.gain.linearRampToValueAtTime(0, t + 0.10);
         } catch {}
-        stopFadeTimeout = setTimeout(() => teardownBusHard(), 150);
+        setTimeout(() => teardownBusHard(), 150);
     } else {
         teardownBusHard();
     }
@@ -990,7 +989,7 @@
       let pressure = Math.min(1.0, localModCount / 48.0);
       localUpdateHarmony();
 
-      const normDensity = clamp01((exportDensity - 0.05) / 0.2);
+      const normDensity = clamp01((exportDensity - 0.05) / 0.20);
       let targetSend = 0.65 - (0.25 * normDensity);
       targetSend = Math.max(0, Math.min(0.95, targetSend));
       offlineSend.gain.setValueAtTime(targetSend, localTime);
@@ -1157,7 +1156,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v76-${Date.now()}.wav`;
+    a.download = `open-final-v77-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
