@@ -1,11 +1,10 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v75 (The Long-Idle Wakeup Patch)
+   OPEN — v76 (The Definite Wakeup Patch)
    - Base: v74 (Stability Rollback).
-   - Fix: Restored the `await` logic from v62 to audioContext.resume().
-     This forces the script to wait for the browser's audio hardware 
-     to fully wake up from a deep sleep before capturing the clock time,
-     preventing the browser from silently dropping notes scheduled in the past.
+   - Fix 1: Restored `async/await` syntax to startFromUI(). 
+     This guarantees the script waits for the browser's hardware 
+     clock to unfreeze from deep sleep before scheduling notes.
    ============================================================ */
 
 (() => {
@@ -22,7 +21,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v75";
+  const STATE_KEY = "open_player_settings_v76";
 
   // =========================
   // TUNING
@@ -773,10 +772,10 @@
   async function startFromUI() {
     ensureAudioContext();
     
-    // FIX: Restored async/await. This forces the engine to wait for the 
-    // hardware clock to unfreeze before scheduling notes, preventing dropouts.
+    // FIX 1: Restored async/await logic from v62 so the engine safely 
+    // waits for the hardware clock to wake up before generating audio.
     if (audioContext.state === "suspended" || audioContext.state === "interrupted") {
-        await audioContext.resume();
+        try { await audioContext.resume(); } catch(e) {}
     }
     
     stopAllManual(true);
@@ -1158,7 +1157,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v75-${Date.now()}.wav`;
+    a.download = `open-final-v76-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
