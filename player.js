@@ -866,7 +866,7 @@
     setSeed(sessionSnapshot.seed);
 
     const durationInput = $("songDuration")?.value ?? "60";
-    const exportDuration = (durationInput === "infinite") ? 180 : Math.min(180, parseFloat(durationInput));
+    const exportDuration = (durationInput === "infinite") ? 1800 : Math.min(1800, parseFloat(durationInput));
     const sampleRate = 44100;
     const offlineCtx = new OfflineAudioContext(2, sampleRate * exportDuration, sampleRate);
 
