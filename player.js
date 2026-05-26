@@ -1,11 +1,13 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v77 (The True v62 Rollback)
+   OPEN — v78 (The Reverb Tail Update)
    - Base: The exact v62 script (Surgical iOS Patch).
    - Lifecycle: 100% reverted to v62 teardown, track-killing, 
      and background bridging logic to prevent 20-minute silent hardware locks.
    - Music Updates Applied: 110Hz Floor/415.30Hz Ceiling, 
      0.20 runDensity cap, and Anti-Doubling FM math.
+   - Export Updates: Added a 40-second reverb tail to OfflineAudioContext
+     to prevent hard cutoffs of long drone nodes during WAV rendering.
    ============================================================ */
 
 (() => {
@@ -22,7 +24,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v77";
+  const STATE_KEY = "open_player_settings_v78";
 
   // =========================
   // TUNING
@@ -866,8 +868,15 @@
     setSeed(sessionSnapshot.seed);
 
     const durationInput = $("songDuration")?.value ?? "60";
-    const exportDuration = (durationInput === "infinite") ? 1800 : Math.min(1800, parseFloat(durationInput));
+    
+    // Core duration dictates when note generation stops.
+    const coreDuration = (durationInput === "infinite") ? 1800 : Math.min(1800, parseFloat(durationInput));
+    
+    // Reverb tail dictates how much silence is padded onto the offline context to let nodes fade naturally.
+    const reverbTail = 40.0;
+    const exportDuration = coreDuration + reverbTail;
     const sampleRate = 44100;
+    
     const offlineCtx = new OfflineAudioContext(2, sampleRate * exportDuration, sampleRate);
 
     const offlineMaster = offlineCtx.createGain();
@@ -976,7 +985,8 @@
     localPhraseCount = -1;
     silentInitPhraseExport();
 
-    while (localTime < exportDuration - 2.0) {
+    // Generate notes only within the core duration, leaving the tail silent for decay.
+    while (localTime < coreDuration - 2.0) {
       localPhraseStep = (localPhraseStep + 1) % 16;
       if (localPhraseStep === 0) {
         localPhraseCount++;
@@ -1156,7 +1166,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v77-${Date.now()}.wav`;
+    a.download = `open-final-v78-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
