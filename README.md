@@ -10,7 +10,7 @@ The page makes low, slow, synthetic bell tones. While generative music often aba
 
 The sounds do not ask for your full attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
 
-*Open* is meant to run quietly in the background with minimal fuss: no logins and no accounts, only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
+*Open* is meant to run quietly in the background with minimal fuss: no logins, no accounts, only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
 
 ### "Infinite" Mode & Structure
 When set to "Infinite", the system generates new harmonic movement according to a set of rules:
