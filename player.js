@@ -24,7 +24,7 @@
     if (audioContext) try { audioContext.close(); } catch {}
   };
 
-  const STATE_KEY = "open_player_settings_v78";
+  const STATE_KEY = "open_player_settings"; // schema-stable key: don't tie this to the script version
 
   // =========================
   // TUNING
@@ -56,7 +56,7 @@
   function clamp01(x) { return Math.max(0, Math.min(1, x)); }
 
   function announce(msg) {
-    const live = $("playerStatus") || $("recordStatus");
+    const live = $("playerStatus");
     if (!live) return;
     if (live._lastMsg === msg) return;
     live._lastMsg = msg;
@@ -72,7 +72,6 @@
   // =========================
   // DEVICE DETECTION
   // =========================
-  function isLauncherPage() { return !!$("launchPlayer"); }
   function isPlayerPage() { return !!$("playNow"); }
 
   function isMobileDevice() {
@@ -80,21 +79,6 @@
     const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
     const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
     return isBasicMobile || isIPadOS;
-  }
-
-  function launchPlayer() {
-    if (isMobileDevice()) {
-      window.location.href = "player.html";
-      return;
-    }
-    const width = 520, height = 720;
-    const left = Math.max(0, (window.screen.width / 2) - (width / 2));
-    const top  = Math.max(0, (window.screen.height / 2) - (height / 2));
-    window.open(
-      "player.html",
-      "open_player",
-      `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
-    );
   }
 
   // =========================
@@ -199,7 +183,7 @@
   function createImpulseResponse(ctx) {
     if (cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
     
-    const duration = isMobileDevice() ? 4.0 : 10.0;
+    const duration = 10.0; // same tail length on mobile and desktop, per artist preference
     
     const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
@@ -285,11 +269,10 @@
   let isRecording = false;
 
   function setRecordUI(on) {
-    const el = $("recordStatus");
-    if (el) {
-      el.textContent = on ? "Recording: ON" : "Recording: off";
-      el.classList.toggle("recording-on", on);
-    }
+    // Recording is an intentionally undocumented, keyboard-only feature (Shift+R).
+    // Feedback stays on the same invisible aria-live channel as everything else
+    // rather than adding any visible UI.
+    announce(on ? "Recording started" : "Recording saved");
   }
 
   function toggleRecording() {
@@ -308,6 +291,7 @@
       const mimeType = types.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || "";
       mediaRecorder = new MediaRecorder(bus.streamDest.stream, mimeType ? { mimeType } : undefined);
     } catch (e) {
+      announce("Recording unavailable in this browser");
       return;
     }
 
@@ -800,9 +784,15 @@
     const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
     setSeed(seed);
     runDensity = 0.05 + rand() * 0.20;
-    
+
+    // Capture the tone actually used for this run, so exporting later reproduces
+    // what played even if the (now re-enabled) slider has since moved.
+    let baseFreqAtStart = Number($("tone")?.value ?? 110);
+    if (!Number.isFinite(baseFreqAtStart)) baseFreqAtStart = 110;
+    baseFreqAtStart = Math.max(110, Math.min(200, baseFreqAtStart));
+
     startNewArc();
-    sessionSnapshot = { seed, density: runDensity, arcLen, arcClimaxAt };
+    sessionSnapshot = { seed, density: runDensity, arcLen, arcClimaxAt, tone: baseFreqAtStart };
 
     phraseCount = -1;
     silentInitPhraseLive();
@@ -864,7 +854,7 @@
   // EXPORT WAV (Full Logic)
   // =========================
   async function renderWavExport() {
-    if (!sessionSnapshot?.seed) { alert("Press Play once first."); return; }
+    if (!sessionSnapshot?.seed) { announce("Press Play once before exporting"); return; }
     setSeed(sessionSnapshot.seed);
 
     const durationInput = $("songDuration")?.value ?? "60";
@@ -928,7 +918,9 @@
     localStartNewArc();
 
     const exportDensity = sessionSnapshot.density;
-    let baseFreq = Number($("tone")?.value ?? 110);
+    // Use the tone captured when Play was pressed, not whatever the slider
+    // (re-enabled since Stop) happens to show right now.
+    let baseFreq = Number(sessionSnapshot.tone ?? 110);
     if (!Number.isFinite(baseFreq)) baseFreq = 110;
     baseFreq = Math.max(110, Math.min(200, baseFreq));
 
@@ -991,7 +983,7 @@
       if (localPhraseStep === 0) {
         localPhraseCount++;
         localArcPos++;
-        if (localArcPos >= localArcLen) { localStartNewArc(); localArcPos++; }
+        if (localArcPos >= localArcLen) localStartNewArc(); // matches scheduler() exactly — no extra increment
         localCadenceType = localPickCadenceType();
       }
 
@@ -1086,7 +1078,7 @@
           cadenceType: ct,
           melodyDeg: melodyDegNow
         });
-        if (!useThirdColor && droneRootDegree !== 0 && chance(0.65)) droneRootDegree = 0;
+        // (intentionally no extra root-forcing here — kept identical to scheduler()'s drone block)
         const curRegister = Math.floor(localIdx / 7);
         const droneOct = Math.min(curRegister - 1, 0);
         const droneIdx = droneOct * 7 + droneRootDegree;
@@ -1209,10 +1201,9 @@
   // INIT & LISTENERS
   // =========================
   document.addEventListener("DOMContentLoaded", () => {
-    if (isLauncherPage()) {
-      $("launchPlayer")?.addEventListener("click", launchPlayer);
-      return;
-    }
+    // player.js only ever runs on player.html (see the <script src="player.js">
+    // tag there). Launcher routing/mobile-detection lives in index.html's own
+    // inline script.
     if (!isPlayerPage()) return;
 
     $("playNow")?.addEventListener("click", startFromUI);
@@ -1226,6 +1217,10 @@
     });
     $("songDuration")?.addEventListener("change", () => saveState(readControls()));
 
+    // Recording/export are deliberately undiscoverable: no on-screen buttons,
+    // keyboard-only, feedback via the sr-only aria-live region only. This makes
+    // them effectively desktop-only (no Shift key on touch) — that's by design,
+    // not a gap to be filled with touch equivalents.
     document.addEventListener("keydown", (e) => {
       if (isTypingTarget(e.target)) return;
       const k = (e.key || "").toLowerCase();
