@@ -21,13 +21,8 @@
   <script>
     (() => {
       function isMobileDevice() {
-        const ua = navigator.userAgent || "";
-        const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
-        // iPadOS reports its UA as "Macintosh" by default, so the regex above
-        // misses real iPads — catch them via touch capability instead. This
-        // matches the detection used inside player.js itself.
-        const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
-        return isBasicMobile || isIPadOS;
+        return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent || "") ||
+          (window.matchMedia?.("(pointer: coarse)")?.matches && window.matchMedia?.("(max-width: 820px)")?.matches);
       }
 
       function openPlayer() {
