@@ -4,13 +4,22 @@
 
 [*Open*](https://stereo-images.github.io/open/) began with the sound of cathedral bells drifting through an open window. The sound belonged in that room, and I felt its absence when I moved. That memory became the wellspring for this piece.
 
-Rather than recording bells directly, I built a small browser instrument that generates slow synthetic bell tones inside an otherwise empty interface: no scene, no imagery, only a space for sound to resonate through.
 
-The page makes low, slow, synthetic bell tones. While generative music often abandons traditional tonality, *Open* stays loosely anchored to familiar harmonic movement. This isn't a concession to accessibility — it's a fidelity to the subject. Real bells are physically inharmonic instruments: their partials don't settle into clean overtone ratios the way a string or a column of air does, which is a large part of why cast bells have that particular clangorous, unresolved character even when "in tune." And yet bells are almost always heard inside strongly tonal contexts — hymnody, church changes, wedding bells, clock towers. The conventional harmony here does the same job those contexts do: it gives the ear a stable frame to actually notice what the timbre is doing underneath it — detuning between FM voices, inharmonic attacks, and the behavior of the reverb tail over time.
+# Open
 
-The sounds do not ask for your full attention. Rather, they sit alongside and hopefully enhance whatever else is happening: the light in your room, the noise outside, or the work you're doing.
+> *Designed for desktop browsers.*
 
-*Open* is meant to run quietly in the background with minimal fuss: no logins, no accounts, only the last tone/duration may be remembered locally. You can change the tone or the duration. Each run is temporary, and when the sound stops, it’s gone.
+Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
+
+What resonates? [*Open*](https://stereo-images.github.io/open/) answers that question in a multitude of ways. As a generative piece, every tone is a new physical event, ringing in a particular way and gesturing towards the next. As a browser installation, wherever I go, I carry that distance with me.
+
+*Open* renders low, slow bell tones anchored to familiar harmony. Yet the tones themselves are inharmonic. To frame this tension: while the music resolves from moment to moment, it remains unresolved within the moment itself. 
+
+The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
+
+*Open* is meant to run quietly in the background: no logins, no accounts. Only your last tone and duration are remembered locally. Though you can change the parameters, each run is temporary. When the sound stops, it is gone.
+
+
 
 ### "Infinite" Mode & Structure
 When set to "Infinite", the system generates new harmonic movement according to a set of rules:
