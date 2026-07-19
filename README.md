@@ -2,13 +2,6 @@
 
 > *Designed for desktop browsers.*
 
-[*Open*](https://stereo-images.github.io/open/) began with the sound of cathedral bells drifting through an open window. The sound belonged in that room, and I felt its absence when I moved. That memory became the wellspring for this piece.
-
-
-# Open
-
-> *Designed for desktop browsers.*
-
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
 
 What resonates? [*Open*](https://stereo-images.github.io/open/) answers that question in a multitude of ways. As a generative piece, every tone is a new physical event, ringing in a particular way and gesturing towards the next. As a browser installation, wherever I go, I carry that distance with me.
