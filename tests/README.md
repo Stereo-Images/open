@@ -68,3 +68,10 @@ Render bytes = `(durationSeconds + 40) * 44100 * 2 * 4`; WAV bytes = `(durationS
 The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and any temporary copies add overhead. Blob storage and memory reclamation are browser-dependent, so adding payload sizes is not a measured process-RAM peak or a guaranteed minimum-memory requirement. This review accounts for allocations in the code; it does not profile a full-length export on physical devices.
 
 Long exports remain available with the existing duration cap and audio quality. The README advises users to leave memory headroom and retry a shorter duration if necessary; no warning dialog or new export restriction is imposed.
+
+
+## Online experimental player
+
+The stable player is served at `/open/player.html`; the experiment is served at `/open/experiments/moving-resonators/player.html` on the same GitHub Pages domain. The preview is a staged snapshot of `experiment/moving-resonators`, with its source commit recorded in `experiments/moving-resonators/version.json`. Its title, popup name, and localStorage settings key are isolated; audio code is otherwise copied unchanged.
+
+To refresh the online preview, fetch `origin/experiment/moving-resonators`, run `python scripts/stage-experiment.py` in a main checkout, review the generated changes, and commit/push main. A branch push alone does not refresh the published snapshot. Existing GitHub Pages deployment publishes both players together; no Pages settings changes are needed. Keep the root player assets unchanged when refreshing only the experiment.

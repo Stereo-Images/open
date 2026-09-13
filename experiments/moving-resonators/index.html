@@ -1,0 +1,55 @@
+<!-- index.html (LAUNCHER PAGE) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open — Experimental</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="launcher">
+  <main class="shell" aria-labelledby="launchHeading">
+    <h1 id="launchHeading" class="sr-only">Open Audio Player</h1>
+
+    <section class="launchOnly">
+      <div class="launch-actions">
+        <button type="button" id="launchPlayer" class="btn btn-launch">Open</button>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      function isMobileDevice() {
+        const ua = navigator.userAgent || "";
+        const isBasicMobile = /iPhone|iPad|iPod|Android/i.test(ua);
+        // iPadOS reports its UA as "Macintosh" by default, so the regex above
+        // misses real iPads — catch them via touch capability instead. This
+        // matches the detection used inside player.js itself.
+        const isIPadOS = (navigator.maxTouchPoints > 0) && /Macintosh/i.test(ua);
+        return isBasicMobile || isIPadOS;
+      }
+
+      function openPlayer() {
+        if (isMobileDevice()) {
+          // Mobile: same tab
+          window.location.href = "player.html";
+          return;
+        }
+        // Desktop: popout window
+        const width = 520, height = 720;
+        const left = Math.max(0, (window.screen.width / 2) - (width / 2));
+        const top = Math.max(0, (window.screen.height / 2) - (height / 2));
+        const playerWindow = window.open(
+          "player.html",
+          "open_player_experiment",
+          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
+        );
+        if (!playerWindow) window.location.href = "player.html";
+      }
+
+      document.getElementById("launchPlayer")?.addEventListener("click", openPlayer);
+    })();
+  </script>
+</body>
+</html>
