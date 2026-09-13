@@ -1,8 +1,8 @@
 # Open
 
-**[Open the web app →](https://stereo-images.github.io/open/)**
+**[Open the experimental player →](https://stereo-images.github.io/open/experiments/moving-resonators/player.html)** · **[Open the main player](https://stereo-images.github.io/open/player.html)**
 
-This link opens the published version on `main`. This experimental branch includes moving resonators and note-triggered stereo drift; to audition it locally, run `node tests/serve.cjs` and open [the local player](http://127.0.0.1:4173/player.html).
+The experimental player includes moving resonators and chance-driven, note-synced stereo drift, with separate saved settings. Its published source version is recorded [here](https://stereo-images.github.io/open/experiments/moving-resonators/version.json).
 
 > *Designed for desktop browsers.*
 

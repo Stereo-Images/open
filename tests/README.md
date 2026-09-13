@@ -75,7 +75,7 @@ Branch `experiment/moving-resonators` adds three parallel bandpass filters from 
 
 This intentionally colors the reverberant sound and can raise the wet level. There is no processing after reverb and no new control. Live and export share the processor construction without consuming their musical random streams. Each live bus owns and stops its three LFOs; offline LFOs stop at render end and disconnect on success or failure. Natural cleanup adds 100 ms for the resonators to settle before the existing reverb tail allowance. Baseline tests compare musical voice parameters and schedules, excluding the added control oscillators; they do not assert identical output audio.
 
-For local audition: `npm ci`, then `node tests/serve.cjs`, then open `http://127.0.0.1:4173/player.html`. The public GitHub Pages player remains on main.
+For online audition, open [the experimental player](https://stereo-images.github.io/open/experiments/moving-resonators/player.html). The root player remains the stable main version. The online preview is a published snapshot, refreshed by staging this branch into `experiments/moving-resonators` on main with `scripts/stage-experiment.py`, then committing and pushing main. Branch pushes alone do not publish the snapshot.
 
 ### Note-triggered stereo drift
 
