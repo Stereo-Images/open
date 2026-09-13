@@ -437,7 +437,7 @@ test('disposal cancels active encoding and rejects its pending promise', async (
 });
 
 
-test('moving resonators precede reverb, use bounded control nodes, and release on replacement', async () => {
+test('one moving bank feeds direct sound and pre-reverb, and releases on replacement', async () => {
   const h = harness(); await h.api.startFromUI();
   const ctx = h.contexts[0], first = h.api.state().bus;
   const bands = first.reverbSend.connections.filter(n => n.type === 'bandpass');
@@ -447,7 +447,8 @@ test('moving resonators precede reverb, use bounded control nodes, and release o
     assert.equal(band.Q.value, 3);
     const blend = band.connections[0];
     assert.equal(blend.gain.value, 0.18);
-    assert.deepEqual(blend.connections, [first.reverbPreDelay]);
+    assert.deepEqual(blend.connections, [first.reverbPreDelay, first.masterGain]);
+    assert.ok(!blend.connections.includes(first.reverbSend));
     const modulation = ctx.nodes.find(n => n.connections.includes(band.detune));
     const lfo = ctx.nodes.find(n => n.connections.includes(modulation));
     assert.ok(lfo.frequency.value > 0 && lfo.frequency.value < 0.04);

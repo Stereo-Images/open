@@ -253,11 +253,14 @@
 
   // Experimental parallel coloration, upstream of the existing reverb.
   // Slow independent LFOs move the filter centers throughout each note.
-  function createMovingResonators(ctx, input, output, endTime) {
+  function createMovingResonators(ctx, input, output, endTime, directOutput) {
     const nodes = [], lfos = [];
     const blend = ctx.createGain();
     blend.gain.value = 0.18; // Per band; bandpass peaks remain unity at their centers.
     blend.connect(output);
+    // Expose the same moving overtones directly, without adding a second bank
+    // or changing the original pre-reverb route. Both follow the existing send.
+    if (directOutput) blend.connect(directOutput);
     nodes.push(blend);
     const start = ctx.currentTime;
     for (const [frequency, speed, depth] of [
@@ -384,7 +387,7 @@
 
     initializeNoteDrift(audioContext, seed);
     reverbSend.connect(reverbPreDelay);
-    const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay);
+    const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay, undefined, masterGain);
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
     reverbLP.connect(reverbReturn);
@@ -1110,7 +1113,7 @@
 
     initializeNoteDrift(offlineCtx, sessionSnapshot.seed);
     offlineSend.connect(offlinePreDelay);
-    const offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration);
+    const offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration, offlineMaster);
     offlinePreDelay.connect(offlineReverb);
     offlineReverb.connect(offlineReverbLP);
     offlineReverbLP.connect(offlineReturn);
