@@ -2,7 +2,7 @@
 
 **[Open the main player](https://stereo-images.github.io/open/player.html)** · **[Try the experimental player](https://stereo-images.github.io/open/experiments/moving-resonators/player.html)**
 
-The experimental player includes moving resonators and chance-driven, note-synced stereo drift. It has separate saved settings.
+The experimental player includes moving resonators blended into the direct sound and reverb input, plus chance-driven, note-synced stereo drift. It has separate saved settings.
 
 > *Designed for desktop browsers.*
 
