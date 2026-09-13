@@ -291,6 +291,49 @@
     };
   }
 
+  // Chance-driven shared stereo field; both paths move before convolution.
+  function createStereoDrift(ctx, dryOutput, wetInput, seed, endTime) {
+    const dry = ctx.createStereoPanner(), wet = ctx.createStereoPanner();
+    // Current voices are mono. Compensate equal-power center attenuation so
+    // centered playback retains its existing per-channel level.
+    const dryLevel = ctx.createGain(), wetLevel = ctx.createGain();
+    dryLevel.gain.value = wetLevel.gain.value = Math.SQRT2;
+    dry.connect(dryLevel); dryLevel.connect(dryOutput);
+    wetInput.connect(wet); wet.connect(wetLevel);
+    const random = mulberry32((seed ^ 0x57E2E0) >>> 0);
+    let nextTime = ctx.currentTime, target = 0;
+    const pans = [dry.pan, wet.pan];
+    for (const pan of pans) pan.setValueAtTime(0, nextTime);
+    function schedule(horizon) {
+      if (nextTime < ctx.currentTime) {
+        // Resume from the last completed position after a timer stall.
+        nextTime = ctx.currentTime;
+        for (const pan of pans) {
+          pan.cancelScheduledValues(nextTime);
+          pan.setValueAtTime(target, nextTime);
+        }
+      }
+      while (nextTime < horizon) {
+        const duration = 24 + random() * 16;
+        if (random() < 0.65) target = (random() * 2 - 1) * 0.22;
+        nextTime += duration;
+        for (const pan of pans) pan.linearRampToValueAtTime(target, nextTime);
+      }
+    }
+    let timer = null;
+    if (Number.isFinite(endTime)) schedule(endTime);
+    else {
+      schedule(ctx.currentTime + 2);
+      timer = setInterval(() => schedule(ctx.currentTime + 2), 250);
+    }
+    return { dry, wet, wetOutput: wetLevel, dispose() {
+      clearInterval(timer);
+      for (const pan of pans) pan.cancelScheduledValues(ctx.currentTime);
+      dry.disconnect(); wet.disconnect();
+      dryLevel.disconnect(); wetLevel.disconnect();
+    } };
+  }
+
   function teardownBusHard() {
     clearTimeout(teardownTimer);
     teardownTimer = null;
@@ -302,6 +345,7 @@
     
     killAllActiveNodes(audioContext.currentTime);
     bus.resonators?.dispose();
+    bus.stereoDrift?.dispose();
 
     try { bus.reverbReturn.disconnect(); } catch {}
     try { bus.reverbSend.disconnect(); } catch {}
@@ -322,7 +366,7 @@
     bus = null;
   }
 
-  function buildMixBus() {
+  function buildMixBus(seed = sessionSeed) {
     ensureAudioContext();
     teardownBusHard();
 
@@ -350,8 +394,9 @@
     const reverbReturn = audioContext.createGain();
     reverbReturn.gain.value = REVERB_RETURN_LEVEL;
 
-    reverbSend.connect(reverbPreDelay);
-    const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay);
+    const stereoDrift = createStereoDrift(audioContext, masterGain, reverbSend, seed);
+    stereoDrift.wetOutput.connect(reverbPreDelay);
+    const resonators = createMovingResonators(audioContext, stereoDrift.wetOutput, reverbPreDelay);
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
     reverbLP.connect(reverbReturn);
@@ -359,7 +404,8 @@
 
     bus = {
       masterGain, reverbSend, reverbReturn, streamDest,
-      reverbPreDelay, reverbNode, reverbLP, resonators,
+      reverbPreDelay, reverbNode, reverbLP, resonators, stereoDrift,
+      voiceInput: stereoDrift.dry,
       lastVoiceEnd: audioContext.currentTime,
       tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25 + resonators.tailSeconds
     };
@@ -760,7 +806,7 @@
               fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
           }
           fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          scheduleNote(audioContext, bus.masterGain, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
+          scheduleNote(audioContext, bus.voiceInput, bus.reverbSend, fEnd, nextTimeA, 25.0, 0.5, 0, 0);
           beginNaturalEnd();
           return;
         }
@@ -891,12 +937,12 @@
          const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
          const quality = isMinor ? "min" : "maj";
 
-         scheduleDroneChord(audioContext, bus.masterGain, bus.reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
+         scheduleDroneChord(audioContext, bus.voiceInput, bus.reverbSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor);
       }
 
       const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
       if (!isDroneSolo) {
-        scheduleNote(audioContext, bus.masterGain, bus.reverbSend, freq, nextTimeA, appliedDur, 0.4, pressure, tension);
+        scheduleNote(audioContext, bus.voiceInput, bus.reverbSend, freq, nextTimeA, appliedDur, 0.4, pressure, tension);
       }
 
       notesSinceModulation++;
@@ -938,9 +984,6 @@
 
       stopAllManual(true);
       request = startRequest;
-      buildMixBus();
-
-      if (bridgeAudioEl) bridgeAudioEl.play().catch(()=>{});
 
       isEndingNaturally = false;
       isApproachingEnd = false;
@@ -949,7 +992,9 @@
       lastDroneStart = -9999; lastDroneDur = 0;
 
       const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
+      buildMixBus(seed);
       setSeed(seed);
+      if (bridgeAudioEl) bridgeAudioEl.play().catch(()=>{});
       runDensity = 0.05 + rand() * 0.20;
 
       // Capture the tone actually used for this run, so exporting later reproduces
@@ -1076,8 +1121,9 @@
     const offlineReturn = offlineCtx.createGain();
     offlineReturn.gain.value = REVERB_RETURN_LEVEL;
 
-    offlineSend.connect(offlinePreDelay);
-    const offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration);
+    const offlineDrift = createStereoDrift(offlineCtx, offlineMaster, offlineSend, sessionSnapshot.seed, exportDuration);
+    offlineDrift.wetOutput.connect(offlinePreDelay);
+    const offlineResonators = createMovingResonators(offlineCtx, offlineDrift.wetOutput, offlinePreDelay, exportDuration);
     offlinePreDelay.connect(offlineReverb);
     offlineReverb.connect(offlineReverbLP);
     offlineReverbLP.connect(offlineReturn);
@@ -1280,7 +1326,7 @@
         localLastDroneStart = t0; localLastDroneDur = droneDur;
         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
         const quality = localMinor ? "min" : "maj";
-        scheduleDroneChord(offlineCtx, offlineMaster, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor, rand);
+        scheduleDroneChord(offlineCtx, offlineDrift.dry, offlineSend, droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor, rand);
       }
 
       const isDroneSolo = (localArcPos === 0 && localPhraseStep < 12 && localPhraseCount > 0);
@@ -1329,7 +1375,7 @@
 
                 modulator.connect(modGain); modGain.connect(carrier.frequency);
                 carrier.connect(ampGain); ampGain.connect(filter);
-                filter.connect(offlineMaster); filter.connect(offlineSend);
+                filter.connect(offlineDrift.dry); filter.connect(offlineSend);
 
                 modulator.start(localTime); carrier.start(localTime);
                 modulator.stop(localTime + appliedDur); carrier.stop(localTime + appliedDur);
@@ -1345,7 +1391,7 @@
 
     let renderedBuffer;
     try { renderedBuffer = await offlineCtx.startRendering(); }
-    finally { offlineResonators.dispose(); }
+    finally { offlineResonators.dispose(); offlineDrift.dispose(); }
     if (disposed) return;
     const wavBlob = await bufferToWave(renderedBuffer);
     if (disposed) return;
