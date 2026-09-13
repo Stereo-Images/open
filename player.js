@@ -251,6 +251,46 @@
     return impulse;
   }
 
+  // Experimental parallel coloration, upstream of the existing reverb.
+  // Slow independent LFOs move the filter centers throughout each note.
+  function createMovingResonators(ctx, input, output, endTime) {
+    const nodes = [], lfos = [];
+    const blend = ctx.createGain();
+    blend.gain.value = 0.18; // Per band; bandpass peaks remain unity at their centers.
+    blend.connect(output);
+    nodes.push(blend);
+    const start = ctx.currentTime;
+    for (const [frequency, speed, depth] of [
+      [420, 0.037, 480], [1050, 0.023, 600], [2400, 0.017, 420]
+    ]) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = frequency;
+      filter.Q.value = 3;
+      const lfo = ctx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = speed;
+      const modulation = ctx.createGain();
+      modulation.gain.value = depth; // Cents, so movement is proportional to pitch.
+      lfo.connect(modulation);
+      modulation.connect(filter.detune);
+      input.connect(filter);
+      filter.connect(blend);
+      lfo.start(start);
+      if (Number.isFinite(endTime)) lfo.stop(endTime);
+      nodes.push(filter, modulation, lfo);
+      lfos.push(lfo);
+    }
+    return {
+      // At the lowest center (~318 Hz), Q=3 rings out well within this allowance.
+      tailSeconds: 0.1,
+      dispose() {
+        for (const lfo of lfos) { try { lfo.stop(ctx.currentTime); } catch {} }
+        for (const node of nodes) { try { node.disconnect(); } catch {} }
+      }
+    };
+  }
+
   function teardownBusHard() {
     clearTimeout(teardownTimer);
     teardownTimer = null;
@@ -261,6 +301,7 @@
     try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
     
     killAllActiveNodes(audioContext.currentTime);
+    bus.resonators?.dispose();
 
     try { bus.reverbReturn.disconnect(); } catch {}
     try { bus.reverbSend.disconnect(); } catch {}
@@ -310,6 +351,7 @@
     reverbReturn.gain.value = REVERB_RETURN_LEVEL;
 
     reverbSend.connect(reverbPreDelay);
+    const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay);
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
     reverbLP.connect(reverbReturn);
@@ -317,9 +359,9 @@
 
     bus = {
       masterGain, reverbSend, reverbReturn, streamDest,
-      reverbPreDelay, reverbNode, reverbLP,
+      reverbPreDelay, reverbNode, reverbLP, resonators,
       lastVoiceEnd: audioContext.currentTime,
-      tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25
+      tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25 + resonators.tailSeconds
     };
     cleanupInterval = setInterval(cleanupFinishedVoices, 250);
 
@@ -1035,6 +1077,7 @@
     offlineReturn.gain.value = REVERB_RETURN_LEVEL;
 
     offlineSend.connect(offlinePreDelay);
+    const offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration);
     offlinePreDelay.connect(offlineReverb);
     offlineReverb.connect(offlineReverbLP);
     offlineReverbLP.connect(offlineReturn);
@@ -1300,7 +1343,9 @@
       localTime += (1 / exportDensity) * (0.95 + rand() * 0.1);
     }
 
-    const renderedBuffer = await offlineCtx.startRendering();
+    let renderedBuffer;
+    try { renderedBuffer = await offlineCtx.startRendering(); }
+    finally { offlineResonators.dispose(); }
     if (disposed) return;
     const wavBlob = await bufferToWave(renderedBuffer);
     if (disposed) return;

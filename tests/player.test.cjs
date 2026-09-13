@@ -251,7 +251,11 @@ test('zero is a valid export seed', async () => {
 });
 
 function notes(ctx) {
-  return ctx.nodes.filter(n => n.kind === 'oscillator').map(n => [n.frequency.value, n.detune.value, n.startTime, n.stopTime]);
+  // Exclude control oscillators feeding filter detune; compare the musical voices.
+  const controls = new Set(ctx.nodes.filter(n => n.kind === 'oscillator' &&
+    n.connections.some(g => g.connections?.some(target =>
+      ctx.nodes.some(f => f.kind === 'filter' && f.detune === target)))));
+  return ctx.nodes.filter(n => n.kind === 'oscillator' && !controls.has(n)).map(n => [n.frequency.value, n.detune.value, n.startTime, n.stopTime]);
 }
 
 test('export leaves live notes unchanged, rejects concurrent exports, and recovers from failure', async () => {
@@ -266,7 +270,7 @@ test('export leaves live notes unchanged, rejects concurrent exports, and recove
   a.contexts[2].reject(Error('render')); await retry;
 });
 
-test('first-run live synthesis and timing match the original source for ten minutes', async (t) => {
+test('live voice parameters and timing match the original source for ten minutes', async (t) => {
   const original = process.env.OPEN_BASELINE;
   if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
@@ -429,4 +433,31 @@ test('disposal cancels active encoding and rejects its pending promise', async (
   const rejected = assert.rejects(pending, /disposed/);
   h.sandbox.__OPEN_PLAYER_KILL__(); await rejected;
   assert.equal(worker.terminated, true); assert.equal(h.timers.size, 0);
+});
+
+
+test('moving resonators precede reverb, use bounded control nodes, and release on replacement', async () => {
+  const h = harness(); await h.api.startFromUI();
+  const ctx = h.contexts[0], first = h.api.state().bus;
+  const bands = first.reverbSend.connections.filter(n => n.type === 'bandpass');
+  assert.equal(bands.length, 3);
+  assert.ok(first.reverbSend.connections.includes(first.reverbPreDelay));
+  for (const band of bands) {
+    assert.equal(band.Q.value, 3);
+    const blend = band.connections[0];
+    assert.equal(blend.gain.value, 0.18);
+    assert.deepEqual(blend.connections, [first.reverbPreDelay]);
+    const modulation = ctx.nodes.find(n => n.connections.includes(band.detune));
+    const lfo = ctx.nodes.find(n => n.connections.includes(modulation));
+    assert.ok(lfo.frequency.value > 0 && lfo.frequency.value < 0.04);
+  }
+  const oldNodes = ctx.nodes.slice();
+  h.advance(120);
+  assert.equal(ctx.nodes.filter(n => n.type === 'bandpass').length, 3);
+  h.api.stopAllManual(false); await h.api.startFromUI(); h.advance(0.3);
+  assert.ok(bands.every(n => n.disconnected));
+  const lfos = oldNodes.filter(n => n.kind === 'oscillator' && n.frequency.value < 1);
+  assert.equal(lfos.length, 3);
+  assert.ok(lfos.every(n => n.disconnected && Number.isFinite(n.stopTime)));
+  assert.equal(h.api.state().bus.masterGain.disconnected, false);
 });

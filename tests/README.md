@@ -68,3 +68,11 @@ Render bytes = `(durationSeconds + 40) * 44100 * 2 * 4`; WAV bytes = `(durationS
 The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and any temporary copies add overhead. Blob storage and memory reclamation are browser-dependent, so adding payload sizes is not a measured process-RAM peak or a guaranteed minimum-memory requirement. This review accounts for allocations in the code; it does not profile a full-length export on physical devices.
 
 Long exports remain available with the existing duration cap and audio quality. The README advises users to leave memory headroom and retry a shorter duration if necessary; no warning dialog or new export restriction is imposed.
+
+## Moving-resonator experiment
+
+Branch `experiment/moving-resonators` adds three parallel bandpass filters from the existing reverb send into its pre-delay, before convolution. The original reverb send path and direct voices remain connected. Centers are 420, 1050, and 2400 Hz, with Q=3 and a shared gain of 0.18 after summation. Independent sine LFOs move detune by ±480, ±600, and ±420 cents at 0.037, 0.023, and 0.017 Hz. Motion continues across notes and decays; it resets on a new session.
+
+This intentionally colors the reverberant sound and can raise the wet level. There is no processing after reverb and no new control. Live and export share the processor construction without consuming their musical random streams. Each live bus owns and stops its three LFOs; offline LFOs stop at render end and disconnect on success or failure. Natural cleanup adds 100 ms for the resonators to settle before the existing reverb tail allowance. Baseline tests compare musical voice parameters and schedules, excluding the added control oscillators; they do not assert identical output audio.
+
+For local audition: `npm ci`, then `node tests/serve.cjs`, then open `http://127.0.0.1:4173/player.html`. The public GitHub Pages player remains on main.
