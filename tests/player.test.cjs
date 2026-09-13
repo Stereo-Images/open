@@ -440,9 +440,9 @@ test('disposal cancels active encoding and rejects its pending promise', async (
 test('moving resonators precede reverb, use bounded control nodes, and release on replacement', async () => {
   const h = harness(); await h.api.startFromUI();
   const ctx = h.contexts[0], first = h.api.state().bus;
-  const bands = first.stereoDrift.wetOutput.connections.filter(n => n.type === 'bandpass');
+  const bands = first.reverbSend.connections.filter(n => n.type === 'bandpass');
   assert.equal(bands.length, 3);
-  assert.ok(first.stereoDrift.wetOutput.connections.includes(first.reverbPreDelay));
+  assert.ok(first.reverbSend.connections.includes(first.reverbPreDelay));
   for (const band of bands) {
     assert.equal(band.Q.value, 3);
     const blend = band.connections[0];
@@ -464,39 +464,44 @@ test('moving resonators precede reverb, use bounded control nodes, and release o
 });
 
 
-test('chance drift stays narrow, moves both pre-reverb paths together, and releases timers', async () => {
-  const h = harness(); await h.api.startFromUI();
-  const first = h.api.state().bus, ctx = h.contexts[0];
-  assert.deepEqual(first.voiceInput.connections[0].connections, [first.masterGain]);
-  assert.equal(first.voiceInput.connections[0].gain.value, Math.SQRT2);
-  assert.deepEqual(first.reverbSend.connections, [first.stereoDrift.wet]);
-  assert.deepEqual(first.reverbReturn.connections, [first.masterGain]);
-  h.advance(300);
-  const events = first.stereoDrift.dry.pan.events;
-  assert.deepEqual(events, first.stereoDrift.wet.pan.events);
-  const ramps = events.filter(e => e[0] === 'ramp');
-  assert.ok(ramps.length >= 7 && ramps.length <= 14);
-  assert.ok(ramps.every(e => Math.abs(e[1]) <= 0.22));
-  assert.ok(ramps.some((e,i) => i && e[1] === ramps[i-1][1]));
-  assert.ok(ramps.some(e => e[1] !== 0));
-  for (let i=1;i<ramps.length;i++) assert.ok(ramps[i][2]-ramps[i-1][2] >= 24);
-  const count = events.length;
-  h.api.stopAllManual(false); await h.api.startFromUI(); h.advance(60);
-  assert.equal(events.length, count);
-  assert.equal(first.stereoDrift.dry.disconnected, true);
-  assert.equal(first.stereoDrift.wet.disconnected, true);
-  h.api.stopAllManual(true); assert.equal(h.timers.size, 0);
+test('each bell owns one chance-driven trajectory shared by its partials and both outputs', () => {
+  const h = harness(); h.api.setup();
+  const {audioContext: ctx, bus} = h.api.state();
+  for (let i=0;i<12;i++) h.api.scheduleNote(ctx, bus.masterGain, bus.reverbSend, 220, i*2, 30, 0.4);
+  const pans = ctx.nodes.filter(n => n.kind === 'panner');
+  assert.equal(pans.length, 12);
+  pans.forEach((pan,i) => {
+    assert.deepEqual(pan.pan.events[0], ['set', 0, i*2]);
+    const ramp = pan.pan.events[1];
+    if (ramp) { assert.equal(ramp[2], i*2+30); assert.ok(Math.abs(ramp[1])<=0.22); }
+    const level = pan.connections[0];
+    assert.equal(level.gain.value, Math.SQRT2);
+    assert.deepEqual(level.connections, [bus.masterGain, bus.reverbSend]);
+    assert.ok(ctx.nodes.filter(n => n.kind === 'filter' && n.connections.includes(pan)).length >= 2);
+  });
+  assert.ok(pans.some(p => p.pan.events.length === 1));
+  assert.ok(pans.some(p => p.pan.events.length === 2));
+  assert.ok(new Set(pans.map(p => p.pan.events[1]?.[1])).size > 2);
+  h.advance(31);
+  assert.equal(pans[0].disconnected, true);
+  assert.equal(pans[1].disconnected, false);
+  assert.equal(bus.reverbNode.disconnected, false);
+  h.api.stopAllManual(true);
+  assert.ok(pans.every(p => p.disconnected)); assert.equal(h.timers.size, 0);
 });
 
-test('offline drift uses the same seeded motion without consuming musical random state', async () => {
-  const h = harness(); await h.api.startFromUI();
-  h.elements.get('songDuration').value = '600';
-  const pending = h.api.renderWavExport(); h.advance(120);
-  const live = h.contexts[0].nodes.filter(n => n.kind === 'panner');
-  const offline = h.contexts[1].nodes.filter(n => n.kind === 'panner');
-  assert.equal(offline.length, 2);
-  assert.deepEqual(live[0].pan.events, offline[0].pan.events.slice(0,live[0].pan.events.length));
-  assert.deepEqual(offline[0].pan.events, offline[1].pan.events);
+test('offline note panners follow note starts and release after render failure', async () => {
+  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  const pending = h.api.renderWavExport(); const ctx = h.contexts[1];
+  const pans = ctx.nodes.filter(n => n.kind === 'panner');
+  assert.ok(pans.length > 2);
+  for (const pan of pans) {
+    const start = pan.pan.events[0][2];
+    assert.ok(ctx.nodes.some(n => n.kind === 'oscillator' && n.startTime === start));
+    assert.equal(pan.pan.events[0][1], 0);
+    if (pan.pan.events[1]) assert.ok(pan.pan.events[1][2] > start);
+  }
   h.contexts[1].reject(Error('render')); await pending;
-  assert.ok(offline.every(n => n.disconnected));
+  assert.ok(pans.every(n => n.disconnected));
+  assert.equal(h.api.state().isPlaying, true);
 });

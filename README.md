@@ -1,5 +1,9 @@
 # Open
 
+**[Open the web app →](https://stereo-images.github.io/open/)**
+
+This link opens the published version on `main`. This experimental branch includes moving resonators and note-triggered stereo drift; to audition it locally, run `node tests/serve.cjs` and open [the local player](http://127.0.0.1:4173/player.html).
+
 > *Designed for desktop browsers.*
 
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.

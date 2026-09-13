@@ -192,19 +192,20 @@ test('reloading the script disposes the old instance and binds controls once', a
 });
 
 
-test('native chance drift preserves center level and moves stereo energy slowly', async ({ page }) => {
+test('native note drift starts at the strike and moves stereo energy through its decay', async ({ page }) => {
   const source = await fs.readFile(path.join(__dirname, '../../player.js'), 'utf8');
   await page.route('**/player.js', route => route.fulfill({ contentType: 'text/javascript',
     body: source.replace('  function teardownBusHard() {',
-      '  window.testStereoDrift = createStereoDrift;\n  function teardownBusHard() {') }));
+      '  window.testNoteDrift = createNoteDrift; window.testInitializeDrift = initializeNoteDrift; window.testDisposeDrift = disposeNoteDrift;\n  function teardownBusHard() {') }));
   await page.goto('/player.html');
   const result = await page.evaluate(async () => {
     const ctx = new OfflineAudioContext(2, 120 * 22050, 22050);
     const wetInput = ctx.createGain();
-    const drift = window.testStereoDrift(ctx, ctx.destination, wetInput, 12345, 120);
+    window.testInitializeDrift(ctx, 2);
+    const drift = window.testNoteDrift(ctx, ctx.destination, wetInput, 0, 120);
     const tone = ctx.createOscillator(); tone.frequency.value = 220;
-    tone.connect(drift.dry); tone.start(); tone.stop(120);
-    const buffer = await ctx.startRendering(); drift.dispose();
+    tone.connect(drift); tone.start(); tone.stop(120);
+    const buffer = await ctx.startRendering(); window.testDisposeDrift(ctx);
     const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
     const rms = (a, start, count) => Math.sqrt(a.slice(start, start + count).reduce((sum,x)=>sum+x*x,0)/count);
     const balances = [0, 15, 30, 60, 90].map(t => {
