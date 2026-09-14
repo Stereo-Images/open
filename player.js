@@ -1047,7 +1047,9 @@
       const performance = createPerformance(seed, tone, duration);
       buildMixBus(seed);
       setSeed(seed);
-      sessionSnapshot = Object.freeze({ ...performance, sampleRate: ctx.sampleRate });
+      // Created once per run; exports keep this ID even after Stop or a new Play.
+      const runId = `${seed.toString(16).padStart(8, "0")}-${Date.now().toString(36)}`;
+      sessionSnapshot = Object.freeze({ ...performance, sampleRate: ctx.sampleRate, runId });
       liveCursor = 0;
       liveTimeShift = 0;
       liveNextGroup = nextLiveGroup();
@@ -1181,7 +1183,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-final-v78-${Date.now()}.wav`;
+    a.download = `open-run-${sessionSnapshot.runId}-${Date.now()}.wav`;
     document.body.appendChild(a);
     a.click();
     setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
