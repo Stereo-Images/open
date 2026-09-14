@@ -19,7 +19,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     },
     dispatch(type) { for (const l of [...listeners]) if (l.target === this && l.type === type) l.handler({ type }); }
   });
-  const param = () => ({ value: 0, setValueAtTime() {}, linearRampToValueAtTime() {},
+  const param = () => ({ value: 0, events: [], setValueAtTime(v, t) { this.events.push(["set", v, t]); }, linearRampToValueAtTime(v, t) { this.events.push(["ramp", v, t]); },
     exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
   class Context {
     constructor() {
@@ -34,6 +34,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
       this.nodes.push(n); return n;
     }
     createGain() { return this.node('gain'); }
+    createStereoPanner() { const n = this.node('panner'); n.pan = param(); return n; }
     createOscillator() { return this.node('oscillator'); }
     createBiquadFilter() { return this.node('filter'); }
     createConvolver() { return this.node('convolver'); }
@@ -251,7 +252,11 @@ test('zero is a valid export seed', async () => {
 });
 
 function notes(ctx) {
-  return ctx.nodes.filter(n => n.kind === 'oscillator').map(n => [n.frequency.value, n.detune.value, n.startTime, n.stopTime]);
+  // Exclude control oscillators feeding filter detune; compare the musical voices.
+  const controls = new Set(ctx.nodes.filter(n => n.kind === 'oscillator' &&
+    n.connections.some(g => g.connections?.some(target =>
+      ctx.nodes.some(f => f.kind === 'filter' && f.detune === target)))));
+  return ctx.nodes.filter(n => n.kind === 'oscillator' && !controls.has(n)).map(n => [n.frequency.value, n.detune.value, n.startTime, n.stopTime]);
 }
 
 test('export leaves live notes unchanged, rejects concurrent exports, and recovers from failure', async () => {
@@ -266,7 +271,7 @@ test('export leaves live notes unchanged, rejects concurrent exports, and recove
   a.contexts[2].reject(Error('render')); await retry;
 });
 
-test('first-run live synthesis and timing match the original source for ten minutes', async (t) => {
+test('live voice parameters and timing match the original source for ten minutes', async (t) => {
   const original = process.env.OPEN_BASELINE;
   if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
@@ -429,4 +434,75 @@ test('disposal cancels active encoding and rejects its pending promise', async (
   const rejected = assert.rejects(pending, /disposed/);
   h.sandbox.__OPEN_PLAYER_KILL__(); await rejected;
   assert.equal(worker.terminated, true); assert.equal(h.timers.size, 0);
+});
+
+
+test('one moving bank feeds direct sound and pre-reverb, and releases on replacement', async () => {
+  const h = harness(); await h.api.startFromUI();
+  const ctx = h.contexts[0], first = h.api.state().bus;
+  const bands = first.reverbSend.connections.filter(n => n.type === 'bandpass');
+  assert.equal(bands.length, 3);
+  assert.ok(first.reverbSend.connections.includes(first.reverbPreDelay));
+  for (const band of bands) {
+    assert.equal(band.Q.value, 3);
+    const blend = band.connections[0];
+    assert.equal(blend.gain.value, 0.18);
+    assert.deepEqual(blend.connections, [first.reverbPreDelay, first.masterGain]);
+    assert.ok(!blend.connections.includes(first.reverbSend));
+    const modulation = ctx.nodes.find(n => n.connections.includes(band.detune));
+    const lfo = ctx.nodes.find(n => n.connections.includes(modulation));
+    assert.ok(lfo.frequency.value > 0 && lfo.frequency.value < 0.04);
+  }
+  const oldNodes = ctx.nodes.slice();
+  h.advance(120);
+  assert.equal(ctx.nodes.filter(n => n.type === 'bandpass').length, 3);
+  h.api.stopAllManual(false); await h.api.startFromUI(); h.advance(0.3);
+  assert.ok(bands.every(n => n.disconnected));
+  const lfos = oldNodes.filter(n => n.kind === 'oscillator' && n.frequency.value < 1);
+  assert.equal(lfos.length, 3);
+  assert.ok(lfos.every(n => n.disconnected && Number.isFinite(n.stopTime)));
+  assert.equal(h.api.state().bus.masterGain.disconnected, false);
+});
+
+
+test('each bell owns one chance-driven trajectory shared by its partials and both outputs', () => {
+  const h = harness(); h.api.setup();
+  const {audioContext: ctx, bus} = h.api.state();
+  for (let i=0;i<12;i++) h.api.scheduleNote(ctx, bus.masterGain, bus.reverbSend, 220, i*2, 30, 0.4);
+  const pans = ctx.nodes.filter(n => n.kind === 'panner');
+  assert.equal(pans.length, 12);
+  pans.forEach((pan,i) => {
+    assert.deepEqual(pan.pan.events[0], ['set', 0, i*2]);
+    const ramp = pan.pan.events[1];
+    if (ramp) { assert.equal(ramp[2], i*2+30); assert.ok(Math.abs(ramp[1])<=0.22); }
+    const level = pan.connections[0];
+    assert.equal(level.gain.value, Math.SQRT2);
+    assert.deepEqual(level.connections, [bus.masterGain, bus.reverbSend]);
+    assert.ok(ctx.nodes.filter(n => n.kind === 'filter' && n.connections.includes(pan)).length >= 2);
+  });
+  assert.ok(pans.some(p => p.pan.events.length === 1));
+  assert.ok(pans.some(p => p.pan.events.length === 2));
+  assert.ok(new Set(pans.map(p => p.pan.events[1]?.[1])).size > 2);
+  h.advance(31);
+  assert.equal(pans[0].disconnected, true);
+  assert.equal(pans[1].disconnected, false);
+  assert.equal(bus.reverbNode.disconnected, false);
+  h.api.stopAllManual(true);
+  assert.ok(pans.every(p => p.disconnected)); assert.equal(h.timers.size, 0);
+});
+
+test('offline note panners follow note starts and release after render failure', async () => {
+  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  const pending = h.api.renderWavExport(); const ctx = h.contexts[1];
+  const pans = ctx.nodes.filter(n => n.kind === 'panner');
+  assert.ok(pans.length > 2);
+  for (const pan of pans) {
+    const start = pan.pan.events[0][2];
+    assert.ok(ctx.nodes.some(n => n.kind === 'oscillator' && n.startTime === start));
+    assert.equal(pan.pan.events[0][1], 0);
+    if (pan.pan.events[1]) assert.ok(pan.pan.events[1][2] > start);
+  }
+  h.contexts[1].reject(Error('render')); await pending;
+  assert.ok(pans.every(n => n.disconnected));
+  assert.equal(h.api.state().isPlaying, true);
 });

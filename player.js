@@ -251,6 +251,80 @@
     return impulse;
   }
 
+  // Parallel coloration, upstream of the existing reverb.
+  // Slow independent LFOs move the filter centers throughout each note.
+  function createMovingResonators(ctx, input, output, endTime, directOutput) {
+    const nodes = [], lfos = [];
+    const blend = ctx.createGain();
+    blend.gain.value = 0.18; // Per band; bandpass peaks remain unity at their centers.
+    blend.connect(output);
+    // Expose the same moving overtones directly, without adding a second bank
+    // or changing the original pre-reverb route. Both follow the existing send.
+    if (directOutput) blend.connect(directOutput);
+    nodes.push(blend);
+    const start = ctx.currentTime;
+    for (const [frequency, speed, depth] of [
+      [420, 0.037, 480], [1050, 0.023, 600], [2400, 0.017, 420]
+    ]) {
+      const filter = ctx.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = frequency;
+      filter.Q.value = 3;
+      const lfo = ctx.createOscillator();
+      lfo.type = "sine";
+      lfo.frequency.value = speed;
+      const modulation = ctx.createGain();
+      modulation.gain.value = depth; // Cents, so movement is proportional to pitch.
+      lfo.connect(modulation);
+      modulation.connect(filter.detune);
+      input.connect(filter);
+      filter.connect(blend);
+      lfo.start(start);
+      if (Number.isFinite(endTime)) lfo.stop(endTime);
+      nodes.push(filter, modulation, lfo);
+      lfos.push(lfo);
+    }
+    return {
+      // At the lowest center (~318 Hz), Q=3 rings out well within this allowance.
+      tailSeconds: 0.1,
+      dispose() {
+        for (const lfo of lfos) { try { lfo.stop(ctx.currentTime); } catch {} }
+        for (const node of nodes) { try { node.disconnect(); } catch {} }
+      }
+    };
+  }
+
+  const spatialStates = new WeakMap();
+  function initializeNoteDrift(ctx, seed) {
+    spatialStates.set(ctx, { random: mulberry32((seed ^ 0x57E2E0) >>> 0), nodes: [] });
+  }
+
+  // One trajectory per note, shared by its FM partials and both output paths.
+  function createNoteDrift(ctx, destination, wetSend, time, duration) {
+    const state = spatialStates.get(ctx);
+    const random = state.random;
+    const pan = trackNode(ctx, ctx.createStereoPanner());
+    const level = trackNode(ctx, ctx.createGain());
+    level.gain.value = Math.SQRT2; // Preserve the mono voice's centered level.
+    pan.pan.setValueAtTime(0, time);
+    if (random() < 0.65) {
+      const target = (random() * 2 - 1) * 0.22;
+      pan.pan.linearRampToValueAtTime(target, time + duration);
+    }
+    pan.connect(level);
+    level.connect(destination);
+    level.connect(wetSend);
+    registerVoice(ctx, [pan, level], time + duration);
+    if (ctx !== audioContext) state.nodes.push(pan, level);
+    return pan;
+  }
+
+  function disposeNoteDrift(ctx) {
+    const state = spatialStates.get(ctx);
+    if (state) for (const node of state.nodes) node.disconnect();
+    spatialStates.delete(ctx);
+  }
+
   function teardownBusHard() {
     clearTimeout(teardownTimer);
     teardownTimer = null;
@@ -261,6 +335,8 @@
     try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
     
     killAllActiveNodes(audioContext.currentTime);
+    bus.resonators?.dispose();
+    disposeNoteDrift(audioContext);
 
     try { bus.reverbReturn.disconnect(); } catch {}
     try { bus.reverbSend.disconnect(); } catch {}
@@ -281,7 +357,7 @@
     bus = null;
   }
 
-  function buildMixBus() {
+  function buildMixBus(seed = sessionSeed) {
     ensureAudioContext();
     teardownBusHard();
 
@@ -309,7 +385,9 @@
     const reverbReturn = audioContext.createGain();
     reverbReturn.gain.value = REVERB_RETURN_LEVEL;
 
+    initializeNoteDrift(audioContext, seed);
     reverbSend.connect(reverbPreDelay);
+    const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay, undefined, masterGain);
     reverbPreDelay.connect(reverbNode);
     reverbNode.connect(reverbLP);
     reverbLP.connect(reverbReturn);
@@ -317,9 +395,9 @@
 
     bus = {
       masterGain, reverbSend, reverbReturn, streamDest,
-      reverbPreDelay, reverbNode, reverbLP,
+      reverbPreDelay, reverbNode, reverbLP, resonators,
       lastVoiceEnd: audioContext.currentTime,
-      tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25
+      tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25 + resonators.tailSeconds
     };
     cleanupInterval = setInterval(cleanupFinishedVoices, 250);
 
@@ -582,6 +660,7 @@
       return v;
     });
 
+    const spatialInput = createNoteDrift(ctx, destination, wetSend, time, duration);
     voices.forEach(voice => {
       const carrier = trackNode(ctx, ctx.createOscillator());
       const modulator = trackNode(ctx, ctx.createOscillator());
@@ -608,8 +687,7 @@
       modGain.connect(carrier.frequency);
       carrier.connect(ampGain);
       ampGain.connect(filter);
-      filter.connect(destination);
-      filter.connect(wetSend);
+      filter.connect(spatialInput);
 
       modulator.start(time); carrier.start(time);
       modulator.stop(time + duration); carrier.stop(time + duration);
@@ -644,7 +722,7 @@
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
     carrier.connect(ampGain); ampGain.connect(lp);
-    lp.connect(destination); lp.connect(wetSend);
+    lp.connect(createNoteDrift(ctx, destination, wetSend, time, duration));
 
     modulator.start(time); carrier.start(time);
     modulator.stop(time + duration); carrier.stop(time + duration);
@@ -896,9 +974,6 @@
 
       stopAllManual(true);
       request = startRequest;
-      buildMixBus();
-
-      if (bridgeAudioEl) bridgeAudioEl.play().catch(()=>{});
 
       isEndingNaturally = false;
       isApproachingEnd = false;
@@ -907,7 +982,9 @@
       lastDroneStart = -9999; lastDroneDur = 0;
 
       const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
+      buildMixBus(seed);
       setSeed(seed);
+      if (bridgeAudioEl) bridgeAudioEl.play().catch(()=>{});
       runDensity = 0.05 + rand() * 0.20;
 
       // Capture the tone actually used for this run, so exporting later reproduces
@@ -1034,7 +1111,9 @@
     const offlineReturn = offlineCtx.createGain();
     offlineReturn.gain.value = REVERB_RETURN_LEVEL;
 
+    initializeNoteDrift(offlineCtx, sessionSnapshot.seed);
     offlineSend.connect(offlinePreDelay);
+    const offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration, offlineMaster);
     offlinePreDelay.connect(offlineReverb);
     offlineReverb.connect(offlineReverbLP);
     offlineReverbLP.connect(offlineReturn);
@@ -1262,6 +1341,7 @@
               return volVoice;
             });
 
+            const spatialInput = createNoteDrift(offlineCtx, offlineMaster, offlineSend, localTime, appliedDur);
             voices.forEach(voice => {
                 const carrier = trackNode(offlineCtx, offlineCtx.createOscillator());
                 const modulator = trackNode(offlineCtx, offlineCtx.createOscillator());
@@ -1286,7 +1366,7 @@
 
                 modulator.connect(modGain); modGain.connect(carrier.frequency);
                 carrier.connect(ampGain); ampGain.connect(filter);
-                filter.connect(offlineMaster); filter.connect(offlineSend);
+                filter.connect(spatialInput);
 
                 modulator.start(localTime); carrier.start(localTime);
                 modulator.stop(localTime + appliedDur); carrier.stop(localTime + appliedDur);
@@ -1300,7 +1380,9 @@
       localTime += (1 / exportDensity) * (0.95 + rand() * 0.1);
     }
 
-    const renderedBuffer = await offlineCtx.startRendering();
+    let renderedBuffer;
+    try { renderedBuffer = await offlineCtx.startRendering(); }
+    finally { offlineResonators.dispose(); disposeNoteDrift(offlineCtx); }
     if (disposed) return;
     const wavBlob = await bufferToWave(renderedBuffer);
     if (disposed) return;

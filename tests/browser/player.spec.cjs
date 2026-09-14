@@ -190,3 +190,33 @@ test('reloading the script disposes the old instance and binds controls once', a
   await expect(page.locator('#open-airplay-bridge')).toHaveCount(0);
   expect(errors).toEqual([]);
 });
+
+
+test('native note drift starts at the strike and moves stereo energy through its decay', async ({ page }) => {
+  const source = await fs.readFile(path.join(__dirname, '../../player.js'), 'utf8');
+  await page.route('**/player.js', route => route.fulfill({ contentType: 'text/javascript',
+    body: source.replace('  function teardownBusHard() {',
+      '  window.testNoteDrift = createNoteDrift; window.testInitializeDrift = initializeNoteDrift; window.testDisposeDrift = disposeNoteDrift;\n  function teardownBusHard() {') }));
+  await page.goto('/player.html');
+  const result = await page.evaluate(async () => {
+    const ctx = new OfflineAudioContext(2, 120 * 22050, 22050);
+    const wetInput = ctx.createGain();
+    window.testInitializeDrift(ctx, 2);
+    const drift = window.testNoteDrift(ctx, ctx.destination, wetInput, 0, 120);
+    const tone = ctx.createOscillator(); tone.frequency.value = 220;
+    tone.connect(drift); tone.start(); tone.stop(120);
+    const buffer = await ctx.startRendering(); window.testDisposeDrift(ctx);
+    const left = buffer.getChannelData(0), right = buffer.getChannelData(1);
+    const rms = (a, start, count) => Math.sqrt(a.slice(start, start + count).reduce((sum,x)=>sum+x*x,0)/count);
+    const balances = [0, 15, 30, 60, 90].map(t => {
+      const l = rms(left, t*22050, 2205), r = rms(right, t*22050, 2205);
+      return (r-l)/(r+l);
+    });
+    return { center: rms(left, 0, 2205), balances };
+  });
+  expect(result.center).toBeGreaterThan(0.69);
+  expect(result.center).toBeLessThan(0.72);
+  expect(Math.abs(result.balances[0])).toBeLessThan(0.005);
+  expect(Math.max(...result.balances) - Math.min(...result.balances)).toBeGreaterThan(0.02);
+  expect(result.balances.every(x => Math.abs(x) < 0.2)).toBe(true);
+});
