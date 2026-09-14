@@ -10,7 +10,7 @@ What resonates? [*Open*](https://stereo-images.github.io/open/) answers that que
 
 The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
 
-*Open* is meant to run quietly in the background: no logins, no accounts. Only your last tone and duration are remembered locally. Though you can change the parameters, each run is temporary. When the sound stops, it is gone.
+*Open* is meant to run quietly in the background: no logins, no accounts. Only your last tone and duration are remembered locally. Each run is unique. Its performance remains available for WAV export until you press Play again or close the page.
 
 
 
@@ -40,14 +40,17 @@ When set to "Infinite", the engine generates new harmonic movement according to 
 Each recording captures a single, unrepeatable run.
 1. **Launch:** Click "Play" to start the generative engine.
 2. **Tone:** Use the slider to set the fundamental frequency (Safety floor: 110Hz).
-3. **Duration:** Select a fixed time (1m, 5m, 10m, 30m) or Infinite.
+3. **Duration:** Select a time (1m, 5m, 10m, 30m) or Infinite before pressing Play. A timed run begins seeking its natural ending after that time; resolving the phrase and allowing the sound to decay can take longer. Tone and duration changes apply to the next run.
 
 ### Output & Saving
 Because there are no project files, you save the *audio*, not the *session*.
 * **Live Recording:** Press **`Shift + R`** to capture the current mix in real time; press it again to save. The browser selects the recording format, saved as `.webm`, `.ogg`, or `.m4a`. Recording also finishes automatically after a natural ending and its remaining audio tail.
-* **Export WAV:** Press **`Shift + E`** to create an independent generative rendering as a lossless, 16-bit PCM `.wav` file. Export uses its own random state initialized from the session seed and retains its own sequence and ending behavior. It does not reproduce the live performance or alter its random state. Synthesis runs through `OfflineAudioContext`, with WAV encoding handled in a worker. The selected duration controls export length; "Infinite" uses a 30-minute core-duration cap, followed by 40 seconds for decay. The root tone is the value captured when Play was pressed.
+* **Export WAV:** Press **`Shift + E`** to save the current or most recent performance from its beginning as a lossless, 16-bit PCM `.wav` file. The WAV uses the same planned notes, FM variations, stereo movement, resonators, reverb, and natural ending as live playback. You can export while listening or after Stop; stopping early does not shorten the planned performance. Repeated exports preserve it until the next Play or page close.
+* **Timing:** Export reproduces the intended performance, excluding browser stalls and manual Stop fades. A timed run includes its complete natural ending and reverb tail, so its WAV can be appreciably longer than the selected time. Infinite exports the same first 30 minutes of planned events plus their remaining decay, while live playback continues. To generate a new performance, press Play again.
+* **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. It uses the sample rate captured from the live audio context (commonly 44.1 or 48 kHz). Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
 
-**Long exports need memory.** A 30-minute WAV export (also used for “Infinite”) creates about 650 MB of uncompressed working audio and a 325 MB WAV file, plus browser and synthesis overhead. Leave plenty of available memory and close other demanding tabs or apps before a long export. Available system memory does not guarantee the browser can complete it; if an export fails or the tab closes, try a shorter duration. These are calculated data sizes, not measured peak RAM requirements.
+**Long exports need memory.** For 30 minutes of stereo audio alone, the uncompressed render buffer is about 635 MB at 44.1 kHz or 691 MB at 48 kHz; the WAV adds about 318 MB or 346 MB. The natural ending, decay, browser, and synthesis add overhead. Leave plenty of available memory and close other demanding tabs or apps before a long export. Available system memory does not guarantee the browser can complete it; if an export fails or the tab closes, start a shorter run and try again. These are calculated data sizes, not measured peak RAM requirements.
+
 
 ---
 

@@ -13,15 +13,15 @@ git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > /tmp/open-baseline
 OPEN_BASELINE=/tmp/open-baseline.js node --test tests/player.test.cjs
 ```
 
-The tests use a simulated audio clock, Web Audio nodes, and delayed recorder callbacks. They cover rapid playback changes, pending resume cancellation, mobile background stops, two-hour voice-reference bounds, natural tail cleanup, overlapping recording callbacks, export isolation, export failure recovery, and valid zero seeds. Baseline comparisons check oscillator frequency, detuning, and start/stop times separately for live playback and export; they do not require live and exported music to match each other.
+The tests use a simulated audio clock, Web Audio nodes, and delayed recorder callbacks. They cover rapid playback changes, pending resume cancellation, mobile background stops, two-hour voice-reference bounds, natural tail cleanup, overlapping recording callbacks, export isolation, export failure recovery, and valid zero seeds. The original-source baseline checks live musical oscillator frequency, detuning, and start/stop times. Matching-export tests compare the current live and offline voice controls, envelopes, stereo trajectories, room impulse, resonator phase origin, and natural endings.
 
 Additional regressions cover stalled scheduler callbacks, pauses in the audio clock, finite-session completion after stalls, WAV headers and original PCM quantization, stereo ordering, bounded transferable chunks, and worker failure recovery. No application dependencies are needed for these tests.
 
-The sparse interface, musical probabilities, synthesis envelopes, live ending rules, export ending rules, and manual Stop fade are retained. Completed voices disconnect after a 100 ms filter-settling allowance. Natural completion releases the bus after the last scheduled voice, filter settling, full impulse response, pre-delay, and a 250 ms return-filter margin. Cleanup uses audio time so browser suspension does not truncate a pending tail. New sessions reset drone timing that belonged to earlier sessions.
+The sparse interface, musical probabilities, synthesis envelopes, live ending rules, and manual Stop fade are retained. Completed voices disconnect after a 100 ms filter-settling allowance. Natural completion releases the bus after the last scheduled voice, filter settling, full impulse response, pre-delay, and a 250 ms return-filter margin. Cleanup uses audio time so browser suspension does not truncate a pending tail. New sessions reset drone timing that belonged to earlier sessions.
 
-If the scheduler resumes after an event's start time has passed, it schedules the next event 50 ms ahead of the current audio clock and keeps the current phrase state. It does not generate missed events. Normal scheduling, clock suspension, and the live/export ending rules retain their previous behavior.
+If the scheduler resumes after an event's start time has passed, it schedules the next event 50 ms ahead of the current audio clock and keeps the current phrase state. It does not generate missed events. Normal scheduling, clock suspension, and the live ending rules retain their previous behavior. Export now follows that same planned ending.
 
-WAV encoding runs in a dedicated worker. At most 65,536 frames per channel are copied and transferred in each message; the next chunk is sent only after the worker acknowledges the previous one. The worker builds the final file from Blob parts, preserving the original 16-bit conversion without a full-size WAV ArrayBuffer on the main thread. The full OfflineAudioContext render buffer is still required (about 649 MB for the maximum stereo export), so long exports remain memory intensive.
+WAV encoding runs in a dedicated worker. At most 65,536 frames per channel are copied and transferred in each message; the next chunk is sent only after the worker acknowledges the previous one. The worker builds the final file from Blob parts, preserving the original 16-bit conversion without a full-size WAV ArrayBuffer on the main thread. The full OfflineAudioContext render buffer is still required (roughly 635–691 MB for 30 minutes before the ending and tail, at 44.1–48 kHz), so long exports remain memory intensive.
 
 ## Native browser checks
 
@@ -31,9 +31,9 @@ npx playwright install --with-deps --only-shell chromium firefox webkit
 npm run test:browser
 ```
 
-The development-only Playwright dependency exercises a local HTTP server in Chromium, Firefox, and WebKit. Browser checks verify both pop-up launcher paths, slider keyboard focus, sound in a decoded MediaRecorder download, immediate Stop/Play, and a complete 100-second stereo WAV export with playback interaction during worker encoding. Recording filenames are checked against each browser's actual MIME type. Worker acknowledgements are deliberately delayed in the export check to make that interaction reproducible.
+The development-only Playwright dependency exercises a local HTTP server in Chromium, Firefox, and WebKit. Browser checks verify both pop-up launcher paths, slider keyboard focus, sound in a decoded MediaRecorder download, immediate Stop/Play, and a complete stereo WAV export through its natural ending with playback interaction during worker encoding. Recording filenames are checked against each browser's actual MIME type. Worker acknowledgements are deliberately delayed in the export check to make that interaction reproducible.
 
-GitHub Actions runs the regression suite with the original baseline and all three browser projects on pushes to `main`, `engineering-hardening`, and `experiment/moving-resonators`, and on pull requests. Chromium and Firefox run on Linux with a virtual audio output; WebKit runs on macOS so native recording codecs are available. Linux WebKit does not provide MediaRecorder in the tested build. Workflow permissions are read-only; it does not publish or deploy the site.
+GitHub Actions runs the regression suite with the original baseline and all three browser projects on pushes to `main`, `engineering-hardening`, `engineering/matching-wav-performance`, and `experiment/moving-resonators`, and on pull requests. Chromium and Firefox run on Linux with a virtual audio output; WebKit runs on macOS so native recording codecs are available. Linux WebKit does not provide MediaRecorder in the tested build. Workflow permissions are read-only; it does not publish or deploy the site.
 
 ## Audio routing investigation
 
@@ -54,20 +54,21 @@ The instance disposer removes event listeners, stops live audio, clears recorder
 
 ## Long-export memory accounting
 
-The export renders stereo audio at 44,100 Hz with 32-bit float samples, then encodes 16-bit PCM. Every selected duration includes 40 seconds for decay. Calculated payload sizes, in decimal MB:
+The export renders stereo audio at the session's native sample rate with 32-bit float samples, then encodes 16-bit PCM. The render length is derived from the longest planned voice plus per-voice settling (100 ms), resonator settling (100 ms), the full impulse response (10 seconds), pre-delay (45 ms), and return-filter margin (250 ms). Fixed durations also include the live engine's resolution beyond the selected duration. Infinite schedules only events before 30 minutes and includes their full decay.
 
-| Selected duration | Render buffer | WAV file |
-| --- | ---: | ---: |
-| 1 minute | 35.28 MB | 17.64 MB |
-| 5 minutes | 119.95 MB | 59.98 MB |
-| 10 minutes | 225.79 MB | 112.90 MB |
-| 30 minutes / Infinite | 649.15 MB | 324.58 MB |
+For an actual rendered duration `T` seconds and sample rate `R`, render bytes = `ceil(T * R) * 2 * 4`; WAV bytes = `ceil(T * R) * 2 * 2 + 44`. Thirty minutes without an ending or tail therefore needs 635.04 MB of sample data at 44.1 kHz or 691.20 MB at 48 kHz, plus a 317.52 MB or 345.60 MB WAV. These are payload sizes, not measured RAM peaks.
 
-Render bytes = `(durationSeconds + 40) * 44100 * 2 * 4`; WAV bytes = `(durationSeconds + 40) * 44100 * 2 * 2 + 44`.
+The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and temporary copies add overhead. Long exports remain available with a README memory advisory.
 
-The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and any temporary copies add overhead. Blob storage and memory reclamation are browser-dependent, so adding payload sizes is not a measured process-RAM peak or a guaranteed minimum-memory requirement. This review accounts for allocations in the code; it does not profile a full-length export on physical devices.
+## Shared performance and export
 
-Long exports remain available with the existing duration cap and audio quality. The README advises users to leave memory headroom and retry a shorter duration if necessary; no warning dialog or new export restriction is imposed.
+Play captures seed, tone, duration, and native sample rate. A pure planner retains plain note data for the complete fixed-duration performance, or the first 30 minutes for Infinite. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
+
+Infinite continues with an incremental generator after the retained 30-minute prefix. It does not append later events to the score, so retained history remains bounded. Export never advances that generator. Scheduler-stall offsets belong only to live playback and never mutate the score.
+
+A common session origin controls master fade, the reverb-send envelope, and resonator LFO phase. The room uses a fixed deterministic impulse seed and the same native sample rate for both renderers. The opening reverb target is scheduled once; repeatedly targeting the same level with the same time constant is unnecessary. Natural-end eligibility uses the planned event time and the existing lookahead allowance, so it no longer depends on callback jitter at the duration threshold.
+
+Regressions check multiple seeds and durations, full voice modulation/envelopes and panning, room samples and LFO start times, zero seeds, repeat exports after Stop/control changes, exporting during replacement Play, stalls, and bounded Infinite history. Native browser tests compare repeat WAV bytes and inspect tail silence. These establish shared scheduling and repeatable rendering in the tested browser; they do not claim a byte-identical recording of physical device output.
 
 
 ## Online experimental player

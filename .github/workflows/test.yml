@@ -2,7 +2,7 @@ name: Audio regression checks
 
 on:
   push:
-    branches: [main, engineering-hardening, experiment/moving-resonators]
+    branches: [main, engineering-hardening, engineering/matching-wav-performance, experiment/moving-resonators]
   pull_request:
 
 permissions:

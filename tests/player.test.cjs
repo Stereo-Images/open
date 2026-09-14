@@ -20,7 +20,9 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     dispatch(type) { for (const l of [...listeners]) if (l.target === this && l.type === type) l.handler({ type }); }
   });
   const param = () => ({ value: 0, events: [], setValueAtTime(v, t) { this.events.push(["set", v, t]); }, linearRampToValueAtTime(v, t) { this.events.push(["ramp", v, t]); },
-    exponentialRampToValueAtTime() {}, setTargetAtTime() {}, cancelScheduledValues() {} });
+    exponentialRampToValueAtTime(v, t) { this.events.push(["exp", v, t]); },
+    setTargetAtTime(v, t, c) { this.events.push(["target", v, t, c]); },
+    cancelScheduledValues(t) { this.events.push(["cancel", t]); } });
   class Context {
     constructor() {
       this.currentTime = 0; this.sampleRate = 44100; this.state = 'running';
@@ -45,13 +47,17 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
       n.stream = { getTracks: () => [track] }; return n;
     }
     createBuffer(channels, length, rate) {
+      const data = Array.from({ length: channels }, () => new Float32Array(length));
       return { duration: length / rate, sampleRate: rate,
-        getChannelData: () => new Float32Array(length) };
+        getChannelData: ch => data[ch] };
     }
     resume() { this.state = 'running'; return Promise.resolve(); }
     close() { this.state = 'closed'; return Promise.resolve(); }
   }
   class OfflineContext extends Context {
+    constructor(channels, length, sampleRate) {
+      super(); this.length = length; this.sampleRate = sampleRate;
+    }
     startRendering() {
       return new Promise((resolve, reject) => { this.resolve = resolve; this.reject = reject; });
     }
@@ -164,8 +170,8 @@ test('a clock pause does not skip upcoming musical events', async () => {
 });
 
 test('a finite session still reaches its natural ending after a long callback stall', async () => {
-  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
-  h.contexts[0].currentTime += 120; h.advance(600);
+  const h = harness(); h.sandbox.document.getElementById('songDuration').value = '60';
+  await h.api.startFromUI(); h.contexts[0].currentTime += 120; h.advance(600);
   assert.equal(h.api.state().isPlaying, false); assert.equal(h.api.state().bus, null);
   assert.equal(h.api.state().nodes, 0);
 });
@@ -280,17 +286,123 @@ test('live voice parameters and timing match the original source for ten minutes
   assert.deepEqual(notes(a.contexts[0]), notes(b.contexts[0]));
 });
 
-test('export retains its independent original sequence and ending', async (t) => {
-  const original = process.env.OPEN_BASELINE;
-  if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
-  const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
-  await a.api.startFromUI(); await b.api.startFromUI();
-  a.elements.get('songDuration').value = '600'; b.elements.get('songDuration').value = '600';
-  const pendingA = a.api.renderWavExport(), pendingB = b.api.renderWavExport();
-  const caughtB = pendingB.catch(() => {});
-  assert.deepEqual(notes(a.contexts[1]), notes(b.contexts[1]));
-  a.contexts[1].reject(Error('render')); b.contexts[1].reject(Error('render'));
-  await pendingA; await caughtB;
+// Compare the rendered controls, not just the high-level note plan.
+function voiceControls(ctx, origin = 0) {
+  const round = x => typeof x === 'number' ? Math.round(x * 1e9) / 1e9 : x;
+  const automation = p => p.events.filter(e => e[0] !== 'cancel').map(e =>
+    e.map((v, i) => round(i === 2 ? v - origin : v)));
+  const params = n => Object.fromEntries(['gain', 'frequency', 'detune', 'Q', 'pan', 'delayTime']
+    .filter(k => n[k]).map(k => [k, [round(n[k].value), automation(n[k])]]));
+  return ctx.nodes.filter(n => n.kind === 'oscillator' && n.frequency.value >= 1).map(n => ({
+    frequency: n.frequency.value, detune: n.detune.value,
+    start: round(n.startTime - origin), stop: round(n.stopTime - origin),
+    // A carrier feeds its amplitude/filter/panner chain; a modulator feeds index.
+    output: n.connections.map(target => ({
+      params: params(target),
+      next: target.connections?.map(next => ({
+        params: params(next),
+        next: next.connections?.map(next => ({ params: params(next) }))
+      }))
+    }))
+  }));
+}
+
+test('fixed-duration exports match live voices, modulation, envelopes, and natural endings', async () => {
+  for (const [seed, duration] of [[0, '60'], [12345, '60'], [2, '300'], [1, '1800']]) {
+    const h = harness();
+    h.sandbox.crypto.getRandomValues = a => { a[0] = seed; return a; };
+    h.sandbox.document.getElementById('songDuration').value = duration;
+    await h.api.startFromUI();
+    const snapshot = h.api.state().snapshot, origin = h.api.state().bus.origin;
+    assert.ok(snapshot.groups.at(-1).ending);
+    const pending = h.api.renderWavExport();
+    const offline = h.contexts[1];
+    assert.equal(offline.length, Math.ceil(snapshot.exportDuration * snapshot.sampleRate));
+    h.advance(snapshot.exportDuration + 1);
+    assert.equal(h.api.state().bus, null);
+    assert.equal(h.api.state().nodes, 0);
+    assert.deepEqual(voiceControls(h.contexts[0], origin), voiceControls(offline));
+    const pans = ctx => ctx.nodes.filter(n => n.kind === 'panner').map(n => n.pan.events);
+    assert.deepEqual(pans(h.contexts[0]), pans(offline));
+    const longest = Math.max(...notes(offline).map(n => n[3]));
+    assert.ok(snapshot.exportDuration >= longest + 10.495 - 1e-8);
+    offline.reject(Error('test')); await pending;
+  }
+});
+
+test('export preserves the last run after Stop, changed controls, and a replacement Play', async () => {
+  const h = harness(); h.api.setup();
+  h.contexts[0].sampleRate = 48000; h.contexts[0].currentTime = 17;
+  h.sandbox.document.getElementById('songDuration').value = '60';
+  await h.api.startFromUI();
+  const snapshot = h.api.state().snapshot;
+  const first = h.api.renderWavExport(), ctx = h.contexts[1];
+  assert.equal(ctx.sampleRate, 48000);
+  const expected = voiceControls(ctx);
+  h.api.stopAllManual(true);
+  h.elements.get('tone').value = '200'; h.elements.get('songDuration').value = '1800';
+  ctx.reject(Error('test')); await first;
+  const second = h.api.renderWavExport();
+  assert.equal(h.api.state().snapshot, snapshot);
+  assert.deepEqual(voiceControls(h.contexts[2]), expected);
+  // A new run cannot change the already scheduled export or its sample rate.
+  h.sandbox.crypto.getRandomValues = a => { a[0] = 54321; return a; };
+  await h.api.startFromUI();
+  assert.notEqual(h.api.state().snapshot, snapshot);
+  assert.equal(h.contexts[2].sampleRate, 48000);
+  assert.deepEqual(voiceControls(h.contexts[2]), expected);
+  h.contexts[2].reject(Error('test')); await second;
+});
+
+test('Infinite exports its fixed first 30 minutes and keeps only bounded playback state', async () => {
+  const h = harness(); await h.api.startFromUI();
+  const snapshot = h.api.state().snapshot;
+  const groupCount = snapshot.groups.length;
+  assert.ok(groupCount < 500);
+  assert.ok(snapshot.groups.every(g => g.time < 1800 && !g.ending));
+  const first = h.api.renderWavExport(); const expected = voiceControls(h.contexts[1]);
+  h.advance(7200);
+  assert.equal(h.api.state().isPlaying, true);
+  assert.ok(h.api.state().nodes < 150);
+  assert.equal(snapshot.groups.length, groupCount);
+  h.contexts[1].reject(Error('test')); await first;
+  const second = h.api.renderWavExport();
+  assert.deepEqual(voiceControls(h.contexts[2]), expected);
+  h.contexts[2].reject(Error('test')); await second;
+});
+
+test('live callback stalls do not move the stored export timeline', async () => {
+  const h = harness(); await h.api.startFromUI();
+  const before = JSON.stringify(h.api.state().snapshot.groups);
+  const first = h.api.renderWavExport(), expected = voiceControls(h.contexts[1]);
+  h.contexts[1].reject(Error('test')); await first;
+  h.contexts[0].currentTime += 120; h.advance(10);
+  assert.equal(JSON.stringify(h.api.state().snapshot.groups), before);
+  const second = h.api.renderWavExport();
+  assert.deepEqual(voiceControls(h.contexts[2]), expected);
+  h.contexts[2].reject(Error('test')); await second;
+});
+
+test('live and offline room, resonator phase, and mix automation use a common origin', async () => {
+  const h = harness(); h.api.setup();
+  h.contexts[0].currentTime = 23;
+  h.sandbox.document.getElementById('songDuration').value = '60';
+  const priorCount = h.contexts[0].nodes.length;
+  await h.api.startFromUI();
+  const liveBus = h.api.state().bus;
+  const pending = h.api.renderWavExport(), offline = h.contexts[1];
+  const offlineIR = offline.nodes.find(n => n.kind === 'convolver').buffer;
+  for (let ch = 0; ch < 2; ch++)
+    assert.deepEqual(liveBus.reverbNode.buffer.getChannelData(ch), offlineIR.getChannelData(ch));
+  const liveLFOs = h.contexts[0].nodes.slice(priorCount).filter(n => n.kind === 'oscillator' && n.frequency.value < 1);
+  const offlineLFOs = offline.nodes.filter(n => n.kind === 'oscillator' && n.frequency.value < 1);
+  assert.deepEqual(liveLFOs.map(n => [n.frequency.value, n.startTime - liveBus.origin]),
+    offlineLFOs.map(n => [n.frequency.value, n.startTime]));
+  const normalize = events => events.map(e => e.map((v, i) => i === 2 ? Math.round((v - liveBus.origin) * 1e8) / 1e8 : v));
+  assert.deepEqual(normalize(liveBus.masterGain.gain.events), offline.nodes[0].gain.events);
+  const offlineSend = offline.nodes.find(n => n.kind === 'gain' && n.connections.some(to => to.kind === 'delay'));
+  assert.deepEqual(normalize(liveBus.reverbSend.gain.events), offlineSend.gain.events);
+  offline.reject(Error('test')); await pending;
 });
 
 function audioBuffer(channels, sampleRate = 44100) {

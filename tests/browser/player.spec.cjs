@@ -4,6 +4,7 @@ const path = require('node:path');
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
+    crypto.getRandomValues = array => { array[0] = 12345; return array; };
     window.audioProbe = { contexts: [], workers: 0, recorders: [], edges: [] };
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function(destination, ...args) {
@@ -111,6 +112,7 @@ test('real WAV rendering and worker encoding allow playback interaction', async 
   await page.goto('/player.html');
   await page.locator('#playNow').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  const expectedRate = await page.evaluate(() => audioProbe.contexts[0].sampleRate);
   const downloading = page.waitForEvent('download');
   await page.keyboard.press('Shift+E');
   await page.waitForFunction(() => audioProbe.workers === 1);
@@ -125,9 +127,16 @@ test('real WAV rendering and worker encoding allow playback interaction', async 
   expect(wav.toString('ascii', 0, 4)).toBe('RIFF');
   expect(wav.toString('ascii', 8, 12)).toBe('WAVE');
   expect(wav.readUInt16LE(22)).toBe(2);
-  expect(wav.readUInt32LE(24)).toBe(44100);
+  expect(wav.readUInt32LE(24)).toBe(expectedRate);
   expect(wav.readUInt16LE(34)).toBe(16);
-  expect(wav.length).toBe(100 * 44100 * 2 * 2 + 44);
+  // The live ending resolves after the selected duration, followed by its full tail.
+  const duration = (wav.length - 44) / (expectedRate * 2 * 2);
+  expect(duration).toBeGreaterThan(60);
+  expect(duration).toBeLessThan(200);
+  let tailPeak = 0;
+  for (let offset = wav.length - Math.floor(expectedRate / 10) * 4; offset < wav.length; offset += 2)
+    tailPeak = Math.max(tailPeak, Math.abs(wav.readInt16LE(offset)));
+  expect(tailPeak).toBeLessThanOrEqual(2);
   expect(wav.readUInt32LE(40)).toBe(wav.length - 44);
   expect(wav.subarray(44).some(value => value !== 0)).toBe(true);
   expect(await page.evaluate(() => document.getElementById('open-airplay-bridge').srcObject.active)).toBe(true);
@@ -219,4 +228,21 @@ test('native note drift starts at the strike and moves stereo energy through its
   expect(Math.abs(result.balances[0])).toBeLessThan(0.005);
   expect(Math.max(...result.balances) - Math.min(...result.balances)).toBeGreaterThan(0.02);
   expect(result.balances.every(x => Math.abs(x) < 0.2)).toBe(true);
+});
+
+test('repeated native WAV exports preserve the performance after Stop and control changes', async ({ page }) => {
+  await page.goto('/player.html');
+  await page.locator('#playNow').click();
+  let downloading = page.waitForEvent('download');
+  await page.keyboard.press('Shift+E');
+  const first = await fs.readFile(await (await downloading).path());
+  await expect(page.locator('#playerStatus')).toHaveText('WAV downloaded');
+  await page.locator('#stop').click();
+  await page.locator('#songDuration').selectOption('1800');
+  await page.locator('#tone').fill('200');
+  await page.locator('#stop').focus();
+  downloading = page.waitForEvent('download');
+  await page.keyboard.press('Shift+E');
+  const second = await fs.readFile(await (await downloading).path());
+  expect(second.equals(first)).toBe(true);
 });
