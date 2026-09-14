@@ -283,9 +283,9 @@ test('live voice parameters and timing match the original source for ten minutes
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
   await a.api.startFromUI(); await b.api.startFromUI();
   const origin = a.api.state().bus.origin;
-  a.advance(600); b.advance(600);
-  // Align the short live scheduling lead-in; musical intervals and voices match.
-  const normalize = (items, offset) => items.map(n => n.map((v, i) =>
+  a.advance(602); b.advance(602);
+  // Compare the first ten musical minutes, excluding the scheduler lookahead.
+  const normalize = (items, offset) => items.filter(n => n[2] - offset < 600).map(n => n.map((v, i) =>
     i >= 2 ? Math.round((v - offset) * 1e8) / 1e8 : v));
   assert.deepEqual(normalize(notes(a.contexts[0]), origin), normalize(notes(b.contexts[0]), 0));
 });
