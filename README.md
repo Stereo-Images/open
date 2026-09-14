@@ -40,7 +40,7 @@ When set to "Infinite", the engine generates new harmonic movement according to 
 Each press of Play creates a new performance.
 1. **Launch:** Click "Play" to start the generative engine.
 2. **Tone:** Use the slider to set the fundamental frequency (Safety floor: 110Hz).
-3. **Duration:** Select a time (1m, 5m, 10m, 30m) or Infinite before pressing Play. A timed run begins seeking its natural ending after that time; resolving the phrase and allowing the sound to decay can take longer. Tone and duration changes apply to the next run.
+3. **Length:** Select Short, Medium, Long, Very Long, or Infinite before pressing Play. Short begins seeking its natural ending after 1 minute; Medium after 5 minutes; Long after 10 minutes; Very Long after 30 minutes. These are starting points for the ending, not fixed runtimes: resolving the phrase and allowing the sound to decay can take longer. Infinite continues until stopped. Tone and length changes apply to the next run.
 
 ### Output & Saving
 Because there are no project files, you save the *audio*, not the *session*.
