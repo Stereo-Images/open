@@ -18,7 +18,7 @@
     console.log("Open Player: Stopping previous instance...");
     window.__OPEN_PLAYER_KILL__();
   }
-  
+
   let disposed = false;
   const removeListeners = [];
   const pendingRecordings = new Map();
@@ -195,12 +195,12 @@
 
   // Active node tracking
   const activeNodes = new Set();
-  
+
   function trackNode(ctx, n) {
     if (n && ctx === audioContext) activeNodes.add(n);
     return n;
   }
-  
+
   function killAllActiveNodes(now = 0) {
     for (const n of Array.from(activeNodes)) {
       try { n.stop?.(now); } catch {}
@@ -235,9 +235,9 @@
 
   function createImpulseResponse(ctx, seed = 0, cache = true) {
     if (cache && cachedImpulseBuffer && cachedImpulseBuffer.sampleRate === ctx.sampleRate) return cachedImpulseBuffer;
-    
+
     const duration = 10.0; // same tail length on mobile and desktop, per artist preference
-    
+
     const decay = 2.8, rate = ctx.sampleRate;
     const length = Math.floor(rate * duration);
     const impulse = ctx.createBuffer(2, length, rate);
@@ -332,7 +332,7 @@
     if (!audioContext || !bus) return;
     try { bus.masterGain.gain.cancelScheduledValues(audioContext.currentTime); } catch {}
     try { bus.masterGain.gain.setValueAtTime(0, audioContext.currentTime); } catch {}
-    
+
     killAllActiveNodes(audioContext.currentTime);
     bus.resonators?.dispose();
     disposeNoteDrift(audioContext);
@@ -345,7 +345,7 @@
     try { bus.masterGain.disconnect(); } catch {}
     try { bus.streamDest.disconnect(); } catch {}
     bus.streamDest.stream.getTracks().forEach(track => track.stop());
-    
+
     // V62: Crucial for stopping iOS Phantom CPU / Hardware Locks
     if (bridgeAudioEl?.srcObject) {
       try { bridgeAudioEl.pause(); } catch {}
@@ -384,7 +384,8 @@
     const reverbReturn = audioContext.createGain();
     reverbReturn.gain.value = REVERB_RETURN_LEVEL;
 
-    const origin = audioContext.currentTime;
+    // Schedule the whole performance ahead of the current render quantum.
+    const origin = audioContext.currentTime + 0.05;
     initializeNoteDrift(audioContext, seed);
     reverbSend.connect(reverbPreDelay);
     const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay, undefined, masterGain, origin);
@@ -547,89 +548,89 @@
     let phraseStep = 0, phraseCount = 0, arcLen = 6, arcPos = -1, arcClimaxAt = 4;
     let tension = 0, lastCadenceType = "none", currentCadenceType = "none";
     let lastDroneStart = -9999, lastDroneDur = 0, finished = false;
-  function startNewArc() {
-    arcLen = 4 + Math.floor(rand() * 5);
-    arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
-    arcPos = -1;
-    tension = clamp01(tension * 0.4 + 0.05);
-  }
-
-  function cadenceRepeatPenalty(type) {
-    if (type !== lastCadenceType) return 0.0;
-    if (type === "authentic") return 0.30;
-    return 0.18;
-  }
-
-  function pickCadenceTypeForPhrase() {
-    const nearClimax = (arcPos === arcClimaxAt);
-    const lateArc = (arcPos >= arcLen - 2);
-    let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
-    
-    if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
-    w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
-    
-    if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
-    if (lateArc && tension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
-    if (isMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
-
-    for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - cadenceRepeatPenalty(k));
-    
-    const keys = Object.keys(w);
-    const sum = keys.reduce((a, k) => a + w[k], 0);
-    let r = rand() * sum;
-    for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
-    return "authentic";
-  }
-
-  function cadenceTargets(type) {
-    switch (type) {
-      case "authentic": return { pre: 6, end: 0, wantLT: true };
-      case "half":      return { pre: 1, end: 4, wantLT: false };
-      case "plagal":    return { pre: 3, end: 0, wantLT: false };
-      case "deceptive": return { pre: 6, end: 5, wantLT: true };
-      case "evaded":    return { pre: 6, end: 2, wantLT: true };
-      default:          return { pre: 2, end: 0, wantLT: false };
+    function startNewArc() {
+      arcLen = 4 + Math.floor(rand() * 5);
+      arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
+      arcPos = -1;
+      tension = clamp01(tension * 0.4 + 0.05);
     }
-  }
 
-  function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
-    let pos = circlePos % 12; if (pos < 0) pos += 12;
-    let semitones = (pos * 7) % 12;
-    let rootOffset = semitones; if (minorMode) rootOffset = (semitones + 9) % 12;
-    const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
-    const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
-    const len = 7;
-    const octave = Math.floor(scaleIndex / len);
-    const degree = ((scaleIndex % len) + len) % len;
-    let intervals = minorMode ? minorIntervals : majorIntervals;
-    if (minorMode && opts.raiseLeadingTone && degree === 6) { intervals = minorIntervals.slice(); intervals[6] = 11; }
-    const noteValue = rootOffset + intervals[degree] + (octave * 12);
-    return baseFreq * Math.pow(2, noteValue / 12);
-  }
-
-  function updateHarmonyState(durationInput) {
-    const r = rand();
-    let pressure = Math.min(1.0, notesSinceModulation / 48.0);
-    if (arcPos === arcClimaxAt) pressure *= 2.5;
-    pressure = Math.min(1.0, pressure);
-    if (r < pressure * 0.35) {
-       if (chance(0.2)) isMinor = !isMinor;
-       else circlePosition += (chance(0.5) ? 1 : -1);
-       notesSinceModulation = 0;
+    function cadenceRepeatPenalty(type) {
+      if (type !== lastCadenceType) return 0.0;
+      if (type === "authentic") return 0.30;
+      return 0.18;
     }
-  }
 
-  function degreeFromIdx(idx) {
-    const base = Math.floor(idx / 7) * 7;
-    return ((idx - base) % 7 + 7) % 7;
-  }
+    function pickCadenceTypeForPhrase() {
+      const nearClimax = (arcPos === arcClimaxAt);
+      const lateArc = (arcPos >= arcLen - 2);
+      let w = { evaded: 0.20, half: 0.28, plagal: 0.12, deceptive: 0.18, authentic: 0.22 };
 
-  function shouldUseThirdDrone({ atCadenceZone, tensionVal, cadenceType, melodyDeg }) {
-    if (atCadenceZone) return false;
-    if (tensionVal >= 0.55) return false;
-    if (cadenceType === "half" || cadenceType === "deceptive" || cadenceType === "evaded") return false;
-    return (melodyDeg === 0 || melodyDeg === 2 || melodyDeg === 4);
-  }
+      if (arcPos < arcClimaxAt) { w.authentic = 0.05; w.evaded += 0.2; w.half += 0.1; }
+      w.authentic += tension * 0.25; w.deceptive += tension * 0.10; w.evaded -= tension * 0.18;
+
+      if (nearClimax) { w.authentic += 0.25; w.deceptive += 0.10; w.evaded -= 0.20; }
+      if (lateArc && tension > 0.45) { w.authentic += 0.22; w.evaded -= 0.15; }
+      if (isMinor) { w.deceptive += 0.05; w.plagal -= 0.02; }
+
+      for (const k of Object.keys(w)) w[k] = Math.max(0.001, w[k] - cadenceRepeatPenalty(k));
+
+      const keys = Object.keys(w);
+      const sum = keys.reduce((a, k) => a + w[k], 0);
+      let r = rand() * sum;
+      for (const k of keys) { r -= w[k]; if (r <= 0) return k; }
+      return "authentic";
+    }
+
+    function cadenceTargets(type) {
+      switch (type) {
+        case "authentic": return { pre: 6, end: 0, wantLT: true };
+        case "half":      return { pre: 1, end: 4, wantLT: false };
+        case "plagal":    return { pre: 3, end: 0, wantLT: false };
+        case "deceptive": return { pre: 6, end: 5, wantLT: true };
+        case "evaded":    return { pre: 6, end: 2, wantLT: true };
+        default:          return { pre: 2, end: 0, wantLT: false };
+      }
+    }
+
+    function getScaleNote(baseFreq, scaleIndex, circlePos, minorMode, opts = {}) {
+      let pos = circlePos % 12; if (pos < 0) pos += 12;
+      let semitones = (pos * 7) % 12;
+      let rootOffset = semitones; if (minorMode) rootOffset = (semitones + 9) % 12;
+      const majorIntervals = [0, 2, 4, 5, 7, 9, 11];
+      const minorIntervals = [0, 2, 3, 5, 7, 8, 10];
+      const len = 7;
+      const octave = Math.floor(scaleIndex / len);
+      const degree = ((scaleIndex % len) + len) % len;
+      let intervals = minorMode ? minorIntervals : majorIntervals;
+      if (minorMode && opts.raiseLeadingTone && degree === 6) { intervals = minorIntervals.slice(); intervals[6] = 11; }
+      const noteValue = rootOffset + intervals[degree] + (octave * 12);
+      return baseFreq * Math.pow(2, noteValue / 12);
+    }
+
+    function updateHarmonyState() {
+      const r = rand();
+      let pressure = Math.min(1.0, notesSinceModulation / 48.0);
+      if (arcPos === arcClimaxAt) pressure *= 2.5;
+      pressure = Math.min(1.0, pressure);
+      if (r < pressure * 0.35) {
+         if (chance(0.2)) isMinor = !isMinor;
+         else circlePosition += (chance(0.5) ? 1 : -1);
+         notesSinceModulation = 0;
+      }
+    }
+
+    function degreeFromIdx(idx) {
+      const base = Math.floor(idx / 7) * 7;
+      return ((idx - base) % 7 + 7) % 7;
+    }
+
+    function shouldUseThirdDrone({ atCadenceZone, tensionVal, cadenceType, melodyDeg }) {
+      if (atCadenceZone) return false;
+      if (tensionVal >= 0.55) return false;
+      if (cadenceType === "half" || cadenceType === "deceptive" || cadenceType === "evaded") return false;
+      return (melodyDeg === 0 || melodyDeg === 2 || melodyDeg === 4);
+    }
 
 
     startNewArc();
@@ -643,160 +644,160 @@
       next() {
         if (finished) return null;
         const group = { time: nextTimeA, notes: [], ending: false };
-      let appliedDur = noteDur;
-      let pressure = Math.min(1.0, notesSinceModulation / 48.0);
-      updateHarmonyState();
+        let appliedDur = noteDur;
+        let pressure = Math.min(1.0, notesSinceModulation / 48.0);
+        updateHarmonyState();
 
-      if (duration !== Infinity && nextTimeA >= duration + LOOKAHEAD) {
-        if (patternIdxA % 7 === 0) {
-          let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-          while (fEnd > MELODY_CEILING_HZ && patternIdxA > -14) {
-              patternIdxA -= 7;
-              fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+        if (duration !== Infinity && nextTimeA >= duration + LOOKAHEAD) {
+          if (patternIdxA % 7 === 0) {
+            let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+            while (fEnd > MELODY_CEILING_HZ && patternIdxA > -14) {
+                patternIdxA -= 7;
+                fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+            }
+            fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
+            group.notes.push(planBell(fEnd, nextTimeA, 25.0, 0.5, 0, 0, rand, spatialRandom));
+            finished = true;
+            group.ending = true;
+            return group;
           }
-          fEnd = clampFreqMin(fEnd, MELODY_FLOOR_HZ);
-          group.notes.push(planBell(fEnd, nextTimeA, 25.0, 0.5, 0, 0, rand, spatialRandom));
-          finished = true;
-          group.ending = true;
-          return group;
         }
-      }
 
-      phraseStep = (phraseStep + 1) % 16;
-      if (phraseStep === 0) {
-        phraseCount++;
-        arcPos = (arcPos + 1);
-        if (arcPos >= arcLen) startNewArc();
-        currentCadenceType = pickCadenceTypeForPhrase();
-      }
+        phraseStep = (phraseStep + 1) % 16;
+        if (phraseStep === 0) {
+          phraseCount++;
+          arcPos = (arcPos + 1);
+          if (arcPos >= arcLen) startNewArc();
+          currentCadenceType = pickCadenceTypeForPhrase();
+        }
 
-      const isCadence = (phraseStep >= 13);
-      if (chance(phraseStep === 15 ? 0.85 : 0.2)) appliedDur *= 1.2;
+        const isCadence = (phraseStep >= 13);
+        if (chance(phraseStep === 15 ? 0.85 : 0.2)) appliedDur *= 1.2;
 
-      if (isCadence) {
-          const cadenceDegrees = [0, 1, 3, 4, 5];
-          const currentOctave = Math.floor(patternIdxA / 7) * 7;
-          let deg = patternIdxA - currentOctave;
-          deg = ((deg % 7) + 7) % 7;
-          let best = cadenceDegrees[0];
-          let bestD = circDist(deg, best);
-          for (let i = 1; i < cadenceDegrees.length; i++) {
-            const t = cadenceDegrees[i]; const d = circDist(deg, t);
-            if (d < bestD || (d === bestD && chance(0.5))) { best = t; bestD = d; }
-          }
-          let targetDeg = best;
-          if (!chance(0.6)) {
-            const dir = chance(0.65) ? -1 : 1;
-            targetDeg = (targetDeg + dir + 7) % 7;
-          }
-          let delta = targetDeg - deg;
-          if (delta > 3) delta -= 7; if (delta < -3) delta += 7;
-          patternIdxA = currentOctave + deg + delta;
+        if (isCadence) {
+            const cadenceDegrees = [0, 1, 3, 4, 5];
+            const currentOctave = Math.floor(patternIdxA / 7) * 7;
+            let deg = patternIdxA - currentOctave;
+            deg = ((deg % 7) + 7) % 7;
+            let best = cadenceDegrees[0];
+            let bestD = circDist(deg, best);
+            for (let i = 1; i < cadenceDegrees.length; i++) {
+              const t = cadenceDegrees[i]; const d = circDist(deg, t);
+              if (d < bestD || (d === bestD && chance(0.5))) { best = t; bestD = d; }
+            }
+            let targetDeg = best;
+            if (!chance(0.6)) {
+              const dir = chance(0.65) ? -1 : 1;
+              targetDeg = (targetDeg + dir + 7) % 7;
+            }
+            let delta = targetDeg - deg;
+            if (delta > 3) delta -= 7; if (delta < -3) delta += 7;
+            patternIdxA = currentOctave + deg + delta;
 
-          const ct = currentCadenceType;
-          const cadencePlan = cadenceTargets(ct);
-          
-          if (phraseStep === 14 && chance(0.70)) {
-             const curOct = Math.floor(patternIdxA / 7) * 7;
-             const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
-             let deltaPre = cadencePlan.pre - curDeg;
-             if (deltaPre > 3) deltaPre -= 7; if (deltaPre < -3) deltaPre += 7;
-             patternIdxA += deltaPre;
-          }
+            const ct = currentCadenceType;
+            const cadencePlan = cadenceTargets(ct);
 
-          if (phraseStep === 15) {
-             const curOct = Math.floor(patternIdxA / 7) * 7;
-             const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
-             let deltaEnd = cadencePlan.end - curDeg;
-             if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
-             
-             if (chance(0.35)) {
-                patternIdxA += deltaEnd;
-             } else if (chance(0.25)) {
-                patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
-             }
-             
-             if(ct === "authentic") tension = clamp01(tension - 0.22);
-             else tension = clamp01(tension + 0.10);
-             lastCadenceType = ct;
-          }
-      } else {
-          let currentEvalFreq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
-          let upChance = 0.5;
-          if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) {
-              upChance = 0.15; 
-          } else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) {
-              upChance = 0.85; 
-          }
-          patternIdxA += (rand() < upChance ? 1 : -1);
-      }
-      
-      const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
-      const wantLT = cadencePlan ? cadencePlan.wantLT : false;
-      const degNow = degreeFromIdx(patternIdxA);
-      const raiseLT = isMinor && isCadence && wantLT && (degNow === 6);
+            if (phraseStep === 14 && chance(0.70)) {
+               const curOct = Math.floor(patternIdxA / 7) * 7;
+               const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
+               let deltaPre = cadencePlan.pre - curDeg;
+               if (deltaPre > 3) deltaPre -= 7; if (deltaPre < -3) deltaPre += 7;
+               patternIdxA += deltaPre;
+            }
 
-      let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
-      
-      while (freq > MELODY_CEILING_HZ && patternIdxA > -14) {
-          patternIdxA -= 7;
-          freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
-      }
-      freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
+            if (phraseStep === 15) {
+               const curOct = Math.floor(patternIdxA / 7) * 7;
+               const curDeg = ((patternIdxA - curOct) % 7 + 7) % 7;
+               let deltaEnd = cadencePlan.end - curDeg;
+               if (deltaEnd > 3) deltaEnd -= 7; if (deltaEnd < -3) deltaEnd += 7;
 
-      const isArcStart = (arcPos === 0 && phraseStep === 0);
-      const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
-      const atPhraseStart = (phraseStep === 0);
+               if (chance(0.35)) {
+                  patternIdxA += deltaEnd;
+               } else if (chance(0.25)) {
+                  patternIdxA += (deltaEnd > 0 ? deltaEnd - 1 : deltaEnd + 1);
+               }
 
-      let droneProb = 0.04;
-      if (atPhraseStart) droneProb = 0.18;
-      
-      const canStartDrone = (nextTimeA >= lastDroneStart + lastDroneDur * 0.65);
+               if(ct === "authentic") tension = clamp01(tension - 0.22);
+               else tension = clamp01(tension + 0.10);
+               lastCadenceType = ct;
+            }
+        } else {
+            let currentEvalFreq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
+            let upChance = 0.5;
+            if (currentEvalFreq >= MELODY_CEILING_HZ * 0.8) {
+                upChance = 0.15;
+            } else if (currentEvalFreq <= MELODY_FLOOR_HZ * 1.2) {
+                upChance = 0.85;
+            }
+            patternIdxA += (rand() < upChance ? 1 : -1);
+        }
 
-      if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
-         const ct = currentCadenceType || "authentic";
-         let droneRootDegree = 0;
-         if (!isArcStart && !isClimax) {
-           if (ct === "half") droneRootDegree = 4;
-           else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
-           else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
-           else droneRootDegree = 0;
-         }
+        const cadencePlan = currentCadenceType ? cadenceTargets(currentCadenceType) : null;
+        const wantLT = cadencePlan ? cadencePlan.wantLT : false;
+        const degNow = degreeFromIdx(patternIdxA);
+        const raiseLT = isMinor && isCadence && wantLT && (degNow === 6);
 
-         const melodyDegNow = degreeFromIdx(patternIdxA);
-         const useThirdColor = shouldUseThirdDrone({
-           atCadenceZone: (phraseStep >= 13),
-           tensionVal: tension,
-           cadenceType: ct,
-           melodyDeg: melodyDegNow
-         });
+        let freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
 
-         const curRegister = Math.floor(patternIdxA / 7);
-         const droneOct = Math.min(curRegister - 1, 0);
-         const droneIdx = droneOct * 7 + droneRootDegree;
-         
-         let droneRootFreq = getScaleNote(baseFreq, droneIdx, circlePosition, isMinor);
-         droneRootFreq = clampFreqMin(droneRootFreq, DRONE_FLOOR_HZ);
+        while (freq > MELODY_CEILING_HZ && patternIdxA > -14) {
+            patternIdxA -= 7;
+            freq = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor, { raiseLeadingTone: raiseLT });
+        }
+        freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
-         const t0 = Math.max(nextTimeA - 0.05, 0);
-         let droneDur = isArcStart ? 32.0 : 22.0; 
-         
-         lastDroneStart = t0;
-         lastDroneDur = droneDur;
+        const isArcStart = (arcPos === 0 && phraseStep === 0);
+        const isClimax = (arcPos === arcClimaxAt && phraseStep === 0);
+        const atPhraseStart = (phraseStep === 0);
 
-         const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
-         const quality = isMinor ? "min" : "maj";
+        let droneProb = 0.04;
+        if (atPhraseStart) droneProb = 0.18;
 
-         group.notes.push(...planDrone(droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor, rand, spatialRandom));
-      }
+        const canStartDrone = (nextTimeA >= lastDroneStart + lastDroneDur * 0.65);
 
-      const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
-      if (!isDroneSolo) {
-        group.notes.push(planBell(freq, nextTimeA, appliedDur, 0.4, pressure, tension, rand, spatialRandom));
-      }
+        if (canStartDrone && (isArcStart || isClimax || chance(droneProb))) {
+           const ct = currentCadenceType || "authentic";
+           let droneRootDegree = 0;
+           if (!isArcStart && !isClimax) {
+             if (ct === "half") droneRootDegree = 4;
+             else if (ct === "deceptive") droneRootDegree = chance(0.6) ? 0 : 5;
+             else if (ct === "plagal") droneRootDegree = chance(0.6) ? 3 : 0;
+             else droneRootDegree = 0;
+           }
 
-      notesSinceModulation++;
-      nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
+           const melodyDegNow = degreeFromIdx(patternIdxA);
+           const useThirdColor = shouldUseThirdDrone({
+             atCadenceZone: (phraseStep >= 13),
+             tensionVal: tension,
+             cadenceType: ct,
+             melodyDeg: melodyDegNow
+           });
+
+           const curRegister = Math.floor(patternIdxA / 7);
+           const droneOct = Math.min(curRegister - 1, 0);
+           const droneIdx = droneOct * 7 + droneRootDegree;
+
+           let droneRootFreq = getScaleNote(baseFreq, droneIdx, circlePosition, isMinor);
+           droneRootFreq = clampFreqMin(droneRootFreq, DRONE_FLOOR_HZ);
+
+           const t0 = Math.max(nextTimeA - 0.05, 0);
+           let droneDur = isArcStart ? 32.0 : 22.0;
+
+           lastDroneStart = t0;
+           lastDroneDur = droneDur;
+
+           const baseVol = (isArcStart || isClimax) ? 0.40 : 0.28;
+           const quality = isMinor ? "min" : "maj";
+
+           group.notes.push(...planDrone(droneRootFreq, t0, droneDur, baseVol, quality, useThirdColor, rand, spatialRandom));
+        }
+
+        const isDroneSolo = (arcPos === 0 && phraseStep < 12 && phraseCount > 0);
+        if (!isDroneSolo) {
+          group.notes.push(planBell(freq, nextTimeA, appliedDur, 0.4, pressure, tension, rand, spatialRandom));
+        }
+
+        notesSinceModulation++;
+        nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
         return group;
       }
     };
@@ -1071,11 +1072,11 @@
     startRequest++;
     clearTimeout(teardownTimer);
     teardownTimer = null;
-    isPlaying = false;
+    isPlaying = false; 
     isEndingNaturally = false;
     liveNextGroup = null;
     if (timerInterval) clearInterval(timerInterval);
-    
+
     stopRecording();
 
     if (!instant && bus?.masterGain && audioContext) {

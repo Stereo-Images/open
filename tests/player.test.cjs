@@ -281,9 +281,13 @@ test('live voice parameters and timing match the original source for ten minutes
   const original = process.env.OPEN_BASELINE;
   if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
-  await a.api.startFromUI(); await b.api.startFromUI(); a.advance(600); b.advance(600);
-  // Ignore stopped/disconnected bookkeeping; oscillator parameters and times must match.
-  assert.deepEqual(notes(a.contexts[0]), notes(b.contexts[0]));
+  await a.api.startFromUI(); await b.api.startFromUI();
+  const origin = a.api.state().bus.origin;
+  a.advance(600); b.advance(600);
+  // Align the short live scheduling lead-in; musical intervals and voices match.
+  const normalize = (items, offset) => items.map(n => n.map((v, i) =>
+    i >= 2 ? Math.round((v - offset) * 1e8) / 1e8 : v));
+  assert.deepEqual(normalize(notes(a.contexts[0]), origin), normalize(notes(b.contexts[0]), 0));
 });
 
 // Compare the rendered controls, not just the high-level note plan.
@@ -322,8 +326,9 @@ test('fixed-duration exports match live voices, modulation, envelopes, and natur
     assert.equal(h.api.state().bus, null);
     assert.equal(h.api.state().nodes, 0);
     assert.deepEqual(voiceControls(h.contexts[0], origin), voiceControls(offline));
-    const pans = ctx => ctx.nodes.filter(n => n.kind === 'panner').map(n => n.pan.events);
-    assert.deepEqual(pans(h.contexts[0]), pans(offline));
+    const pans = (ctx, offset = 0) => ctx.nodes.filter(n => n.kind === 'panner').map(n =>
+      n.pan.events.map(e => e.map((v, i) => i === 2 ? Math.round((v - offset) * 1e8) / 1e8 : v)));
+    assert.deepEqual(pans(h.contexts[0], origin), pans(offline));
     const longest = Math.max(...notes(offline).map(n => n[3]));
     assert.ok(snapshot.exportDuration >= longest + 10.495 - 1e-8);
     offline.reject(Error('test')); await pending;

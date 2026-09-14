@@ -239,7 +239,10 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   await expect(page.locator('#playerStatus')).toHaveText('WAV downloaded');
   await page.locator('#stop').click();
   await page.locator('#songDuration').selectOption('1800');
-  await page.locator('#tone').fill('200');
+  await page.evaluate(() => {
+    const tone = document.getElementById('tone'); tone.value = '200';
+    tone.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   await page.locator('#stop').focus();
   downloading = page.waitForEvent('download');
   await page.keyboard.press('Shift+E');
