@@ -1,9 +1,5 @@
 # Open
 
-**[Open the main player](https://stereo-images.github.io/open/player.html)** · **[Try the experimental player](https://stereo-images.github.io/open/experiments/moving-resonators/player.html)**
-
-The experimental player includes moving resonators blended into the direct sound and reverb input, plus chance-driven, note-synced stereo drift. It has separate saved settings.
-
 > *Designed for desktop browsers.*
 
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
