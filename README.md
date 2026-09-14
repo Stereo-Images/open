@@ -37,7 +37,7 @@ When set to "Infinite", the engine generates new harmonic movement according to 
     * **Filter (4200Hz):** The reverb return is low-passed to remove digital harshness while keeping the upper harmonics.
 
 ### Usage
-Each recording captures a single, unrepeatable run.
+Each press of Play creates a new performance.
 1. **Launch:** Click "Play" to start the generative engine.
 2. **Tone:** Use the slider to set the fundamental frequency (Safety floor: 110Hz).
 3. **Duration:** Select a time (1m, 5m, 10m, 30m) or Infinite before pressing Play. A timed run begins seeking its natural ending after that time; resolving the phrase and allowing the sound to decay can take longer. Tone and duration changes apply to the next run.

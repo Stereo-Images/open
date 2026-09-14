@@ -233,6 +233,7 @@ test('native note drift starts at the strike and moves stereo energy through its
 test('repeated native WAV exports preserve the performance after Stop and control changes', async ({ page }) => {
   await page.goto('/player.html');
   await page.locator('#playNow').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   let downloading = page.waitForEvent('download');
   await page.keyboard.press('Shift+E');
   const first = await fs.readFile(await (await downloading).path());
