@@ -623,3 +623,61 @@ test('offline note panners follow note starts and release after render failure',
   assert.ok(pans.every(n => n.disconnected));
   assert.equal(h.api.state().isPlaying, true);
 });
+
+
+test('failed audio-bus construction releases streams and started resonators before retry', async () => {
+  for (const failure of ['convolver', 'resonator']) {
+    const h = harness();
+    const proto = h.sandbox.AudioContext.prototype;
+    const method = failure === 'convolver' ? 'createConvolver' : 'createOscillator';
+    const original = proto[method];
+    let calls = 0;
+    proto[method] = function(...args) {
+      if (++calls === (failure === 'convolver' ? 1 : 2)) throw Error('injected allocation failure');
+      return original.apply(this, args);
+    };
+    await h.api.startFromUI();
+    const ctx = h.contexts[0];
+    assert.equal(h.api.state().isPlaying, false);
+    assert.equal(h.api.state().bus, null);
+    for (const node of ctx.nodes) {
+      assert.equal(node.disconnected, true, `${failure}: ${node.kind} must disconnect`);
+      if (node.stream) assert.equal(node.stream.getTracks()[0].stopped, true);
+      if (node.startTime !== undefined) assert.equal(node.stopTime, ctx.currentTime);
+    }
+    proto[method] = original;
+    await h.api.startFromUI();
+    assert.equal(h.api.state().isPlaying, true);
+    assert.ok(h.api.state().bus);
+    h.api.stopAllManual(true);
+  }
+});
+
+
+test('failed offline resonator setup stops partial oscillators and leaves export retryable', async () => {
+  const h = harness();
+  await h.api.startFromUI();
+  const liveBus = h.api.state().bus;
+  const proto = h.sandbox.OfflineAudioContext.prototype;
+  const original = proto.createOscillator;
+  let calls = 0;
+  proto.createOscillator = function() {
+    if (++calls === 2) throw Error('injected offline allocation failure');
+    return original.call(this);
+  };
+  await h.api.renderWavExport();
+  const failed = h.contexts[1];
+  const oscillators = failed.nodes.filter(n => n.kind === 'oscillator');
+  assert.equal(oscillators.length, 1);
+  assert.equal(oscillators[0].disconnected, true);
+  assert.equal(oscillators[0].stopTime, failed.currentTime);
+  assert.equal(h.api.state().bus, liveBus);
+  assert.equal(h.api.state().isPlaying, true);
+  proto.createOscillator = original;
+  const retry = h.api.renderWavExport();
+  assert.equal(h.contexts.length, 3);
+  assert.equal(typeof h.contexts[2].reject, 'function');
+  h.contexts[2].reject(Error('finish test render'));
+  await retry;
+  h.api.stopAllManual(true);
+});

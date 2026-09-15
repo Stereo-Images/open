@@ -256,43 +256,48 @@
   // Slow independent LFOs move the filter centers throughout each note.
   function createMovingResonators(ctx, input, output, endTime, directOutput, startTime = ctx.currentTime) {
     const nodes = [], lfos = [];
-    const blend = ctx.createGain();
-    blend.gain.value = 0.18; // Per band; bandpass peaks remain unity at their centers.
-    blend.connect(output);
-    // Expose the same moving overtones directly, without adding a second bank
-    // or changing the original pre-reverb route. Both follow the existing send.
-    if (directOutput) blend.connect(directOutput);
-    nodes.push(blend);
-    const start = startTime;
-    for (const [frequency, speed, depth] of [
-      [420, 0.037, 480], [1050, 0.023, 600], [2400, 0.017, 420]
-    ]) {
-      const filter = ctx.createBiquadFilter();
-      filter.type = "bandpass";
-      filter.frequency.value = frequency;
-      filter.Q.value = 3;
-      const lfo = ctx.createOscillator();
-      lfo.type = "sine";
-      lfo.frequency.value = speed;
-      const modulation = ctx.createGain();
-      modulation.gain.value = depth; // Cents, so movement is proportional to pitch.
-      lfo.connect(modulation);
-      modulation.connect(filter.detune);
-      input.connect(filter);
-      filter.connect(blend);
-      lfo.start(start);
-      if (Number.isFinite(endTime)) lfo.stop(endTime);
-      nodes.push(filter, modulation, lfo);
-      lfos.push(lfo);
-    }
-    return {
-      // At the lowest center (~318 Hz), Q=3 rings out well within this allowance.
-      tailSeconds: 0.1,
-      dispose() {
-        for (const lfo of lfos) { try { lfo.stop(ctx.currentTime); } catch {} }
-        for (const node of nodes) { try { node.disconnect(); } catch {} }
-      }
+    const own = node => { nodes.push(node); return node; };
+    const dispose = () => {
+      for (const lfo of lfos) { try { lfo.stop(ctx.currentTime); } catch {} }
+      for (const node of nodes) { try { node.disconnect(); } catch {} }
     };
+    try {
+      const blend = own(ctx.createGain());
+      blend.gain.value = 0.18; // Per band; bandpass peaks remain unity at their centers.
+      blend.connect(output);
+      // Expose the same moving overtones directly, without adding a second bank
+      // or changing the original pre-reverb route. Both follow the existing send.
+      if (directOutput) blend.connect(directOutput);
+      const start = startTime;
+      for (const [frequency, speed, depth] of [
+        [420, 0.037, 480], [1050, 0.023, 600], [2400, 0.017, 420]
+      ]) {
+        const filter = own(ctx.createBiquadFilter());
+        filter.type = "bandpass";
+        filter.frequency.value = frequency;
+        filter.Q.value = 3;
+        const lfo = own(ctx.createOscillator());
+        lfos.push(lfo);
+        lfo.type = "sine";
+        lfo.frequency.value = speed;
+        const modulation = own(ctx.createGain());
+        modulation.gain.value = depth; // Cents, so movement is proportional to pitch.
+        lfo.connect(modulation);
+        modulation.connect(filter.detune);
+        input.connect(filter);
+        filter.connect(blend);
+        lfo.start(start);
+        if (Number.isFinite(endTime)) lfo.stop(endTime);
+      }
+      return {
+        // At the lowest center (~318 Hz), Q=3 rings out well within this allowance.
+        tailSeconds: 0.1,
+        dispose
+      };
+    } catch (error) {
+      dispose();
+      throw error;
+    }
   }
 
   const spatialStates = new WeakMap();
@@ -360,50 +365,67 @@
     ensureAudioContext();
     teardownBusHard();
 
-    const masterGain = audioContext.createGain();
-    masterGain.gain.value = MASTER_VOL;
-    masterGain.connect(audioContext.destination);
+    // Own each allocation immediately: setup can fail before `bus` exists.
+    const nodes = [];
+    const own = node => { nodes.push(node); return node; };
+    let resonators;
+    try {
+      const masterGain = own(audioContext.createGain());
+      masterGain.gain.value = MASTER_VOL;
+      masterGain.connect(audioContext.destination);
 
-    const streamDest = audioContext.createMediaStreamDestination();
-    masterGain.connect(streamDest);
+      const streamDest = own(audioContext.createMediaStreamDestination());
+      masterGain.connect(streamDest);
 
-    const reverbPreDelay = audioContext.createDelay(0.1);
-    reverbPreDelay.delayTime.value = 0.045;
+      const reverbPreDelay = own(audioContext.createDelay(0.1));
+      reverbPreDelay.delayTime.value = 0.045;
 
-    const reverbNode = audioContext.createConvolver();
-    reverbNode.buffer = createImpulseResponse(audioContext);
+      const reverbNode = own(audioContext.createConvolver());
+      reverbNode.buffer = createImpulseResponse(audioContext);
 
-    const reverbLP = audioContext.createBiquadFilter();
-    reverbLP.type = "lowpass";
-    reverbLP.frequency.value = 4200;
-    reverbLP.Q.value = 0.7;
+      const reverbLP = own(audioContext.createBiquadFilter());
+      reverbLP.type = "lowpass";
+      reverbLP.frequency.value = 4200;
+      reverbLP.Q.value = 0.7;
 
-    const reverbSend = audioContext.createGain();
-    reverbSend.gain.value = 0.0;
+      const reverbSend = own(audioContext.createGain());
+      reverbSend.gain.value = 0.0;
 
-    const reverbReturn = audioContext.createGain();
-    reverbReturn.gain.value = REVERB_RETURN_LEVEL;
+      const reverbReturn = own(audioContext.createGain());
+      reverbReturn.gain.value = REVERB_RETURN_LEVEL;
 
-    // Schedule the whole performance ahead of the current render quantum.
-    const origin = audioContext.currentTime + 0.05;
-    initializeNoteDrift(audioContext, seed);
-    reverbSend.connect(reverbPreDelay);
-    const resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay, undefined, masterGain, origin);
-    reverbPreDelay.connect(reverbNode);
-    reverbNode.connect(reverbLP);
-    reverbLP.connect(reverbReturn);
-    reverbReturn.connect(masterGain);
+      // Schedule the whole performance ahead of the current render quantum.
+      const origin = audioContext.currentTime + 0.05;
+      initializeNoteDrift(audioContext, seed);
+      reverbSend.connect(reverbPreDelay);
+      resonators = createMovingResonators(audioContext, reverbSend, reverbPreDelay, undefined, masterGain, origin);
+      reverbPreDelay.connect(reverbNode);
+      reverbNode.connect(reverbLP);
+      reverbLP.connect(reverbReturn);
+      reverbReturn.connect(masterGain);
 
-    bus = {
-      origin, masterGain, reverbSend, reverbReturn, streamDest,
-      reverbPreDelay, reverbNode, reverbLP, resonators,
-      lastVoiceEnd: audioContext.currentTime,
-      tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25 + resonators.tailSeconds
-    };
-    cleanupInterval = setInterval(cleanupFinishedVoices, 250);
+      bus = {
+        origin, masterGain, reverbSend, reverbReturn, streamDest,
+        reverbPreDelay, reverbNode, reverbLP, resonators,
+        lastVoiceEnd: audioContext.currentTime,
+        tailSeconds: reverbNode.buffer.duration + reverbPreDelay.delayTime.value + 0.25 + resonators.tailSeconds
+      };
+      cleanupInterval = setInterval(cleanupFinishedVoices, 250);
 
-    ensureBridge();
-    bridgeAudioEl.srcObject = streamDest.stream;
+      ensureBridge();
+      bridgeAudioEl.srcObject = streamDest.stream;
+    } catch (error) {
+      clearInterval(cleanupInterval);
+      cleanupInterval = null;
+      resonators?.dispose();
+      disposeNoteDrift(audioContext);
+      for (const node of nodes) {
+        try { node.disconnect(); } catch {}
+        if (node.stream) for (const track of node.stream.getTracks()) track.stop();
+      }
+      bus = null;
+      throw error;
+    }
   }
 
   // =========================
@@ -1159,21 +1181,20 @@
     const offlineReturn = offlineCtx.createGain();
     offlineReturn.gain.value = REVERB_RETURN_LEVEL;
 
-    initializeNoteDrift(offlineCtx, sessionSnapshot.seed);
-    offlineSend.connect(offlinePreDelay);
-    const offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration, offlineMaster, 0);
-    offlinePreDelay.connect(offlineReverb);
-    offlineReverb.connect(offlineReverbLP);
-    offlineReverbLP.connect(offlineReturn);
-    offlineReturn.connect(offlineMaster);
-
-    let renderedBuffer;
+    let renderedBuffer, offlineResonators;
     try {
+      initializeNoteDrift(offlineCtx, sessionSnapshot.seed);
+      offlineSend.connect(offlinePreDelay);
+      offlineResonators = createMovingResonators(offlineCtx, offlineSend, offlinePreDelay, exportDuration, offlineMaster, 0);
+      offlinePreDelay.connect(offlineReverb);
+      offlineReverb.connect(offlineReverbLP);
+      offlineReverbLP.connect(offlineReturn);
+      offlineReturn.connect(offlineMaster);
       automateMix(offlineMaster, offlineSend, 0, sessionSnapshot.density);
       for (const group of sessionSnapshot.groups) renderGroup(offlineCtx, offlineMaster, offlineSend, group, 0);
       renderedBuffer = await offlineCtx.startRendering();
     } finally {
-      offlineResonators.dispose();
+      offlineResonators?.dispose();
       disposeNoteDrift(offlineCtx);
     }
     if (disposed) return;

@@ -88,3 +88,13 @@ This intentionally colors both the direct and reverberant sound and can raise th
 Each bell strike and bass note starts centered and has a 65% chance of moving toward an independently selected position within ±0.22 pan over its own sounding duration. Otherwise it remains centered. One panner is shared by all FM partials belonging to a bell, so overlapping notes can move independently without splitting a single bell into separate trajectories. The panned output feeds both the direct master and the reverb send, before the resonators and convolution. There is no shared drift timer and no additional delay.
 
 A separate seed-derived random stream controls panning without consuming musical randomness. Live panners and center-level compensation gains are released with their notes, using the existing 100 ms filter-settling allowance, while the shared reverb keeps its tail. Offline panners are disconnected when rendering settles. Equal-power center attenuation is compensated for mono voices; spatial movement may still slightly affect mono downmix level. Regression tests check independent note timing, chance holds, partial grouping, pre-reverb routing, bounded cleanup, and offline disposal. Native browser tests render a note to verify center level and movement through its decay.
+
+
+### Audio setup failure recovery
+
+Fault-injection tests cover failed convolver allocation and interruption midway
+through resonator construction. Failed live starts disconnect their partial graph,
+stop stream tracks and started oscillators, and permit another Play. Failed offline
+resonator setup stops partial oscillators, preserves live playback, and permits
+another export. These checks exercise resource ownership, not actual out-of-memory
+recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
