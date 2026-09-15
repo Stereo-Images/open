@@ -112,7 +112,8 @@ select{
   border-radius:0;
   cursor:pointer;
   min-width:140px;
-  text-align:right;
+  text-align:left;
+  text-align-last:left;
   -webkit-appearance:none;
   appearance:none;
 }
