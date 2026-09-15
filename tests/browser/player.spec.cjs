@@ -234,6 +234,7 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   await page.goto('/player.html');
   await page.locator('#playNow').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#songDuration').focus();
   let downloading = page.waitForEvent('download');
   await page.keyboard.press('Shift+E');
   const first = await fs.readFile(await (await downloading).path());
@@ -244,7 +245,7 @@ test('repeated native WAV exports preserve the performance after Stop and contro
     const tone = document.getElementById('tone'); tone.value = '200';
     tone.dispatchEvent(new Event('input', { bubbles: true }));
   });
-  await page.locator('#stop').focus();
+  await page.locator('#tone').focus();
   downloading = page.waitForEvent('download');
   await page.keyboard.press('Shift+E');
   const second = await fs.readFile(await (await downloading).path());

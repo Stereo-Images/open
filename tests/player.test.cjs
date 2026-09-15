@@ -151,6 +151,55 @@ test('rapid Stop → Play cannot tear down the new session', async () => {
   assert.equal(old.streamDest.stream.getTracks()[0].stopped, true);
 });
 
+test('export shortcut works from duration and tone controls but respects typing and browser shortcuts', async () => {
+  const h = harness();
+  h.sandbox.document.dispatch('DOMContentLoaded');
+  h.elements.get('songDuration').value = '60';
+  await h.api.startFromUI();
+  const keydown = h.listeners.find(l => l.type === 'keydown').handler;
+  let prevented = 0;
+  const press = (target, extra = {}) => keydown({ key: 'E', shiftKey: true, target,
+    preventDefault() { prevented++; }, ...extra });
+  for (const target of [{ tagName: 'TEXTAREA' }, { tagName: 'INPUT', type: 'text' },
+    { isContentEditable: true }]) press(target);
+  for (const modifier of ['metaKey', 'ctrlKey', 'altKey', 'repeat', 'isComposing'])
+    press({ tagName: 'SELECT' }, { [modifier]: true });
+  assert.equal(h.contexts.length, 1);
+  assert.equal(prevented, 0);
+  press({ tagName: 'SELECT' });
+  assert.equal(h.contexts.length, 2);
+  assert.match(h.sandbox.document.title, /Rendering WAV/);
+  press({ tagName: 'INPUT', type: 'range' });
+  assert.equal(h.contexts.length, 2); // duplicate keypress cannot start a second render
+  h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
+  for (let i = 0; i < 20; i++) await Promise.resolve();
+  assert.equal(h.downloads.length, 1);
+  press({ tagName: 'INPUT', type: 'range' });
+  assert.equal(h.contexts.length, 3);
+  h.contexts[2].reject(Error('test render failure'));
+  for (let i = 0; i < 5; i++) await Promise.resolve();
+  assert.match(h.sandbox.document.title, /WAV export failed/);
+  assert.equal(prevented, 3);
+});
+
+test('download URLs survive delayed browser pickup and are released on timeout or disposal', async () => {
+  for (const dispose of [false, true]) {
+    const h = harness(); let revoked = 0;
+    h.sandbox.URL.revokeObjectURL = () => revoked++;
+    await h.api.startFromUI();
+    const pending = h.api.renderWavExport();
+    h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
+    await pending;
+    h.advance(1);
+    assert.equal(revoked, 0);
+    if (dispose) h.sandbox.__OPEN_PLAYER_KILL__();
+    else h.advance(60);
+    assert.equal(revoked, 1);
+    h.advance(60);
+    assert.equal(revoked, 1);
+  }
+});
+
 test('a two-minute callback stall resumes one event ahead of the audio clock', async () => {
   const h = harness(); await h.api.startFromUI();
   const ctx = h.contexts[0]; const before = ctx.nodes.length;

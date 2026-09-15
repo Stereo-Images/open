@@ -23,6 +23,9 @@
   const removeListeners = [];
   const pendingRecordings = new Map();
   const cancelEncoders = new Set();
+  const pendingDownloads = new Set();
+  const idleTitle = document.title;
+  let exportTitleTimer = null;
   function listen(target, type, handler, options) {
     if (!target || disposed) return;
     target.addEventListener(type, handler, options);
@@ -35,6 +38,9 @@
     stopAllManual(true);
     for (const cleanup of pendingRecordings.values()) cleanup();
     for (const cancel of [...cancelEncoders]) cancel();
+    for (const cleanup of [...pendingDownloads]) cleanup();
+    clearTimeout(exportTitleTimer);
+    document.title = idleTitle;
     if (audioContext) {
       try { audioContext.close().catch(() => {}); } catch {}
       audioContext = null;
@@ -89,7 +95,7 @@
   function isTypingTarget(el) {
     if (!el) return false;
     const tag = (el.tagName || "").toUpperCase();
-    return tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || el.isContentEditable === true;
+    return (tag === "INPUT" && el.type !== "range") || tag === "TEXTAREA" || el.isContentEditable === true;
   }
 
   // =========================
@@ -1138,15 +1144,28 @@
   // EXPORT WAV (The current performance)
   // =========================
   let isExporting = false;
+  function exportStatus(message, finished = false) {
+    if (disposed) return;
+    announce(message);
+    clearTimeout(exportTitleTimer);
+    document.title = `${message} — ${idleTitle}`;
+    if (finished) exportTitleTimer = setTimeout(() => {
+      document.title = idleTitle;
+      exportTitleTimer = null;
+    }, 10000);
+  }
+
   async function renderWavExport() {
     if (disposed) return;
-    if (!sessionSnapshot) { announce("Press Play once before exporting"); return; }
+    if (!sessionSnapshot) { exportStatus("Press Play once before exporting", true); return; }
     if (isExporting) { announce("WAV export already in progress"); return; }
     isExporting = true;
+    exportStatus("Preparing WAV");
     try {
       await renderWavSession({ ...sessionSnapshot });
     } catch (error) {
-      announce("WAV export failed. Press Play with a shorter duration to try again.");
+      exportStatus("WAV export failed. Retry or start a shorter run", true);
+      console.error("WAV export failed", error);
     } finally {
       isExporting = false;
     }
@@ -1192,12 +1211,14 @@
       offlineReturn.connect(offlineMaster);
       automateMix(offlineMaster, offlineSend, 0, sessionSnapshot.density);
       for (const group of sessionSnapshot.groups) renderGroup(offlineCtx, offlineMaster, offlineSend, group, 0);
+      exportStatus("Rendering WAV");
       renderedBuffer = await offlineCtx.startRendering();
     } finally {
       offlineResonators?.dispose();
       disposeNoteDrift(offlineCtx);
     }
     if (disposed) return;
+    exportStatus("Encoding WAV");
     const wavBlob = await bufferToWave(renderedBuffer);
     if (disposed) return;
     const url = URL.createObjectURL(wavBlob);
@@ -1205,10 +1226,21 @@
     a.style.display = "none";
     a.href = url;
     a.download = `open-run-${sessionSnapshot.runId}-${Date.now()}.wav`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { try { document.body.removeChild(a); } catch {} URL.revokeObjectURL(url); }, 150);
-    announce("WAV downloaded");
+    let cleanupTimer;
+    const cleanup = () => {
+      clearTimeout(cleanupTimer);
+      pendingDownloads.delete(cleanup);
+      try { document.body.removeChild(a); } catch {}
+      URL.revokeObjectURL(url);
+    };
+    pendingDownloads.add(cleanup);
+    try {
+      document.body.appendChild(a);
+      a.click();
+    } catch (error) { cleanup(); throw error; }
+    // Give browsers time to acquire large downloads before releasing the Blob.
+    cleanupTimer = setTimeout(cleanup, 60000);
+    exportStatus("WAV downloaded", true);
   }
 
   function bufferToWave(abuffer) {
@@ -1289,14 +1321,16 @@
     listen($("songDuration"), "change", () => saveState(readControls()));
 
     // Recording/export are deliberately undiscoverable: no on-screen buttons,
-    // keyboard-only, feedback via the sr-only aria-live region only. This makes
+    // keyboard-only, feedback via aria-live and the browser tab title. This makes
     // them effectively desktop-only (no Shift key on touch) — that's by design,
     // not a gap to be filled with touch equivalents.
     listen(document, "keydown", (e) => {
-      if (e.repeat || isTypingTarget(e.target)) return;
+      if (e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target)) return;
       const k = (e.key || "").toLowerCase();
-      if(e.shiftKey && k === "r") toggleRecording();
-      if(e.shiftKey && k === "e") renderWavExport();
+      if (!e.shiftKey || (k !== "r" && k !== "e")) return;
+      e.preventDefault();
+      if (k === "r") toggleRecording();
+      else renderWavExport();
     });
 
     listen(document, "visibilitychange", handleVisibilityChange);
