@@ -33,7 +33,7 @@ When set to "Infinite", the engine generates new harmonic movement according to 
 * **Delayed Entry:** The scheduler begins slightly before the first audible event, avoiding an abrupt “start button” feeling.
 * **Acoustics:**
     * **Impulse Response:** A custom convolution reverb with a 10-second impulse response. Its noise envelope uses a decay-curve exponent of 2.8.
-    * **Pre-Delay (45ms):** A gap between the dry sound and the reverb to simulate distance.
+    * **Pre-Delay (15ms):** Reverb arrives close to the dry strike while preserving the 10ms bell attack.
     * **Filter (4200Hz):** The reverb return is low-passed to remove digital harshness while keeping the upper harmonics.
 
 ### Usage
