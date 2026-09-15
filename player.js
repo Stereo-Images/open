@@ -378,7 +378,7 @@
       masterGain.connect(streamDest);
 
       const reverbPreDelay = own(audioContext.createDelay(0.1));
-      reverbPreDelay.delayTime.value = 0.045;
+      reverbPreDelay.delayTime.value = 0.015;
 
       const reverbNode = own(audioContext.createConvolver());
       reverbNode.buffer = createImpulseResponse(audioContext);
@@ -852,7 +852,7 @@
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
       exportDuration: Math.max(duration === Infinity ? 1800 : duration, lastVoiceEnd)
-        + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.045 + 0.25,
+        + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25,
       continuation: duration === Infinity ? generator : null
     });
   }
@@ -1168,7 +1168,7 @@
     offlineMaster.connect(offlineCtx.destination);
 
     const offlinePreDelay = offlineCtx.createDelay(0.1);
-    offlinePreDelay.delayTime.value = 0.045;
+    offlinePreDelay.delayTime.value = 0.015;
     const offlineReverb = offlineCtx.createConvolver();
     // The same deterministic room at the session's native sample rate.
     offlineReverb.buffer = createImpulseResponse(offlineCtx, 0, false);

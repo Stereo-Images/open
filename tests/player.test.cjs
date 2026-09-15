@@ -330,7 +330,7 @@ test('fixed-duration exports match live voices, modulation, envelopes, and natur
       n.pan.events.map(e => e.map((v, i) => i === 2 ? Math.round((v - offset) * 1e8) / 1e8 : v)));
     assert.deepEqual(pans(h.contexts[0], origin), pans(offline));
     const longest = Math.max(...notes(offline).map(n => n[3]));
-    assert.ok(snapshot.exportDuration >= longest + 10.495 - 1e-8);
+    assert.ok(snapshot.exportDuration >= longest + 10.465 - 1e-8);
     offline.reject(Error('test')); await pending;
   }
 });
