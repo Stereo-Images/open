@@ -11,17 +11,15 @@
   <main class="shell" aria-label="Audio Instrument">
     <h1 id="playerTitle" class="title-style">Open</h1>
 
-    <hr class="separator" />
-
     <section id="controls" aria-label="Controls">
       <form id="songForm" onsubmit="return false;">
         <div class="form-group">
-          <label for="songDuration">Duration:</label>
+          <label for="songDuration">Length:</label>
           <select id="songDuration" name="songDuration">
-            <option value="60" selected>1 minute</option>
-            <option value="300">5 minutes</option>
-            <option value="600">10 minutes</option>
-            <option value="1800">30 minutes</option>
+            <option value="60" selected>Short</option>
+            <option value="300">Medium</option>
+            <option value="600">Long</option>
+            <option value="1800">Very Long</option>
             <option value="infinite">Infinite</option>
           </select>
         </div>

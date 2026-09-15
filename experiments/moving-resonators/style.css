@@ -191,8 +191,9 @@ input[type="range"]::-webkit-slider-thumb{
 }
 
 #credits{
+  margin-top:1.5rem;
   text-align:left;
-  font-size:0.75rem;
+  font-size:0.7rem;
   line-height:1.5;
   text-transform:uppercase;
   letter-spacing:0.05em;
