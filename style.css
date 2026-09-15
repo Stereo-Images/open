@@ -112,8 +112,8 @@ select{
   border-radius:0;
   cursor:pointer;
   min-width:140px;
-  text-align:left;
-  text-align-last:left;
+  text-align:center;
+  text-align-last:center;
   -webkit-appearance:none;
   appearance:none;
 }
