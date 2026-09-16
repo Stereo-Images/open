@@ -14,7 +14,7 @@
     <section id="controls" aria-label="Controls">
       <form id="songForm" onsubmit="return false;">
         <div class="form-group">
-          <label for="songDuration">Length:</label>
+          <label for="songDuration">Length</label>
           <select id="songDuration" name="songDuration">
             <option value="60" selected>Short</option>
             <option value="300">Medium</option>
@@ -25,18 +25,19 @@
         </div>
 
         <div class="form-group">
-          <label id="toneLabel" for="tone">
-            Root Tone: <span id="hzReadout" aria-hidden="true">110</span> Hz
-          </label>
-          <input
-            type="range"
-            id="tone"
-            min="110"
-            max="200"
-            step="1"
-            value="110"
-            aria-labelledby="toneLabel"
-          />
+          <label id="toneLabel" for="tone">Root Tone<span class="sr-only"> in hertz</span></label>
+          <div class="tone-control">
+            <div class="tone-readout" aria-hidden="true"><span id="hzReadout">110</span> Hz</div>
+            <input
+              type="range"
+              id="tone"
+              min="110"
+              max="200"
+              step="1"
+              value="110"
+              aria-labelledby="toneLabel"
+            />
+          </div>
         </div>
 
         <div class="form-actions">
