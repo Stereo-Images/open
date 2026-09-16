@@ -177,7 +177,8 @@ input:focus-visible{
   touch-action:auto;
 }
 
-.tone-dial input:disabled + .tone-dial-face{
+.tone-dial input:disabled + .tone-dial-face,
+.tone-control:has(input:disabled) .tone-readout{
   opacity:0.45;
 }
 
