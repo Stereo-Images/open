@@ -35,6 +35,10 @@ body{
   justify-content:center;
 }
 
+.player .shell{
+  max-width:280px;
+}
+
 /* ===== Accessibility ===== */
 button:focus-visible,
 select:focus-visible,
@@ -90,24 +94,19 @@ input:focus-visible{
 }
 
 .form-group{
-  display:grid;
-  grid-template-columns:90px minmax(0, 1fr);
-  align-items:center;
-  gap:24px;
+  display:flex;
+  flex-direction:column;
+  align-items:stretch;
+  gap:12px;
   width:100%;
 }
 
 .form-group > label{
-  text-align:left;
-}
-
-.form-group > select,
-.form-group > .tone-control{
-  justify-self:start;
+  text-align:center;
 }
 
 .form-group + .form-group{
-  margin-top:8px; /* 24px form gap + 8px = 32px between control rows */
+  margin-top:8px; /* 24px form gap + 8px = 32px between setting groups */
 }
 
 .tone-control{
@@ -134,7 +133,7 @@ label{
 
 select,
 input[type="range"]{
-  width:140px;
+  width:100%;
   flex-shrink:0;
   margin:0;
 }
@@ -179,8 +178,8 @@ input[type="range"]::-webkit-slider-thumb{
 
 .form-actions{
   display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:15px;
+  grid-template-columns:1fr;
+  gap:12px;
   margin-top:1.5rem;
 }
 
@@ -243,6 +242,4 @@ input[type="range"]::-webkit-slider-thumb{
 /* ===== Small screens ===== */
 @media (max-width:360px){
   .shell{ padding:18px 16px; }
-  select,
-  input[type="range"]{ width:120px; }
 }
