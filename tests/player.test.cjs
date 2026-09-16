@@ -17,7 +17,10 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
       const i = listeners.findIndex(l => l.target === this && l.type === type && l.handler === handler);
       if (i >= 0) listeners.splice(i, 1);
     },
-    dispatch(type) { for (const l of [...listeners]) if (l.target === this && l.type === type) l.handler({ type }); }
+    dispatch(type, event = {}) {
+      for (const l of [...listeners]) if (l.target === this && l.type === type)
+        l.handler({ type, target: this, ...event });
+    }
   });
   const param = () => ({ value: 0, events: [], setValueAtTime(v, t) { this.events.push(["set", v, t]); }, linearRampToValueAtTime(v, t) { this.events.push(["ramp", v, t]); },
     exponentialRampToValueAtTime(v, t) { this.events.push(["exp", v, t]); },
@@ -95,7 +98,13 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
   }
   function element(id) {
     if (!elements.has(id)) elements.set(id, { value: id === 'tone' ? '110' : 'infinite',
-      classList: { toggle() {} }, style: {}, setAttribute() {}, ...eventTarget(),
+      classList: { toggle() {} }, style: { setProperty(name, value) { this[name] = value; } },
+      attributes: {}, setAttribute(name, value) { this.attributes[name] = value; },
+      capturedPointers: new Set(),
+      setPointerCapture(id) { this.capturedPointers.add(id); },
+      hasPointerCapture(id) { return this.capturedPointers.has(id); },
+      releasePointerCapture(id) { this.capturedPointers.delete(id); this.dispatch('lostpointercapture', { pointerId: id }); },
+      focus() { sandbox.document.activeElement = this; }, ...eventTarget(),
       play: () => Promise.resolve(), pause() {}, remove() {}, click() { downloads.push(this.download); } });
     return elements.get(id);
   }
@@ -139,6 +148,123 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
   }
   return { api: sandbox.api, sandbox, advance, contexts, recordings, downloads, blobs, elements, Recorder, workers, listeners, timers };
 }
+
+function dialHarness(savedTone = '155') {
+  const h = harness();
+  h.sandbox.localStorage.getItem = () => JSON.stringify({ tone: savedTone, songDuration: '60' });
+  h.saved = [];
+  h.sandbox.localStorage.setItem = (key, value) => h.saved.push({ key, ...JSON.parse(value) });
+  h.sandbox.document.dispatch('DOMContentLoaded');
+  h.tone = h.elements.get('tone');
+  h.pointer = (type, props = {}) => {
+    let prevented = false;
+    h.tone.dispatch(type, { pointerId: 1, isPrimary: true, button: 0, clientY: 300,
+      preventDefault() { prevented = true; }, ...props });
+    return prevented;
+  };
+  return h;
+}
+
+test('dial restores the saved frequency, accessible text, and marker', () => {
+  const h = dialHarness();
+  assert.equal(h.tone.value, '155');
+  assert.equal(h.elements.get('hzReadout').textContent, '155');
+  assert.equal(h.tone.attributes['aria-valuetext'], '155 hertz');
+  assert.equal(h.elements.get('toneDial').style['--tone-angle'], '0deg');
+  assert.equal(h.saved.length, 0);
+});
+
+test('dial drag works for touch, mouse, and pen without a pointer-down value jump', () => {
+  for (const pointerType of ['touch', 'mouse', 'pen']) {
+    const h = dialHarness();
+    assert.equal(h.pointer('pointerdown', { pointerType }), true);
+    assert.equal(h.tone.value, '155');
+    assert.equal(h.sandbox.document.activeElement, h.tone);
+    assert.equal(h.tone.hasPointerCapture(1), true);
+    h.pointer('pointermove', { pointerType, clientY: 260 });
+    assert.equal(h.tone.value, '175');
+    assert.equal(h.elements.get('hzReadout').textContent, '175');
+    assert.equal(h.tone.attributes['aria-valuetext'], '175 hertz');
+    assert.equal(h.elements.get('toneDial').style['--tone-angle'], '60deg');
+    assert.equal(h.saved.at(-1).tone, '175');
+    h.pointer('pointermove', { pointerType, clientY: 330 });
+    assert.equal(h.tone.value, '140');
+    h.pointer('pointerup', { pointerType });
+    assert.equal(h.tone.hasPointerCapture(1), false);
+    h.pointer('pointermove', { clientY: 0 });
+    assert.equal(h.tone.value, '140');
+  }
+});
+
+test('dial clamps to 110–200 Hz and ignores secondary pointers and non-left clicks', () => {
+  const h = dialHarness();
+  assert.equal(h.pointer('pointerdown', { isPrimary: false }), false);
+  assert.equal(h.pointer('pointerdown', { button: 2 }), false);
+  assert.equal(h.tone.hasPointerCapture(1), false);
+  h.pointer('pointerdown');
+  h.pointer('pointerdown', { pointerId: 2 });
+  h.pointer('pointermove', { pointerId: 2, clientY: 0 });
+  h.pointer('pointerup', { pointerId: 2 });
+  assert.equal(h.tone.value, '155');
+  h.pointer('pointermove', { clientY: -1000 });
+  assert.equal(h.tone.value, '200');
+  assert.equal(h.elements.get('toneDial').style['--tone-angle'], '135deg');
+  h.pointer('pointermove', { clientY: 2000 });
+  assert.equal(h.tone.value, '110');
+  assert.equal(h.elements.get('toneDial').style['--tone-angle'], '-135deg');
+});
+
+test('dial cancellation, lost capture, and blur end the drag and allow a fresh one', () => {
+  for (const type of ['pointercancel', 'lostpointercapture', 'blur']) {
+    const h = dialHarness();
+    h.pointer('pointerdown');
+    h.pointer('pointermove', { clientY: 280 });
+    h.pointer(type);
+    assert.equal(h.tone.hasPointerCapture(1), false);
+    h.pointer('pointermove', { clientY: 0 });
+    assert.equal(h.tone.value, '165');
+    h.pointer('pointerdown');
+    h.pointer('pointermove', { clientY: 280 });
+    assert.equal(h.tone.value, '175');
+  }
+});
+
+test('native range input changes also update the dial, readout, and persistence', () => {
+  const h = dialHarness();
+  h.tone.value = '156';
+  h.tone.dispatch('input');
+  assert.equal(h.elements.get('hzReadout').textContent, '156');
+  assert.equal(h.tone.attributes['aria-valuetext'], '156 hertz');
+  assert.equal(h.elements.get('toneDial').style['--tone-angle'], '3deg');
+  assert.equal(h.saved.at(-1).tone, '156');
+});
+
+test('play cancels an active dial drag and locks the tone until stopped', async () => {
+  const h = dialHarness();
+  h.pointer('pointerdown');
+  h.pointer('pointermove', { clientY: 280 });
+  await h.api.startFromUI();
+  assert.equal(h.tone.disabled, true);
+  assert.equal(h.tone.hasPointerCapture(1), false);
+  h.pointer('pointermove', { clientY: 0 });
+  assert.equal(h.pointer('pointerdown'), false);
+  assert.equal(h.tone.value, '165');
+  h.api.stopAllManual(false);
+  assert.equal(h.tone.disabled, false);
+  h.pointer('pointerdown');
+  h.pointer('pointermove', { clientY: 280 });
+  assert.equal(h.tone.value, '175');
+});
+
+test('disposing the player releases dial capture and removes dial listeners', () => {
+  const h = dialHarness();
+  h.pointer('pointerdown');
+  h.sandbox.__OPEN_PLAYER_KILL__();
+  assert.equal(h.tone.hasPointerCapture(1), false);
+  assert.equal(h.listeners.length, 0);
+  h.pointer('pointermove', { clientY: 0 });
+  assert.equal(h.tone.value, '155');
+});
 
 test('rapid Stop → Play cannot tear down the new session', async () => {
   const h = harness(); await h.api.startFromUI();

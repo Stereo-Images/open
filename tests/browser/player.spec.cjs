@@ -54,13 +54,59 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
   await player.close();
 });
 
-test('the tone slider has visible keyboard focus', async ({ page }) => {
+test('the tone dial has visible keyboard focus and native keyboard adjustment', async ({ page }) => {
   await page.goto('/player.html');
   await page.locator('#songDuration').focus();
   await page.keyboard.press('Tab');
   await expect(page.locator('#tone')).toBeFocused();
-  await expect(page.locator('#tone')).toHaveCSS('outline-style', 'solid');
-  await expect(page.locator('#tone')).toHaveCSS('outline-width', '3px');
+  await expect(page.locator('.tone-dial-face')).toHaveCSS('outline-style', 'solid');
+  await expect(page.locator('.tone-dial-face')).toHaveCSS('outline-width', '3px');
+  await page.keyboard.press('ArrowUp');
+  await expect(page.locator('#tone')).toHaveValue('111');
+  await expect(page.locator('#hzReadout')).toHaveText('111');
+  await expect(page.locator('#tone')).toHaveAttribute('aria-valuetext', '111 hertz');
+  await page.keyboard.press('End');
+  await expect(page.locator('#tone')).toHaveValue('200');
+  await page.keyboard.press('Home');
+  await expect(page.locator('#tone')).toHaveValue('110');
+});
+
+test('dial pointer dragging preserves its value on press and persists after release', async ({ page }) => {
+  await page.goto('/player.html');
+  const box = await page.locator('#tone').boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await expect(page.locator('#tone')).toHaveValue('110');
+  await page.mouse.move(x, y - 40, { steps: 5 });
+  await expect(page.locator('#tone')).toHaveValue('130');
+  await page.mouse.up();
+  await expect(page.locator('#hzReadout')).toHaveText('130');
+  await page.reload();
+  await expect(page.locator('#tone')).toHaveValue('130');
+  await expect(page.locator('#toneDial')).toHaveCSS('--tone-angle', '-75deg');
+});
+
+test('dial touch target and lower divider fit a narrow mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/player.html');
+  await expect(page.locator('#tone')).toHaveCSS('touch-action', 'none');
+  const dial = await page.locator('#tone').boundingBox();
+  expect(dial.width).toBe(88);
+  expect(dial.height).toBe(88);
+  const dimensions = await page.evaluate(() => ({
+    page: document.documentElement.scrollWidth, viewport: innerWidth,
+    title: document.getElementById('playerTitle').getBoundingClientRect().width,
+    footer: document.getElementById('credits').getBoundingClientRect().width
+  }));
+  expect(dimensions.page).toBe(dimensions.viewport);
+  expect(dimensions.footer).toBe(dimensions.title);
+  await expect(page.locator('#credits')).toHaveCSS('border-top-width', '1px');
+  await page.locator('#playNow').click();
+  await expect(page.locator('#tone')).toBeDisabled();
+  await expect(page.locator('#tone')).toHaveCSS('touch-action', 'auto');
+  await page.locator('#stop').click();
+  await expect(page.locator('#tone')).toBeEnabled();
 });
 
 test('native audio and recording survive immediate Stop → Play', async ({ page }) => {
@@ -203,7 +249,7 @@ test('reloading the script disposes the old instance and binds controls once', a
 
 test('native note drift starts at the strike and moves stereo energy through its decay', async ({ page }) => {
   const source = await fs.readFile(path.join(__dirname, '../../player.js'), 'utf8');
-  await page.route('**/player.js', route => route.fulfill({ contentType: 'text/javascript',
+  await page.route('**/player.js*', route => route.fulfill({ contentType: 'text/javascript',
     body: source.replace('  function teardownBusHard() {',
       '  window.testNoteDrift = createNoteDrift; window.testInitializeDrift = initializeNoteDrift; window.testDisposeDrift = disposeNoteDrift;\n  function teardownBusHard() {') }));
   await page.goto('/player.html');

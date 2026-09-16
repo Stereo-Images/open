@@ -26,6 +26,7 @@
   const pendingDownloads = new Set();
   const idleTitle = document.title;
   let exportTitleTimer = null;
+  let cancelToneDrag = () => {};
   function listen(target, type, handler, options) {
     if (!target || disposed) return;
     target.addEventListener(type, handler, options);
@@ -127,7 +128,6 @@
   function applyControls(state) {
     const sd = $("songDuration");
     const tone = $("tone");
-    const hzReadout = $("hzReadout");
 
     if (sd) {
       const allowed = new Set(["60", "300", "600", "1800", "infinite"]);
@@ -141,7 +141,57 @@
       if (Number.isFinite(n)) toneVal = Math.max(110, Math.min(200, n));
     }
     if (tone) tone.value = String(toneVal);
-    if (hzReadout) hzReadout.textContent = String(toneVal);
+    syncToneControl();
+  }
+
+  function syncToneControl() {
+    const tone = $("tone");
+    if (!tone) return;
+    const value = Number(tone.value);
+    if ($("hzReadout")) $("hzReadout").textContent = tone.value;
+    tone.setAttribute("aria-valuetext", `${tone.value} hertz`);
+    const angle = -135 + ((value - 110) / 90) * 270;
+    $("toneDial")?.style.setProperty("--tone-angle", `${angle}deg`);
+  }
+
+  function toneChanged() {
+    syncToneControl();
+    saveState(readControls());
+  }
+
+  function initializeToneDial() {
+    const tone = $("tone");
+    if (!tone || !$("toneDial")) return;
+    let drag = null;
+    const finish = (event) => {
+      if (!drag || (event?.pointerId != null && event.pointerId !== drag.id)) return;
+      const id = drag.id;
+      drag = null;
+      if (tone.hasPointerCapture(id)) tone.releasePointerCapture(id);
+    };
+    cancelToneDrag = finish;
+    removeListeners.push(finish);
+    listen(tone, "pointerdown", (event) => {
+      if (tone.disabled || drag || event.isPrimary === false || event.button !== 0) return;
+      // Suppress the native horizontal range jump; keep its keyboard/AT behavior.
+      event.preventDefault();
+      tone.focus({ preventScroll: true });
+      tone.setPointerCapture(event.pointerId);
+      drag = { id: event.pointerId, y: event.clientY, value: Number(tone.value) };
+    });
+    listen(tone, "pointermove", (event) => {
+      if (!drag || event.pointerId !== drag.id) return;
+      if (tone.disabled) { finish(event); return; }
+      event.preventDefault();
+      // Two vertical CSS pixels per hertz, clamped to the existing tone range.
+      const value = Math.max(110, Math.min(200, Math.round(drag.value + (drag.y - event.clientY) / 2)));
+      if (String(value) === tone.value) return;
+      tone.value = String(value);
+      toneChanged();
+    });
+    for (const type of ["pointerup", "pointercancel", "lostpointercapture", "blur"])
+      listen(tone, type, finish);
+    listen(tone, "click", (event) => event.preventDefault());
   }
 
   function setButtonState(state) {
@@ -158,6 +208,7 @@
       stopBtn.classList.toggle("filled", !playing);
       stopBtn.setAttribute("aria-pressed", playing ? "false" : "true");
     }
+    if (playing) cancelToneDrag();
     if (toneInput) toneInput.disabled = playing;
 
     announce(playing ? "Playing" : "Stopped");
@@ -1313,11 +1364,9 @@
     listen($("stop"), "click", () => stopAllManual(false));
 
     applyControls(loadState());
+    initializeToneDial();
 
-    listen($("tone"), "input", (e) => {
-      if ($("hzReadout")) $("hzReadout").textContent = e.target.value;
-      saveState(readControls());
-    });
+    listen($("tone"), "input", toneChanged);
     listen($("songDuration"), "change", () => saveState(readControls()));
 
     // Recording/export are deliberately undiscoverable: no on-screen buttons,

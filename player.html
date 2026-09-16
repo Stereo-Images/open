@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Open — Player</title>
-  <link rel="stylesheet" href="style.css?v=20260916-narrow-menu" />
+  <link rel="stylesheet" href="style.css?v=20260916-tone-dial" />
 </head>
 <body class="player">
   <main class="shell" aria-label="Audio Instrument">
@@ -27,16 +27,26 @@
         <div class="form-group">
           <label id="toneLabel" for="tone">Root Tone<span class="sr-only"> in hertz</span></label>
           <div class="tone-control">
+            <div class="tone-dial" id="toneDial">
+              <input
+                type="range"
+                id="tone"
+                min="110"
+                max="200"
+                step="1"
+                value="110"
+                aria-labelledby="toneLabel"
+                aria-describedby="toneHelp"
+                aria-orientation="vertical"
+                aria-valuetext="110 hertz"
+                title="Drag up or down to adjust"
+              />
+              <span class="tone-dial-face" aria-hidden="true">
+                <span class="tone-dial-marker"></span>
+              </span>
+            </div>
             <div class="tone-readout" aria-hidden="true"><span id="hzReadout">110</span> Hz</div>
-            <input
-              type="range"
-              id="tone"
-              min="110"
-              max="200"
-              step="1"
-              value="110"
-              aria-labelledby="toneLabel"
-            />
+            <span id="toneHelp" class="sr-only">Drag up to raise the tone or down to lower it. Use arrow keys for one-hertz steps.</span>
           </div>
         </div>
 
@@ -56,6 +66,6 @@
     </footer>
   </main>
 
-  <script src="player.js"></script>
+  <script src="player.js?v=20260916-tone-dial"></script>
 </body>
 </html>

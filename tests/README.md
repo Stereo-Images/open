@@ -23,6 +23,23 @@ If the scheduler resumes after an event's start time has passed, it schedules th
 
 WAV encoding runs in a dedicated worker. At most 65,536 frames per channel are copied and transferred in each message; the next chunk is sent only after the worker acknowledges the previous one. The worker builds the final file from Blob parts, preserving the original 16-bit conversion without a full-size WAV ArrayBuffer on the main thread. The full OfflineAudioContext render buffer is still required (roughly 635–691 MB for 30 minutes before the ending and tail, at 44.1–48 kHz), so long exports remain memory intensive.
 
+## Root Tone dial
+
+The native range input remains the keyboard and screen-reader control, with a
+64px outlined dial face inside an 88px touch target. A primary pointer drag moves
+one hertz per two vertical CSS pixels (up raises, down lowers), bounded to
+110–200 Hz. Pressing does not jump the value. Pointer capture keeps an adjustment
+active outside the target; release, cancellation, lost capture, blur, playback,
+and disposal end it. Only the enabled dial target disables touch scrolling.
+The marker, frequency readout, accessible value text, and saved settings update
+together. Existing playback locking and audio generation are unchanged.
+
+Dependency-free tests cover mouse/touch/pen pointer events, bounds, secondary
+pointers, persistence, cancellation, disabled playback, and disposal. Browser
+regressions cover native keyboard focus/steps, mouse dragging, reload persistence,
+and the narrow layout with its lower divider. Simulated pointer events and desktop
+browser tests do not establish actual iPhone gesture behavior.
+
 ## Native browser checks
 
 ```sh
