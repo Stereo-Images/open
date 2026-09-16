@@ -107,14 +107,18 @@ input:focus-visible{
 }
 
 .form-group + .form-group{
-  margin-top:8px; /* 24px form gap + 8px = 32px between setting groups */
+  margin-top:24px; /* 24px form gap + 24px = 48px between setting groups */
+}
+
+.tone-group{
+  gap:4px;
 }
 
 .tone-control{
   display:flex;
   flex-direction:column;
   align-items:center;
-  gap:8px;
+  gap:4px;
   flex-shrink:0;
 }
 
