@@ -256,6 +256,33 @@ test('play cancels an active dial drag and locks the tone until stopped', async 
   assert.equal(h.tone.value, '175');
 });
 
+test('Length menu locks with the knob and unlocks on Stop, natural ending, and mobile backgrounding', async () => {
+  for (const end of ['stop', 'natural', 'background']) {
+    const h = dialHarness();
+    const duration = h.elements.get('songDuration');
+    assert.equal(duration.disabled, false);
+    assert.equal(h.tone.disabled, false);
+    await h.api.startFromUI();
+    assert.equal(duration.disabled, true);
+    assert.equal(h.tone.disabled, true);
+    assert.equal(duration.value, '60');
+    if (end === 'stop') h.api.stopAllManual(false);
+    else if (end === 'natural') h.api.beginNaturalEnd();
+    else {
+      h.sandbox.navigator.userAgent = 'iPhone';
+      h.api.handleVisibilityChange({ type: 'pagehide' });
+    }
+    assert.equal(duration.disabled, false, end);
+    assert.equal(h.tone.disabled, false, end);
+    duration.value = '300';
+    duration.dispatch('change');
+    assert.equal(h.saved.at(-1).songDuration, '300');
+    await h.api.startFromUI();
+    assert.equal(duration.disabled, true);
+    assert.equal(h.api.state().snapshot.duration, '300');
+  }
+});
+
 test('disposing the player releases dial capture and removes dial listeners', () => {
   const h = dialHarness();
   h.pointer('pointerdown');
@@ -274,6 +301,7 @@ test('rapid Stop → Play cannot tear down the new session', async () => {
   assert.notEqual(current, old); h.advance(0.3);
   assert.equal(h.api.state().bus, current);
   assert.equal(current.masterGain.disconnected, false);
+  assert.equal(h.elements.get('songDuration').disabled, true);
   assert.equal(old.streamDest.stream.getTracks()[0].stopped, true);
 });
 
@@ -815,6 +843,7 @@ test('failed audio-bus construction releases streams and started resonators befo
     const ctx = h.contexts[0];
     assert.equal(h.api.state().isPlaying, false);
     assert.equal(h.api.state().bus, null);
+    assert.equal(h.elements.get('songDuration').disabled, false);
     for (const node of ctx.nodes) {
       assert.equal(node.disconnected, true, `${failure}: ${node.kind} must disconnect`);
       if (node.stream) assert.equal(node.stream.getTracks()[0].stopped, true);
@@ -823,6 +852,7 @@ test('failed audio-bus construction releases streams and started resonators befo
     proto[method] = original;
     await h.api.startFromUI();
     assert.equal(h.api.state().isPlaying, true);
+    assert.equal(h.elements.get('songDuration').disabled, true);
     assert.ok(h.api.state().bus);
     h.api.stopAllManual(true);
   }

@@ -104,9 +104,15 @@ test('dial touch target and lower divider fit a narrow mobile viewport', async (
   await expect(page.locator('#credits')).toHaveCSS('border-top-width', '1px');
   await page.locator('#playNow').click();
   await expect(page.locator('#tone')).toBeDisabled();
+  await expect(page.locator('#songDuration')).toBeDisabled();
+  await expect(page.locator('#songDuration')).toHaveCSS('opacity', '0.45');
   await expect(page.locator('#tone')).toHaveCSS('touch-action', 'auto');
   await page.locator('#stop').click();
   await expect(page.locator('#tone')).toBeEnabled();
+  await expect(page.locator('#songDuration')).toBeEnabled();
+  await expect(page.locator('#songDuration')).toHaveCSS('opacity', '1');
+  await page.locator('#songDuration').selectOption('300');
+  await expect(page.locator('#songDuration')).toHaveValue('300');
 });
 
 test('native audio and recording survive immediate Stop → Play', async ({ page }) => {
@@ -280,7 +286,7 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   await page.goto('/player.html');
   await page.locator('#playNow').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
-  await page.locator('#songDuration').focus();
+  await page.locator('#playNow').focus();
   let downloading = page.waitForEvent('download');
   await page.keyboard.press('Shift+E');
   const first = await fs.readFile(await (await downloading).path());

@@ -198,6 +198,7 @@
     const playBtn = $("playNow");
     const stopBtn = $("stop");
     const toneInput = $("tone");
+    const durationInput = $("songDuration");
     const playing = (state === "playing");
 
     if (playBtn) {
@@ -210,6 +211,7 @@
     }
     if (playing) cancelToneDrag();
     if (toneInput) toneInput.disabled = playing;
+    if (durationInput) durationInput.disabled = playing;
 
     announce(playing ? "Playing" : "Stopped");
   }
