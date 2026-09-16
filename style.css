@@ -102,6 +102,13 @@ label{
   white-space:nowrap;
 }
 
+select,
+input[type="range"]{
+  width:140px;
+  flex-shrink:0;
+  margin:0;
+}
+
 select{
   background:#fff;
   border:1px solid var(--fg);
@@ -111,7 +118,6 @@ select{
   font-size:1rem;
   border-radius:0;
   cursor:pointer;
-  min-width:140px;
   text-align:center;
   text-align-last:center;
   -webkit-appearance:none;
@@ -121,7 +127,6 @@ select{
 input[type="range"]{
   -webkit-appearance:none;
   appearance:none;
-  width:160px;
   height:2px;
   background:var(--fg);
   border:none;
@@ -208,6 +213,6 @@ input[type="range"]::-webkit-slider-thumb{
 /* ===== Small screens ===== */
 @media (max-width:360px){
   .shell{ padding:18px 16px; }
-  select{ min-width:120px; }
-  input[type="range"]{ width:140px; }
+  select,
+  input[type="range"]{ width:120px; }
 }
