@@ -103,6 +103,7 @@ input:focus-visible{
 
 .form-group > label{
   text-align:center;
+  font-weight:600;
 }
 
 .form-group + .form-group{
@@ -186,6 +187,7 @@ input[type="range"]::-webkit-slider-thumb{
 /* ===== Buttons ===== */
 .btn{
   font-family:inherit;
+  font-weight:400;
   font-size:0.9rem;
   text-transform:uppercase;
   letter-spacing:0.1em;
@@ -202,7 +204,6 @@ input[type="range"]::-webkit-slider-thumb{
 .btn.filled{
   background:var(--fg);
   color:var(--bg);
-  font-weight:700;
 }
 
 .btn:hover{ opacity:0.82; }
