@@ -184,7 +184,7 @@ input:focus-visible{
 .tone-readout{
   align-self:stretch;
   text-align:center;
-  font-size:0.8rem;
+  font-size:1rem;
   line-height:1.2;
   font-variant-numeric:tabular-nums;
 }
