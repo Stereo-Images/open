@@ -1,6 +1,6 @@
 # Open
 
-> *Designed for desktop browsers.*
+> *Listen on desktop or mobile. Recording and WAV export use desktop keyboard shortcuts.*
 
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
 
@@ -37,17 +37,21 @@ When set to "Infinite", the engine generates new harmonic movement according to 
     * **Filter (4200Hz):** The reverb return is low-passed to remove digital harshness while keeping the upper harmonics.
 
 ### Usage
-Each press of Play creates a new performance.
-1. **Launch:** Click "Play" to start the generative engine.
-2. **Tone:** Use the slider to set the fundamental frequency (Safety floor: 110Hz).
-3. **Length:** Select Short, Medium, Long, Very Long, or Infinite before pressing Play. Short begins seeking its natural ending after 1 minute; Medium after 5 minutes; Long after 10 minutes; Very Long after 30 minutes. These are starting points for the ending, not fixed runtimes: resolving the phrase and allowing the sound to decay can take longer. Infinite continues until stopped. Tone and length changes apply to the next run.
+Set the length and root tone before pressing Play.
+
+1. **Length:** Select Short, Medium, Long, Very Long, or Infinite. Short begins seeking its natural ending after 1 minute; Medium after 5 minutes; Long after 10 minutes; Very Long after 30 minutes. These are starting points for the ending, not fixed runtimes: resolving the phrase and allowing the sound to decay can take longer. Infinite continues until stopped.
+2. **Root Tone:** Drag the dial up to raise the root frequency or down to lower it, using a mouse or touch. The range is 110–200 Hz. With the dial focused, use the arrow keys for 1 Hz adjustments. The readout below the dial shows the selected frequency.
+3. **Play / Stop:** Press Play to create a new performance; press Stop to fade it out. During active playback, the length menu and dial are locked, and both controls and the frequency readout turn gray. The controls become available again after Stop or as the natural ending begins. Changes then apply to the next run.
+
+Your last length and root tone are remembered locally. On mobile, keep the player page active: switching apps or tabs, or locking the screen, stops playback. Press Play when you return to start a new performance.
 
 ### Output & Saving
-Because there are no project files, you save the *audio*, not the *session*.
+Because there are no project files, you save the *audio*, not the *session*. Recording and export are keyboard-only features intended for desktop use; there are no on-screen recording or export buttons.
+
 * **Live Recording:** Press **`Shift + R`** to capture the current mix in real time; press it again to save. The browser selects the recording format, saved as `.webm`, `.ogg`, or `.m4a`. Recording also finishes automatically after a natural ending and its remaining audio tail.
 * **Export WAV:** Press **`Shift + E`** to save the current or most recent performance from its beginning as a lossless, 16-bit PCM `.wav` file. The WAV uses the same planned notes, FM variations, stereo movement, resonators, reverb, and natural ending as live playback. You can export while listening or after Stop; stopping early does not shorten the planned performance. Repeated exports preserve it until the next Play or page close. WAV filenames include a run identifier shared by every export of that performance, followed by the export timestamp: `open-run-<run-id>-<timestamp>.wav`.
 * **Timing:** Export reproduces the intended performance, excluding browser stalls and manual Stop fades. A timed run includes its complete natural ending and reverb tail, so its WAV can be appreciably longer than the selected time. Infinite exports the same first 30 minutes of planned events plus their remaining decay, while live playback continues. To generate a new performance, press Play again.
-* **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. The browser tab title shows preparation, rendering, encoding, and completion or failure. Longer runs take time to render; pressing Shift + E again while busy does not queue another export. The shortcut also works while the length menu or tone slider has focus. It uses the sample rate captured from the live audio context (commonly 44.1 or 48 kHz). Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
+* **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. The browser tab title shows preparation, rendering, encoding, and completion or failure. Longer runs take time to render; pressing Shift + E again while busy does not queue another export. The shortcut also works while the length menu or root tone dial has focus. It uses the sample rate captured from the live audio context (commonly 44.1 or 48 kHz). Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
 
 **Long exports need memory.** For 30 minutes of stereo audio alone, the uncompressed render buffer is about 635 MB at 44.1 kHz or 691 MB at 48 kHz; the WAV adds about 318 MB or 346 MB. The natural ending, decay, browser, and synthesis add overhead. Leave plenty of available memory and close other demanding tabs or apps before a long export. Available system memory does not guarantee the browser can complete it; if an export fails or the tab closes, start a shorter run and try again. These are calculated data sizes, not measured peak RAM requirements.
 
