@@ -6,7 +6,7 @@ Bells are instruments of distance. Their sound travels far, and that distance is
 
 What resonates? [*Open*](https://stereo-images.github.io/open/) answers that question in a multitude of ways. As a generative piece, every tone is a new physical event, ringing in a particular way and gesturing towards the next. As a browser installation, wherever I go, I carry that distance with me.
 
-*Open* renders low, slow bell tones anchored to familiar harmony. Yet the tones themselves are inharmonic. To frame this tension: while the music resolves from moment to moment, it remains unresolved within the moment itself. 
+*Open* renders low, slow bell tones anchored to familiar harmony. Yet the tones themselves are inharmonic—the music resolves from moment to moment, but never within the moment itself. 
 
 The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
 
