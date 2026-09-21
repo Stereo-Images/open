@@ -1,6 +1,6 @@
 # Open
 
-> *A generative bell instrument that runs in a browser*
+> *A self-playing bell instrument that lives in your browser, never ringing the same way twice*
 
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
 
