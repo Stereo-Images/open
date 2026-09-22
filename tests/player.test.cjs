@@ -98,7 +98,11 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
   }
   function element(id) {
     if (!elements.has(id)) elements.set(id, { value: id === 'tone' ? '110' : 'infinite',
-      classList: { toggle() {} }, style: { setProperty(name, value) { this[name] = value; } },
+      classList: {
+        values: new Set(),
+        toggle(name, on) { if (on) this.values.add(name); else this.values.delete(name); },
+        contains(name) { return this.values.has(name); }
+      }, style: { setProperty(name, value) { this[name] = value; } },
       attributes: {}, setAttribute(name, value) { this.attributes[name] = value; },
       capturedPointers: new Set(),
       setPointerCapture(id) { this.capturedPointers.add(id); },
@@ -265,8 +269,8 @@ test('play cancels an active dial drag and locks the tone until stopped', async 
   assert.equal(h.tone.value, '175');
 });
 
-test('Length menu locks with the knob and unlocks on Stop, natural ending, and mobile backgrounding', async () => {
-  for (const end of ['stop', 'natural', 'background']) {
+test('Length menu and knob unlock on manual Stop or backgrounding, including during the natural tail', async () => {
+  for (const end of ['stop', 'background', 'stop-tail', 'background-tail']) {
     const h = dialHarness();
     const duration = h.elements.get('songDuration');
     assert.equal(duration.disabled, false);
@@ -275,8 +279,8 @@ test('Length menu locks with the knob and unlocks on Stop, natural ending, and m
     assert.equal(duration.disabled, true);
     assert.equal(h.tone.disabled, true);
     assert.equal(duration.value, 'short');
-    if (end === 'stop') h.api.stopAllManual(false);
-    else if (end === 'natural') h.api.beginNaturalEnd();
+    if (end.endsWith('-tail')) h.api.beginNaturalEnd();
+    if (end.startsWith('stop')) h.api.stopAllManual(false);
     else {
       h.sandbox.navigator.userAgent = 'iPhone';
       h.api.handleVisibilityChange({ type: 'pagehide' });
@@ -290,6 +294,42 @@ test('Length menu locks with the knob and unlocks on Stop, natural ending, and m
     assert.equal(duration.disabled, true);
     assert.equal(h.api.state().snapshot.duration, 'long');
   }
+});
+
+test('Play remains active and controls stay locked until the final notes and reverb finish', async () => {
+  const h = dialHarness();
+  const play = h.elements.get('playNow'), stop = h.elements.get('stop');
+  const duration = h.elements.get('songDuration');
+  const assertPlaying = () => {
+    assert.equal(play.classList.contains('filled'), true);
+    assert.equal(stop.classList.contains('filled'), false);
+    assert.equal(play.attributes['aria-pressed'], 'true');
+    assert.equal(stop.attributes['aria-pressed'], 'false');
+    assert.equal(h.elements.get('playerStatus').textContent, 'Playing');
+    assert.equal(duration.disabled, true);
+    assert.equal(h.tone.disabled, true);
+  };
+  await h.api.startFromUI();
+  for (let seconds = 0; seconds < 600 && !h.api.state().isEndingNaturally; seconds++) h.advance(1);
+  assert.equal(h.api.state().isEndingNaturally, true, 'the actual scheduler reaches its ending');
+  assertPlaying();
+  const { audioContext: ctx, bus } = h.api.state();
+  const finishAt = bus.lastVoiceEnd + bus.tailSeconds;
+  h.advance(120, false);
+  assertPlaying();
+  assert.equal(h.api.state().bus, bus, 'wall time alone does not finish playback');
+  h.advance(finishAt - ctx.currentTime - 0.1);
+  assertPlaying();
+  assert.equal(h.api.state().bus, bus);
+  h.advance(0.5);
+  assert.equal(h.api.state().bus, null);
+  assert.equal(play.classList.contains('filled'), false);
+  assert.equal(stop.classList.contains('filled'), true);
+  assert.equal(play.attributes['aria-pressed'], 'false');
+  assert.equal(stop.attributes['aria-pressed'], 'true');
+  assert.equal(h.elements.get('playerStatus').textContent, 'Stopped');
+  assert.equal(duration.disabled, false);
+  assert.equal(h.tone.disabled, false);
 });
 
 test('disposing the player releases dial capture and removes dial listeners', () => {
@@ -435,6 +475,9 @@ test('natural-ending cleanup cannot kill a replacement session', async () => {
   const h = harness(); await h.api.startFromUI(); h.api.beginNaturalEnd();
   await h.api.startFromUI(); const current = h.api.state().bus;
   h.advance(100); assert.equal(h.api.state().bus, current);
+  assert.equal(h.elements.get('playNow').classList.contains('filled'), true);
+  assert.equal(h.elements.get('stop').classList.contains('filled'), false);
+  assert.equal(h.elements.get('songDuration').disabled, true);
 });
 
 test('recordings own their chunks and MIME type across delayed stop callbacks', async () => {

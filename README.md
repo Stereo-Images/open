@@ -41,7 +41,7 @@ Set the length and root tone before pressing Play.
 
 1. **Length:** Select Short, Long, or Infinite. Short is a song-like form that begins seeking its natural ending after 1 minute and typically lasts about 1–3 minutes. Long is a more ambient form that begins seeking its natural ending at a point chosen between 10 and 30 minutes for each performance. These are ranges rather than fixed runtimes: resolving the phrase and allowing the sound to decay can carry a performance beyond them. Infinite continues until stopped.
 2. **Root Tone:** Drag the dial up to raise the root frequency or down to lower it, using a mouse or touch. The range is 110–200 Hz. With the dial focused, use the arrow keys for 1 Hz adjustments. The readout below the dial shows the selected frequency.
-3. **Play / Stop:** Press Play to create a new performance; press Stop to fade it out. During active playback, the length menu and dial are locked, and both controls and the frequency readout turn gray. The controls become available again after Stop or as the natural ending begins. Changes then apply to the next run.
+3. **Play / Stop:** Press Play to create a new performance; press Stop to fade it out. During playback, including the final notes and reverb tail, Play stays highlighted, the length menu and dial are locked, and both controls and the frequency readout turn gray. Stop becomes highlighted and the controls become available again when the sound finishes, or when you press Stop. Changes then apply to the next run.
 
 Your last length and root tone are remembered locally. On mobile, keep the player page active: switching apps or tabs, or locking the screen, stops playback. Press Play when you return to start a new performance.
 

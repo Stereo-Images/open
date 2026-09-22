@@ -1201,7 +1201,8 @@
     isEndingNaturally = true;
     isPlaying = false; 
     if (timerInterval) clearInterval(timerInterval);
-    setButtonState("stopped");
+    // The final notes and reverb are still audible. Keep the playing UI and
+    // controls locked until cleanupFinishedVoices completes the audio tail.
   }
 
   // =========================
