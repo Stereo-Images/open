@@ -119,7 +119,7 @@
 
   function readControls() {
     return {
-      songDuration: $("songDuration")?.value ?? "60",
+      songDuration: $("songDuration")?.value ?? "short",
       tone: $("tone")?.value ?? "110",
       updatedAt: Date.now()
     };
@@ -130,9 +130,10 @@
     const tone = $("tone");
 
     if (sd) {
-      const allowed = new Set(["60", "300", "600", "1800", "infinite"]);
-      const v = state?.songDuration != null ? String(state.songDuration) : "60";
-      sd.value = allowed.has(v) ? v : "60";
+      const saved = state?.songDuration != null ? String(state.songDuration) : "short";
+      const migrated = ({ "60": "short", "300": "short", "600": "long", "1800": "long" })[saved];
+      const v = migrated || saved;
+      sd.value = new Set(["short", "long", "infinite"]).has(v) ? v : "short";
     }
 
     let toneVal = 110;
@@ -884,9 +885,19 @@
     };
   }
 
+  function resolveDuration(seed, durationInput) {
+    if (durationInput === "short") return 60;
+    if (durationInput === "long") {
+      // Keep duration selection independent of the musical and spatial streams.
+      const durationRandom = mulberry32((seed ^ 0x4C454E47) >>> 0);
+      return 600 + Math.floor(durationRandom() * 1201);
+    }
+    if (durationInput === "infinite") return Infinity;
+    throw new Error("Invalid duration");
+  }
+
   function createPerformance(seed, tone, durationInput) {
-    const duration = durationInput === "infinite" ? Infinity : Number(durationInput);
-    if (![60, 300, 600, 1800, Infinity].includes(duration)) throw new Error("Invalid duration");
+    const duration = resolveDuration(seed, durationInput);
     const generator = createPerformanceGenerator(seed, tone, duration);
     const groups = [];
     let lastVoiceEnd = 0;
@@ -906,7 +917,7 @@
       if (groups.length > 10000) throw new Error("Performance exceeded planning limit");
     }
     return Object.freeze({
-      seed, tone, duration: durationInput, density: generator.density,
+      seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
@@ -1124,7 +1135,7 @@
       let tone = Number($("tone")?.value ?? 110);
       if (!Number.isFinite(tone)) tone = 110;
       tone = Math.max(110, Math.min(200, tone));
-      const duration = $("songDuration")?.value ?? "60";
+      const duration = $("songDuration")?.value ?? "short";
       const performance = createPerformance(seed, tone, duration);
       buildMixBus(seed);
       setSeed(seed);

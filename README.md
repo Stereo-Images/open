@@ -10,7 +10,7 @@ What resonates? [*Open*](https://stereo-images.github.io/open/) answers that que
 
 The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
 
-*Open* is meant to run quietly in the background: no logins, no accounts. Only your last tone and duration are remembered locally. Each run is unique. Its performance remains available for WAV export until you press Play again or close the page.
+*Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Each run is unique. Its performance remains available for WAV export until you press Play again or close the page.
 
 
 
@@ -39,7 +39,7 @@ When set to "Infinite", the engine generates new harmonic movement according to 
 ### Usage
 Set the length and root tone before pressing Play.
 
-1. **Length:** Select Short, Medium, Long, Very Long, or Infinite. Short begins seeking its natural ending after 1 minute; Medium after 5 minutes; Long after 10 minutes; Very Long after 30 minutes. These are starting points for the ending, not fixed runtimes: resolving the phrase and allowing the sound to decay can take longer. Infinite continues until stopped.
+1. **Length:** Select Short, Long, or Infinite. Short is a song-like form that begins seeking its natural ending after 1 minute and typically lasts about 1–3 minutes. Long is a more ambient form that begins seeking its natural ending at a point chosen between 10 and 30 minutes for each performance. These are ranges rather than fixed runtimes: resolving the phrase and allowing the sound to decay can carry a performance beyond them. Infinite continues until stopped.
 2. **Root Tone:** Drag the dial up to raise the root frequency or down to lower it, using a mouse or touch. The range is 110–200 Hz. With the dial focused, use the arrow keys for 1 Hz adjustments. The readout below the dial shows the selected frequency.
 3. **Play / Stop:** Press Play to create a new performance; press Stop to fade it out. During active playback, the length menu and dial are locked, and both controls and the frequency readout turn gray. The controls become available again after Stop or as the natural ending begins. Changes then apply to the next run.
 
