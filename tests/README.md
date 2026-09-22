@@ -79,7 +79,7 @@ The render buffer remains available during encoding while WAV Blob parts accumul
 
 ## Shared performance and export
 
-Play captures seed, tone, duration, and native sample rate. A pure planner retains plain note data for the complete fixed-duration performance, or the first 30 minutes for Infinite. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
+Play captures seed, tone, length, its deterministic ending threshold, and the native sample rate. Short begins seeking an ending after 1 minute; Long chooses a threshold from 10–30 minutes using a random stream separate from the musical and spatial streams. A pure planner retains plain note data for the complete timed performance, or the first 30 minutes for Infinite. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
 
 Infinite continues with an incremental generator after the retained 30-minute prefix. It does not append later events to the score, so retained history remains bounded. Export never advances that generator. Scheduler-stall offsets belong only to live playback and never mutate the score.
 

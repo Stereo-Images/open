@@ -151,7 +151,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
 
 function dialHarness(savedTone = '155') {
   const h = harness();
-  h.sandbox.localStorage.getItem = () => JSON.stringify({ tone: savedTone, songDuration: '60' });
+  h.sandbox.localStorage.getItem = () => JSON.stringify({ tone: savedTone, songDuration: 'short' });
   h.saved = [];
   h.sandbox.localStorage.setItem = (key, value) => h.saved.push({ key, ...JSON.parse(value) });
   h.sandbox.document.dispatch('DOMContentLoaded');
@@ -172,6 +172,15 @@ test('dial restores the saved frequency, accessible text, and marker', () => {
   assert.equal(h.tone.attributes['aria-valuetext'], '155 hertz');
   assert.equal(h.elements.get('toneDial').style['--tone-angle'], '0deg');
   assert.equal(h.saved.length, 0);
+});
+
+test('legacy duration settings migrate to the three current lengths', () => {
+  for (const [saved, expected] of [['60', 'short'], ['300', 'short'], ['600', 'long'], ['1800', 'long']]) {
+    const h = harness();
+    h.sandbox.localStorage.getItem = () => JSON.stringify({ songDuration: saved });
+    h.sandbox.document.dispatch('DOMContentLoaded');
+    assert.equal(h.elements.get('songDuration').value, expected);
+  }
 });
 
 test('dial drag works for touch, mouse, and pen without a pointer-down value jump', () => {
@@ -265,7 +274,7 @@ test('Length menu locks with the knob and unlocks on Stop, natural ending, and m
     await h.api.startFromUI();
     assert.equal(duration.disabled, true);
     assert.equal(h.tone.disabled, true);
-    assert.equal(duration.value, '60');
+    assert.equal(duration.value, 'short');
     if (end === 'stop') h.api.stopAllManual(false);
     else if (end === 'natural') h.api.beginNaturalEnd();
     else {
@@ -274,12 +283,12 @@ test('Length menu locks with the knob and unlocks on Stop, natural ending, and m
     }
     assert.equal(duration.disabled, false, end);
     assert.equal(h.tone.disabled, false, end);
-    duration.value = '300';
+    duration.value = 'long';
     duration.dispatch('change');
-    assert.equal(h.saved.at(-1).songDuration, '300');
+    assert.equal(h.saved.at(-1).songDuration, 'long');
     await h.api.startFromUI();
     assert.equal(duration.disabled, true);
-    assert.equal(h.api.state().snapshot.duration, '300');
+    assert.equal(h.api.state().snapshot.duration, 'long');
   }
 });
 
@@ -308,7 +317,7 @@ test('rapid Stop → Play cannot tear down the new session', async () => {
 test('export shortcut works from duration and tone controls but respects typing and browser shortcuts', async () => {
   const h = harness();
   h.sandbox.document.dispatch('DOMContentLoaded');
-  h.elements.get('songDuration').value = '60';
+  h.elements.get('songDuration').value = 'short';
   await h.api.startFromUI();
   const keydown = h.listeners.find(l => l.type === 'keydown').handler;
   let prevented = 0;
@@ -373,7 +382,7 @@ test('a clock pause does not skip upcoming musical events', async () => {
 });
 
 test('a finite session still reaches its natural ending after a long callback stall', async () => {
-  const h = harness(); h.sandbox.document.getElementById('songDuration').value = '60';
+  const h = harness(); h.sandbox.document.getElementById('songDuration').value = 'short';
   await h.api.startFromUI(); h.contexts[0].currentTime += 120; h.advance(600);
   assert.equal(h.api.state().isPlaying, false); assert.equal(h.api.state().bus, null);
   assert.equal(h.api.state().nodes, 0);
@@ -455,7 +464,7 @@ test('mobile backgrounding cancels pending audio resume and closes the context',
 
 test('zero is a valid export seed', async () => {
   const h = harness(); h.sandbox.crypto.getRandomValues = a => { a[0] = 0; return a; };
-  await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  await h.api.startFromUI(); h.elements.get('songDuration').value = 'short';
   const pending = h.api.renderWavExport(); assert.equal(h.contexts.length, 2);
   h.contexts[1].reject(Error('render')); await pending;
 });
@@ -470,8 +479,8 @@ function notes(ctx) {
 
 test('export leaves live notes unchanged, rejects concurrent exports, and recovers from failure', async () => {
   const a = harness(), b = harness(); await a.api.startFromUI(); await b.api.startFromUI();
-  a.elements.get('songDuration').value = '60';
-  b.elements.get('songDuration').value = '60';
+  a.elements.get('songDuration').value = 'short';
+  b.elements.get('songDuration').value = 'short';
   const pending = a.api.renderWavExport(); await a.api.renderWavExport();
   assert.equal(a.contexts.length, 2);
   a.advance(30); b.advance(30); assert.deepEqual(notes(a.contexts[0]), notes(b.contexts[0]));
@@ -514,13 +523,15 @@ function voiceControls(ctx, origin = 0) {
   }));
 }
 
-test('fixed-duration exports match live voices, modulation, envelopes, and natural endings', async () => {
-  for (const [seed, duration] of [[0, '60'], [12345, '60'], [2, '300'], [1, '1800']]) {
+test('timed exports match live voices, modulation, envelopes, and natural endings', async () => {
+  for (const [seed, duration] of [[0, 'short'], [12345, 'short'], [2, 'long'], [1, 'long']]) {
     const h = harness();
     h.sandbox.crypto.getRandomValues = a => { a[0] = seed; return a; };
     h.sandbox.document.getElementById('songDuration').value = duration;
     await h.api.startFromUI();
     const snapshot = h.api.state().snapshot, origin = h.api.state().bus.origin;
+    if (duration === 'short') assert.equal(snapshot.targetDuration, 60);
+    else assert.ok(snapshot.targetDuration >= 600 && snapshot.targetDuration <= 1800);
     assert.ok(snapshot.groups.at(-1).ending);
     const pending = h.api.renderWavExport();
     const offline = h.contexts[1];
@@ -541,14 +552,14 @@ test('fixed-duration exports match live voices, modulation, envelopes, and natur
 test('export preserves the last run after Stop, changed controls, and a replacement Play', async () => {
   const h = harness(); h.api.setup();
   h.contexts[0].sampleRate = 48000; h.contexts[0].currentTime = 17;
-  h.sandbox.document.getElementById('songDuration').value = '60';
+  h.sandbox.document.getElementById('songDuration').value = 'short';
   await h.api.startFromUI();
   const snapshot = h.api.state().snapshot;
   const first = h.api.renderWavExport(), ctx = h.contexts[1];
   assert.equal(ctx.sampleRate, 48000);
   const expected = voiceControls(ctx);
   h.api.stopAllManual(true);
-  h.elements.get('tone').value = '200'; h.elements.get('songDuration').value = '1800';
+  h.elements.get('tone').value = '200'; h.elements.get('songDuration').value = 'long';
   ctx.reject(Error('test')); await first;
   const second = h.api.renderWavExport();
   assert.equal(h.api.state().snapshot, snapshot);
@@ -594,7 +605,7 @@ test('live callback stalls do not move the stored export timeline', async () => 
 test('live and offline room, resonator phase, and mix automation use a common origin', async () => {
   const h = harness(); h.api.setup();
   h.contexts[0].currentTime = 23;
-  h.sandbox.document.getElementById('songDuration').value = '60';
+  h.sandbox.document.getElementById('songDuration').value = 'short';
   const priorCount = h.contexts[0].nodes.length;
   await h.api.startFromUI();
   const liveBus = h.api.state().bus;
@@ -648,7 +659,7 @@ test('encoding transfers bounded chunks including the final partial chunk', asyn
 });
 
 test('encoder failure terminates the worker and allows export to be retried', async () => {
-  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = 'short';
   const pending = h.api.renderWavExport();
   h.contexts[1].resolve(audioBuffer([new Float32Array(0)])); await pending;
   assert.equal(h.workers[0].terminated, true);
@@ -690,7 +701,7 @@ test('empty and failed recordings release callbacks and report the actual outcom
 });
 
 test('a stalled encoder times out, leaves playback running, and allows export retry', async () => {
-  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = 'short';
   const NativeWorker = h.sandbox.Worker;
   let worker;
   h.sandbox.Worker = class {
@@ -708,7 +719,7 @@ test('a stalled encoder times out, leaves playback running, and allows export re
   assert.equal(worker.terminated, true); assert.equal(worker.onmessage, null);
   assert.equal(h.api.state().isPlaying, true);
   h.sandbox.Worker = NativeWorker;
-  h.elements.get('songDuration').value = '60';
+  h.elements.get('songDuration').value = 'short';
   const retry = h.api.renderWavExport();
   h.contexts[2].resolve(audioBuffer([new Float32Array(4)])); await retry;
   assert.equal(h.downloads.length, 1);
@@ -731,7 +742,7 @@ test('encoder progress renews the watchdog instead of limiting total export time
 test('disposal removes listeners and prevents late render downloads and stale Play', async () => {
   const h = harness(); h.sandbox.document.dispatch('DOMContentLoaded');
   assert.ok(h.listeners.length > 5);
-  await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  await h.api.startFromUI(); h.elements.get('songDuration').value = 'short';
   h.api.toggleRecording(); const recorder = h.recordings[0];
   const pending = h.api.renderWavExport();
   h.sandbox.__OPEN_PLAYER_KILL__(); h.sandbox.__OPEN_PLAYER_KILL__();
@@ -812,7 +823,7 @@ test('each bell owns one chance-driven trajectory shared by its partials and bot
 });
 
 test('offline note panners follow note starts and release after render failure', async () => {
-  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = '60';
+  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = 'short';
   const pending = h.api.renderWavExport(); const ctx = h.contexts[1];
   const pans = ctx.nodes.filter(n => n.kind === 'panner');
   assert.ok(pans.length > 2);
