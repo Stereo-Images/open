@@ -111,8 +111,8 @@ test('dial touch target and lower divider fit a narrow mobile viewport', async (
   await expect(page.locator('#tone')).toBeEnabled();
   await expect(page.locator('#songDuration')).toBeEnabled();
   await expect(page.locator('#songDuration')).toHaveCSS('opacity', '1');
-  await page.locator('#songDuration').selectOption('300');
-  await expect(page.locator('#songDuration')).toHaveValue('300');
+  await page.locator('#songDuration').selectOption('long');
+  await expect(page.locator('#songDuration')).toHaveValue('long');
 });
 
 test('native audio and recording survive immediate Stop → Play', async ({ page }) => {
@@ -292,7 +292,7 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   const first = await fs.readFile(await (await downloading).path());
   await expect(page.locator('#playerStatus')).toHaveText('WAV downloaded');
   await page.locator('#stop').click();
-  await page.locator('#songDuration').selectOption('1800');
+  await page.locator('#songDuration').selectOption('long');
   await page.evaluate(() => {
     const tone = document.getElementById('tone'); tone.value = '200';
     tone.dispatchEvent(new Event('input', { bubbles: true }));
