@@ -1,7 +1,6 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v78 (The Reverb Tail Update)
-   - Base: The exact v62 script (Surgical iOS Patch).
+   OPEN — v1.0
    - Lifecycle: bounded voice tracking, tail-aware completion, and cancellable
      teardown; retains the existing mobile background stop policy.
    - Music Updates Applied: 110Hz Floor/415.30Hz Ceiling, 
