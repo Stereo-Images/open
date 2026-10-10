@@ -22,6 +22,9 @@ When set to "Infinite", the engine follows a set of rules to shape the changing 
 * **Tension Mapping:** Cadence choices and resets at the start of an arc update a tension value. Phrase position and tension influence the next cadence; tension also shapes FM brightness, the use of fractured ratios, and whether a drone includes a third.
 
 ### Technical Architecture
+
+Current release: **v1** (1.0.0).
+
 *Open* uses the standard Web Audio API with no runtime dependencies, using a custom procedural engine to synthesize the environment live.
 
 * **Drone Voicing:** To prevent low-end mud, the engine analyzes tension and melody in real-time. It forces the drone to collapse into a neutral "Open Fifth" when the melody is complex, and only allows the warm "Third" interval to bloom when the harmony is stable.
@@ -70,3 +73,4 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+

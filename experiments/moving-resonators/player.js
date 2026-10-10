@@ -1,7 +1,6 @@
 // --- START OF SCRIPT ---
 /* ============================================================
-   OPEN — v78 (The Reverb Tail Update)
-   - Base: The exact v62 script (Surgical iOS Patch).
+   OPEN — Moving Resonators Experiment
    - Lifecycle: bounded voice tracking, tail-aware completion, and cancellable
      teardown; retains the existing mobile background stop policy.
    - Music Updates Applied: 110Hz Floor/415.30Hz Ceiling, 
@@ -225,7 +224,7 @@
     bridgeAudioEl.setAttribute("playsinline", "true");
     bridgeAudioEl.setAttribute("aria-hidden", "true");
     bridgeAudioEl.loop = true;
-    bridgeAudioEl.muted = false; // V62 intact Keepalive
+    bridgeAudioEl.muted = false; // Keep the audio bridge active.
     Object.assign(bridgeAudioEl.style, {
       position: "fixed", width: "1px", height: "1px", opacity: "0.01",
       left: "-9999px", zIndex: "-1", pointerEvents: "none"
@@ -351,7 +350,7 @@
     try { bus.streamDest.disconnect(); } catch {}
     bus.streamDest.stream.getTracks().forEach(track => track.stop());
 
-    // V62: Crucial for stopping iOS Phantom CPU / Hardware Locks
+    // Release the bridge stream to prevent lingering iOS audio hardware activity.
     if (bridgeAudioEl?.srcObject) {
       try { bridgeAudioEl.pause(); } catch {}
       try { bridgeAudioEl.srcObject.getTracks().forEach(t => t.stop()); } catch {}
@@ -1319,3 +1318,4 @@
 
 })();
 // --- END OF SCRIPT ---
+
