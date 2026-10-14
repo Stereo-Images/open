@@ -129,7 +129,9 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
   sandbox.window = sandbox;
   // Test-only access inside the IIFE, without exposing internals in production.
   const expose = `globalThis.api = { startFromUI, stopAllManual, toggleRecording,
-    renderWavExport, bufferToWave, beginNaturalEnd, scheduleNote, scheduleDroneChord, handleVisibilityChange,
+    renderWavExport, bufferToWave, beginNaturalEnd, scheduleNote, handleVisibilityChange,
+    // Lazy wrappers also allow loading the original source, which predates planning.
+    planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
     state: () => ({ audioContext, bus, isPlaying, isEndingNaturally, isRecording,
       nodes: activeNodes.size, snapshot: sessionSnapshot }),
     setup: () => { ensureAudioContext(); buildMixBus(); },
@@ -460,7 +462,8 @@ test('two simulated hours keep voice references bounded and preserve the shared 
 test('natural cleanup waits for the longest voice, reverb, and audio clock; recording finishes', () => {
   const h = harness(); h.api.setup(); const { audioContext: ctx, bus } = h.api.state();
   h.api.scheduleNote(ctx, bus.masterGain, bus.reverbSend, 110, 0, 60, 0.4);
-  h.api.scheduleDroneChord(ctx, bus.masterGain, bus.reverbSend, 110, 0, 32, 0.4, 'maj');
+  const drone = h.api.planDrone(110, 0, 32, 0.4, 'maj', true, () => 0.5, () => 0.5);
+  h.api.renderGroup(ctx, bus.masterGain, bus.reverbSend, { notes: drone }, 0);
   h.api.toggleRecording(); h.api.beginNaturalEnd();
   h.advance(61); assert.equal(h.api.state().nodes, 0);
   assert.equal(h.api.state().bus, bus); assert.equal(h.recordings[0].state, 'recording');

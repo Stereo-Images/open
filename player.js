@@ -506,7 +506,7 @@
   }
 
   function setRecordUI(on) {
-    // Recording is an intentionally undocumented, keyboard-only feature (Shift+R).
+    // Recording is a keyboard-only feature (Shift+R), documented in README.md.
     // Feedback stays on the same invisible aria-live channel as everything else
     // rather than adding any visible UI.
     announce(on ? "Recording started" : "Recording saved");
@@ -1044,19 +1044,6 @@
     registerVoice(ctx, [carrier, modulator, modGain, ampGain, lp], time + duration);
   }
 
-  function scheduleDroneChord(ctx, destination, wetSend, rootFreq, time, duration, baseVolume, quality, includeThird = true, random = rand) {
-     let f0 = clampFreqMin(rootFreq, DRONE_FLOOR_HZ);
-     const thirdRatio = (quality === "min") ? Math.pow(2, 3/12) : Math.pow(2, 4/12);
-     const fifthRatio = Math.pow(2, 7/12); 
-     const vol = baseVolume * DRONE_GAIN_MULT;
-
-     scheduleBassVoice(ctx, destination, wetSend, f0, time, duration, vol * 0.50, random);
-     scheduleBassVoice(ctx, destination, wetSend, f0 * fifthRatio, time, duration, vol * 0.30, random);
-     if (includeThird) {
-       scheduleBassVoice(ctx, destination, wetSend, f0 * thirdRatio, time, duration, vol * 0.20, random);
-     }
-  }
-
   // =========================
   // SCHEDULER
   // =========================
@@ -1382,7 +1369,7 @@
     listen($("tone"), "input", toneChanged);
     listen($("songDuration"), "change", () => saveState(readControls()));
 
-    // Recording/export are deliberately undiscoverable: no on-screen buttons,
+    // Recording/export are documented in README.md, with no on-screen buttons:
     // keyboard-only, feedback via aria-live and the browser tab title. This makes
     // them effectively desktop-only (no Shift key on touch) — that's by design,
     // not a gap to be filled with touch equivalents.

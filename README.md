@@ -14,12 +14,14 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 
 
-### "Infinite" Mode & Structure
-When set to "Infinite", the engine follows a set of rules to shape the changing harmony:
+### Musical Structure & Harmony
+In Short, Long, and Infinite modes, the engine follows the same rules to shape the changing harmony:
 
 * **Circle of Fifths:** Harmonic centers shift gradually between related keys.
 * **Contour Constraints:** A bounded random walk keeps the melody between A2 and G#4. Notes that exceed the range are octave-shifted downward.
 * **Tension Mapping:** Cadence choices and resets at the start of an arc update a tension value. Phrase position and tension influence the next cadence; tension also shapes FM brightness, the use of fractured ratios, and whether a drone includes a third.
+
+Short and Long seek a natural tonic ending after their target duration. Infinite continues developing the same musical structure until stopped.
 
 ### Technical Architecture
 
@@ -66,7 +68,7 @@ Because there are no project files, you save the *audio*, not the *session*. Rec
 ### License
 MIT License
 
-⁠Copyright (c) 2026 Aaron Koppel
+Copyright (c) 2026 Aaron Koppel
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
 

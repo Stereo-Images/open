@@ -5,6 +5,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 const files = new Map([
   ['/index.html', 'text/html'], ['/player.html', 'text/html'],
+  ['/favicon.svg', 'image/svg+xml'],
   ['/player.js', 'text/javascript'], ['/wav-worker.js', 'text/javascript'], ['/style.css', 'text/css']
 ]);
 http.createServer((req, res) => {
