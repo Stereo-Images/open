@@ -181,8 +181,8 @@ test('replay restores both EP scores without changing musical choices', async ()
   // Frozen from the September engine, independently checked against the EP
   // recordings' durations and opening carriers before adding replay.
   const fixtures = [
-    ['d5f9fea7', '110', 'short', 404.615480396285, '6ff2766b385b11ab4779282e1fcd9c62d594f3680ca672aca396a8fa10773885'],
-    ['d1a0b62b', '121', 'long', 947.6810024881768, 'c451874a8f9d31d58cc913efd248bcd0eae7e5cbbf05b59802f6344356f90964']
+    ['d5f9fea7', '110', 'short', 404.615480396285, '572bdecd635a3c3f6506cfe721b3b91e52a70a3b752a73cedcd14f44ebe3087f'],
+    ['d1a0b62b', '121', 'long', 947.6810024881768, '63e6d2960f072c300c8a3d672844d4dc6e2ea47702b2fca0b4c1444a11aa34a4']
   ];
   const { createHash } = require('node:crypto');
   for (const [seed, tone, mode, duration, hash] of fixtures) {
@@ -193,7 +193,11 @@ test('replay restores both EP scores without changing musical choices', async ()
     const snapshot = h.api.state().snapshot;
     assert.equal(snapshot.seed, parseInt(seed, 16));
     assert.equal(snapshot.exportDuration, duration);
-    assert.equal(createHash('sha256').update(JSON.stringify(snapshot.groups)).digest('hex'), hash);
+    // Math.pow can differ in the final floating-point bits between V8 releases.
+    // Eight decimal places preserve far more than audio/time resolution while
+    // keeping this fixture portable across Node/browser engine versions.
+    const normalized = JSON.stringify(snapshot.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
     h.sandbox.__OPEN_PLAYER_KILL__();
   }
 });

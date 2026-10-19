@@ -24,7 +24,9 @@ cancellation. Frozen engine-1 score hashes guard both EP performances: Short
 Study (`d5f9fea7`, 110 Hz, Short) and Long Study (`d1a0b62b`, 121 Hz, Long).
 These fixtures were generated with September commit
 `400bde65e914e3419f84d783f54a2dc2d3cf54e8` and checked against the recordings'
-durations and opening carrier frequencies. They verify planned musical data;
+durations and opening carrier frequencies. Hashes normalize numbers to eight
+decimal places to allow last-bit math differences across JavaScript engines.
+They verify planned musical data;
 native rendering is covered separately by the browser suite. Future musical or
 DSP changes must bump `ENGINE_VERSION`; never reuse an engine version for a
 different performance. UI-only changes can retain it.
