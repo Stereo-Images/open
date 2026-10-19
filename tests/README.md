@@ -27,7 +27,10 @@ These fixtures were generated with September commit
 durations and opening carrier frequencies. Hashes normalize numbers to eight
 decimal places to allow last-bit math differences across JavaScript engines.
 They verify planned musical data;
-native rendering is covered separately by the browser suite. Future musical or
+native rendering is covered separately by the browser suite, including a page
+reload and replay from a downloaded filename. That comparison uses the same
+PCM tolerance as repeated exports (at most two 16-bit steps, RMS error below
+0.01% of the signal). Future musical or
 DSP changes must bump `ENGINE_VERSION`; never reuse an engine version for a
 different performance. UI-only changes can retain it.
 
