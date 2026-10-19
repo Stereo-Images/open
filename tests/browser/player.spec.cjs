@@ -112,6 +112,7 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   });
   await page.goto('/player.html?' + replayQuery);
   await page.locator('#replayRun').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
   await page.locator('#songDuration').selectOption('long');
   await page.locator('#copyReplay').click();
@@ -128,6 +129,7 @@ test('a downloaded filename recreates the same native WAV after reloading', asyn
   test.setTimeout(120000);
   await page.goto('/player.html?' + replayQuery);
   await page.locator('#replayRun').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
   const firstDownload = page.waitForEvent('download');
   await page.locator('#exportWav').click();
@@ -139,6 +141,7 @@ test('a downloaded filename recreates the same native WAV after reloading', asyn
   await page.locator('#revisit summary').click();
   await page.locator('#replayInput').fill(filename);
   await page.locator('#replayRun').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
   const secondDownload = page.waitForEvent('download');
   await page.locator('#exportWav').click();
