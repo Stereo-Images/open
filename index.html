@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Open</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css?v=1" />
+  <link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body class="launcher">
   <main class="shell" aria-labelledby="launchHeading">
@@ -33,9 +33,10 @@
       }
 
       function openPlayer() {
+        const playerUrl = "player.html" + window.location.search;
         if (isMobileDevice()) {
           // Mobile: same tab
-          window.location.href = "player.html";
+          window.location.href = playerUrl;
           return;
         }
         // Desktop: popout window
@@ -43,11 +44,11 @@
         const left = Math.max(0, (window.screen.width / 2) - (width / 2));
         const top = Math.max(0, (window.screen.height / 2) - (height / 2));
         const playerWindow = window.open(
-          "player.html",
+          playerUrl,
           "open_player",
-          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=no,status=no`
+          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes,status=no`
         );
-        if (!playerWindow) window.location.href = "player.html";
+        if (!playerWindow) window.location.href = playerUrl;
       }
 
       document.getElementById("launchPlayer")?.addEventListener("click", openPlayer);

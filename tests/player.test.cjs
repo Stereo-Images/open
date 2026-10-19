@@ -108,7 +108,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
       setPointerCapture(id) { this.capturedPointers.add(id); },
       hasPointerCapture(id) { return this.capturedPointers.has(id); },
       releasePointerCapture(id) { this.capturedPointers.delete(id); this.dispatch('lostpointercapture', { pointerId: id }); },
-      focus() { sandbox.document.activeElement = this; }, ...eventTarget(),
+      focus() { sandbox.document.activeElement = this; }, select() { this.selected = true; }, ...eventTarget(),
       play: () => Promise.resolve(), pause() {}, remove() {}, click() { downloads.push(this.download); } });
     return elements.get(id);
   }
@@ -120,7 +120,11 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     crypto: { getRandomValues(a) { a[0] = 12345; return a; } },
     AudioContext: Context, OfflineAudioContext: OfflineContext, MediaRecorder: Recorder, Worker,
     localStorage: { getItem() { return null; }, setItem() {} },
-    URL: { createObjectURL(blob) { blobs.push(blob); return 'blob:test'; }, revokeObjectURL() {} },
+    URL: class extends URL {
+      static createObjectURL(blob) { blobs.push(blob); return 'blob:test'; }
+      static revokeObjectURL() {}
+    }, URLSearchParams,
+    location: new URL('https://stereo-images.github.io/open/player.html'),
     document: { readyState: "loading", getElementById: element, createElement: () => element(Symbol()),
       ...eventTarget(), body: { appendChild() {}, removeChild() {} }, hidden: false },
     ...eventTarget(),
@@ -132,6 +136,8 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     renderWavExport, bufferToWave, beginNaturalEnd, scheduleNote, handleVisibilityChange,
     // Lazy wrappers also allow loading the original source, which predates planning.
     planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
+    replayFromUI: () => replayFromUI(), copyReplayLink: () => copyReplayLink(),
+    replayLink: (...args) => replayLink(...args), parseReplayInput: (...args) => parseReplayInput(...args),
     state: () => ({ audioContext, bus, isPlaying, isEndingNaturally, isRecording,
       nodes: activeNodes.size, snapshot: sessionSnapshot }),
     setup: () => { ensureAudioContext(); buildMixBus(); },
@@ -170,6 +176,163 @@ function dialHarness(savedTone = '155') {
   };
   return h;
 }
+
+test('replay restores both EP scores without changing musical choices', async () => {
+  // Frozen from the September engine, independently checked against the EP
+  // recordings' durations and opening carriers before adding replay.
+  const fixtures = [
+    ['d5f9fea7', '110', 'short', 404.615480396285, '572bdecd635a3c3f6506cfe721b3b91e52a70a3b752a73cedcd14f44ebe3087f'],
+    ['d1a0b62b', '121', 'long', 947.6810024881768, '63e6d2960f072c300c8a3d672844d4dc6e2ea47702b2fca0b4c1444a11aa34a4']
+  ];
+  const { createHash } = require('node:crypto');
+  for (const [seed, tone, mode, duration, hash] of fixtures) {
+    const h = dialHarness(tone);
+    h.elements.get('songDuration').value = mode;
+    h.elements.get('replayInput').value = seed;
+    await h.api.replayFromUI();
+    const snapshot = h.api.state().snapshot;
+    assert.equal(snapshot.seed, parseInt(seed, 16));
+    assert.equal(snapshot.exportDuration, duration);
+    // Math.pow can differ in the final floating-point bits between V8 releases.
+    // Eight decimal places preserve far more than audio/time resolution while
+    // keeping this fixture portable across Node/browser engine versions.
+    const normalized = JSON.stringify(snapshot.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
+    h.sandbox.__OPEN_PLAYER_KILL__();
+  }
+});
+
+test('new WAV filenames and links round-trip the score and export rate in a fresh player', async () => {
+  const h = dialHarness('200');
+  h.elements.get('replayInput').value = '03b38656';
+  h.api.setup(); h.contexts[0].sampleRate = 48000;
+  await h.api.replayFromUI();
+  const original = h.api.state().snapshot;
+  const pending = h.api.renderWavExport();
+  assert.equal(h.elements.get('exportWav').disabled, true);
+  h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
+  await pending;
+  assert.equal(h.elements.get('exportWav').disabled, false);
+  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g1-200hz-short-48000sr-\d+\.wav$/);
+  for (const value of [h.downloads[0], h.downloads[0].replace('.wav', ' (1).wav'), h.api.replayLink(original)]) {
+    const restored = dialHarness();
+    restored.elements.get('replayInput').value = value;
+    await restored.api.replayFromUI();
+    const snapshot = restored.api.state().snapshot;
+    assert.equal(snapshot.tone, 200);
+    assert.equal(snapshot.duration, 'short');
+    assert.equal(snapshot.sampleRate, 48000);
+    assert.equal(snapshot.engine, '1');
+    assert.equal(JSON.stringify(snapshot.groups), JSON.stringify(original.groups));
+    assert.equal(restored.elements.get('tone').value, '200');
+    const exporting = restored.api.renderWavExport();
+    assert.equal(restored.contexts[1].sampleRate, 48000);
+    restored.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
+    await exporting;
+    restored.sandbox.__OPEN_PLAYER_KILL__();
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('legacy filenames and boundary seeds use explicit current controls', async () => {
+  const h = dialHarness('121');
+  h.elements.get('songDuration').value = 'long';
+  for (const [input, seed] of [
+    ['open-run-d1a0b62b-muyo9xsw-1791411784126.wav', 0xd1a0b62b],
+    ['open-run-d1a0b62b-muyo9xsw-1791411784126 (2).wav', 0xd1a0b62b],
+    ['00000000', 0], [' FFFFFFFF ', 0xffffffff]
+  ]) {
+    h.elements.get('replayInput').value = input;
+    await h.api.replayFromUI();
+    const snapshot = h.api.state().snapshot;
+    assert.equal(snapshot.seed, seed);
+    assert.equal(snapshot.tone, 121);
+    assert.equal(snapshot.duration, 'long');
+    assert.match(h.elements.get('replayStatus').textContent, /cannot verify the original settings or engine/);
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('invalid replay data never interrupts or replaces a playing performance', async () => {
+  const h = dialHarness(); await h.api.startFromUI();
+  const original = h.api.state().snapshot, bus = h.api.state().bus;
+  const link = h.api.replayLink(original);
+  const invalid = ['', '123', '0x12345678', '123456789', 'zzzzzzzz',
+    link.replace('engine=1', 'engine=2'), link.replace('tone=155', 'tone=201'),
+    link.replace('tone=155', 'tone=109'), link.replace('tone=155', 'tone=121.5'),
+    link.replace('length=short', 'length=300'), link.replace('rate=44100', 'rate=NaN'),
+    link.replace('rate=44100', 'rate=0'), link.replace('&rate=44100', ''),
+    link + '&seed=00000000', 'https://[invalid/',
+    'open-run-00003039-abc-g2-155hz-short-44100sr-123.wav'];
+  for (const input of invalid) {
+    h.elements.get('replayInput').value = input;
+    await h.api.replayFromUI();
+    assert.equal(h.api.state().snapshot, original, input);
+    assert.equal(h.api.state().bus, bus, input);
+    assert.equal(h.api.state().isPlaying, true, input);
+    assert.equal(h.contexts.length, 1, input);
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('replay URLs wait for an explicit Replay and Play still draws a fresh seed', async () => {
+  const h = harness();
+  h.sandbox.location = new URL('https://stereo-images.github.io/open/player.html?seed=d1a0b62b&tone=121&length=long&engine=1&rate=48000');
+  h.sandbox.document.dispatch('DOMContentLoaded');
+  assert.equal(h.contexts.length, 0);
+  assert.equal(h.api.state().snapshot, null);
+  assert.equal(h.elements.get('revisit').open, true);
+  assert.equal(h.elements.get('tone').value, '121');
+  assert.equal(h.elements.get('songDuration').value, 'long');
+  assert.equal(h.elements.get('copyReplay').disabled, true);
+  await h.api.replayFromUI();
+  assert.equal(h.api.state().snapshot.seed, 0xd1a0b62b);
+  assert.equal(h.api.state().snapshot.sampleRate, 48000);
+  await h.api.startFromUI();
+  assert.equal(h.api.state().snapshot.seed, 12345);
+  assert.equal(h.api.state().snapshot.sampleRate, 44100);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('unsupported replay URL reports the problem without starting audio', () => {
+  const h = harness();
+  h.sandbox.location = new URL('https://stereo-images.github.io/open/player.html?seed=d1a0b62b&tone=121&length=long&engine=2&rate=44100');
+  h.sandbox.document.dispatch('DOMContentLoaded');
+  assert.equal(h.contexts.length, 0);
+  assert.match(h.elements.get('replayStatus').textContent, /needs engine 2/);
+  assert.equal(h.elements.get('tone').value, '110');
+});
+
+test('copy uses the last performance after Stop and offers manual clipboard fallback', async () => {
+  const h = dialHarness('121');
+  await h.api.startFromUI();
+  const snapshot = h.api.state().snapshot, link = h.api.replayLink(snapshot);
+  h.api.stopAllManual(true);
+  h.elements.get('tone').value = '200'; h.elements.get('songDuration').value = 'long';
+  await h.api.copyReplayLink();
+  assert.equal(h.elements.get('replayLinkFallback').hidden, false);
+  assert.equal(h.elements.get('replayLink').value, link);
+  assert.equal(h.elements.get('replayLink').selected, true);
+  let copied;
+  h.sandbox.navigator.clipboard = { writeText: async text => { copied = text; } };
+  await h.api.copyReplayLink();
+  assert.equal(copied, link);
+  assert.match(h.elements.get('replayStatus').textContent, /link copied/);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('Stop cancels a pending replay while its audio context resumes', async () => {
+  const h = dialHarness();
+  h.api.setup(); h.api.suspend();
+  let resume;
+  h.api.resumeWith(() => new Promise(resolve => { resume = resolve; }));
+  h.elements.get('replayInput').value = '00000000';
+  const pending = h.api.replayFromUI();
+  h.api.stopAllManual(true); resume(); await pending;
+  assert.equal(h.api.state().isPlaying, false);
+  assert.equal(h.api.state().snapshot, null);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
 
 test('dial restores the saved frequency, accessible text, and marker', () => {
   const h = dialHarness();
@@ -307,7 +470,7 @@ test('Play remains active and controls stay locked until the final notes and rev
     assert.equal(stop.classList.contains('filled'), false);
     assert.equal(play.attributes['aria-pressed'], 'true');
     assert.equal(stop.attributes['aria-pressed'], 'false');
-    assert.equal(h.elements.get('playerStatus').textContent, 'Playing');
+    assert.match(h.elements.get('playerStatus').textContent, /^Playing/);
     assert.equal(duration.disabled, true);
     assert.equal(h.tone.disabled, true);
   };
@@ -361,7 +524,7 @@ test('export shortcut works from duration and tone controls but respects typing 
   h.sandbox.document.dispatch('DOMContentLoaded');
   h.elements.get('songDuration').value = 'short';
   await h.api.startFromUI();
-  const keydown = h.listeners.find(l => l.type === 'keydown').handler;
+  const keydown = h.listeners.find(l => l.type === 'keydown' && l.target === h.sandbox.document).handler;
   let prevented = 0;
   const press = (target, extra = {}) => keydown({ key: 'E', shiftKey: true, target,
     preventDefault() { prevented++; }, ...extra });

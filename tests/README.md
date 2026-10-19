@@ -17,6 +17,23 @@ The tests use a simulated audio clock, Web Audio nodes, and delayed recorder cal
 
 Additional regressions cover stalled scheduler callbacks, pauses in the audio clock, finite-session completion after stalls, WAV headers and original PCM quantization, stereo ordering, bounded transferable chunks, and worker failure recovery. No application dependencies are needed for these tests.
 
+Replay checks cover seed and legacy-filename input, full filename/link round trips,
+sample-rate restoration, validation without interrupting playback, URL loading
+without autoplay, fresh seeds on Play, clipboard fallback, and pending-resume
+cancellation. Frozen engine-1 score hashes guard both EP performances: Short
+Study (`d5f9fea7`, 110 Hz, Short) and Long Study (`d1a0b62b`, 121 Hz, Long).
+These fixtures were generated with September commit
+`400bde65e914e3419f84d783f54a2dc2d3cf54e8` and checked against the recordings'
+durations and opening carrier frequencies. Hashes normalize numbers to eight
+decimal places to allow last-bit math differences across JavaScript engines.
+They verify planned musical data;
+native rendering is covered separately by the browser suite, including a page
+reload and replay from a downloaded filename. That comparison uses the same
+PCM tolerance as repeated exports (at most two 16-bit steps, RMS error below
+0.01% of the signal). Future musical or
+DSP changes must bump `ENGINE_VERSION`; never reuse an engine version for a
+different performance. UI-only changes can retain it.
+
 The sparse interface, musical probabilities, synthesis envelopes, live ending rules, and manual Stop fade are retained. Completed voices disconnect after a 100 ms filter-settling allowance. Natural completion releases the bus after the last scheduled voice, filter settling, full impulse response, pre-delay, and a 250 ms return-filter margin. Cleanup uses audio time so browser suspension does not truncate a pending tail. New sessions reset drone timing that belonged to earlier sessions.
 
 If the scheduler resumes after an event's start time has passed, it schedules the next event 50 ms ahead of the current audio clock and keeps the current phrase state. It does not generate missed events. Normal scheduling, clock suspension, and the live ending rules retain their previous behavior. Export now follows that same planned ending.
