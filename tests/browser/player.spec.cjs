@@ -54,6 +54,82 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
   await player.close();
 });
 
+const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
+
+test('replay links survive the launcher and wait for an explicit Replay', async ({ page }) => {
+  await page.addInitScript(() => { window.open = () => null; });
+  await page.goto('/index.html?' + replayQuery);
+  await page.locator('#launchPlayer').click();
+  await expect(page).toHaveURL('/player.html?' + replayQuery);
+  await expect(page.locator('#revisit')).toHaveAttribute('open', '');
+  await expect(page.locator('#tone')).toHaveValue('200');
+  await expect(page.locator('#songDuration')).toHaveValue('short');
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  await expect(page.locator('#exportWav')).toBeDisabled();
+  await page.locator('#replayRun').click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
+  await expect(page.locator('#exportWav')).toBeEnabled();
+  await page.locator('#stop').click();
+  await page.locator('#playNow').click();
+  await expect(page.locator('#replayStatus')).toContainText('Playing seed 00003039');
+});
+
+test('invalid replay links stay silent and the Revisit panel fits a narrow viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/player.html?' + replayQuery.replace('engine=1', 'engine=2'));
+  await expect(page.locator('#replayStatus')).toContainText('needs engine 2');
+  await page.locator('#replayRun').click();
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.locator('#replayInput').fill('03b38656');
+  await page.locator('#replayInput').press('Enter');
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#replayStatus')).toContainText('cannot verify the original settings or engine');
+});
+
+test('clipboard denial exposes a selectable replay link after Stop', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: async () => { throw new Error('Clipboard unavailable'); } } });
+  });
+  await page.goto('/player.html?' + replayQuery);
+  await page.locator('#replayRun').click();
+  await page.locator('#stop').click();
+  await page.locator('#songDuration').selectOption('long');
+  await page.locator('#copyReplay').click();
+  await expect(page.locator('#replayLink')).toBeVisible();
+  const value = await page.locator('#replayLink').inputValue();
+  const url = new URL(value);
+  expect(url.searchParams.get('seed')).toBe('03b38656');
+  expect(url.searchParams.get('length')).toBe('short');
+  expect(url.searchParams.get('rate')).toBe('44100');
+  await expect(page.locator('#replayLink')).toBeFocused();
+});
+
+test('a downloaded filename recreates the same native WAV after reloading', async ({ page }) => {
+  test.setTimeout(120000);
+  await page.goto('/player.html?' + replayQuery);
+  await page.locator('#replayRun').click();
+  await page.locator('#stop').click();
+  const firstDownload = page.waitForEvent('download');
+  await page.locator('#exportWav').click();
+  const first = await firstDownload;
+  const filename = first.suggestedFilename();
+  expect(filename).toMatch(/^open-run-03b38656-[a-z0-9]+-g1-200hz-short-44100sr-\d+\.wav$/);
+  const original = await fs.readFile(await first.path());
+  await page.goto('/player.html');
+  await page.locator('#revisit summary').click();
+  await page.locator('#replayInput').fill(filename);
+  await page.locator('#replayRun').click();
+  await page.locator('#stop').click();
+  const secondDownload = page.waitForEvent('download');
+  await page.locator('#exportWav').click();
+  const second = await secondDownload;
+  const recreated = await fs.readFile(await second.path());
+  expect(second.suggestedFilename()).not.toBe(filename);
+  expect(recreated.equals(original)).toBe(true);
+});
+
 test('the tone dial has visible keyboard focus and native keyboard adjustment', async ({ page }) => {
   await page.goto('/player.html');
   await page.locator('#songDuration').focus();

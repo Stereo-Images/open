@@ -10,7 +10,7 @@ What resonates? [*Open*](https://stereo-images.github.io/open/) answers that que
 
 The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
 
-*Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Each run is unique. Its performance remains available for WAV export until you press Play again or close the page.
+*Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Its uniqueness lies in the unpredictability of a first encounter: you discover the music as it happens. Pressing Play draws a fresh seed. A performance you have discovered can be revisited, shared, or saved without changing how the next new performance unfolds.
 
 
 
@@ -25,7 +25,7 @@ Short and Long seek a natural tonic ending after their target duration. Infinite
 
 ### Technical Architecture
 
-Current release: **v1** (1.0.0).
+Current release: **v1.1** (1.1.0). Musical engine: **1**; the synthesis and musical rules are unchanged by the replay feature.
 
 *Open* uses the standard Web Audio API with no runtime dependencies, using a custom procedural engine to synthesize the environment live.
 
@@ -52,13 +52,25 @@ Set the length and root tone before pressing Play.
 
 Your last length and root tone are remembered locally. On mobile, keep the player page active: switching apps or tabs, or locking the screen, stops playback. Press Play when you return to start a new performance.
 
+### Revisiting a Performance
+
+Open **Revisit** below Play and Stop when you want to return to something you have heard.
+
+1. **Replay:** Paste an eight-character hexadecimal seed, an Open WAV filename, or a replay link, then press Replay. A seed or older filename uses the root tone and length currently selected above. New WAV filenames and replay links restore those settings automatically. Opening a replay link prepares the controls and waits for you to press Replay; it never starts audio automatically. Play always draws a fresh seed, even when a replay link is open.
+2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed, root tone, length, musical engine version, and WAV sample rate. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
+3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
+
+The generator is deterministic: matching seed, root tone, length, and engine version reproduce the planned notes, timing, FM voices, and stereo movement. The sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Repeating a seed deliberately revisits a performance; fresh random seeds are not a mathematical guarantee that a seed can never recur.
+
+Older filenames contain a seed and timestamps but omit the root tone, length, and engine version. Replay cannot infer those missing settings from the filename or verify which engine made it. Links and new filenames with an unsupported engine version are rejected with an explanation, rather than silently replayed with changed musical rules. This release supports engine 1; it does not load archived engines or reconstruct a seed from an audio recording.
+
 ### Output & Saving
-Because there are no project files, you save the *audio*, not the *session*. Recording and export are keyboard-only features intended for desktop use; there are no on-screen recording or export buttons.
+Save the audio for listening and keep its original filename or replay link to preserve the settings. Live recording remains a desktop keyboard feature; WAV export is also available in Revisit.
 
 * **Live Recording:** Press **`Shift + R`** to capture the current mix in real time; press it again to save. The browser selects the recording format, saved as `.webm`, `.ogg`, or `.m4a`. Recording also finishes automatically after a natural ending and its remaining audio tail.
-* **Export WAV:** Press **`Shift + E`** to save the current or most recent performance from its beginning as a lossless, 16-bit PCM `.wav` file. The WAV uses the same planned notes, FM variations, stereo movement, resonators, reverb, and natural ending as live playback. You can export while listening or after Stop; stopping early does not shorten the planned performance. Repeated exports preserve it until the next Play or page close. WAV filenames include a run identifier shared by every export of that performance, followed by the export timestamp: `open-run-<run-id>-<timestamp>.wav`.
+* **Export WAV:** Press **`Shift + E`** or choose **Export WAV** in Revisit to save the current or most recent performance from its beginning as a lossless, 16-bit PCM `.wav` file. The WAV uses the same planned notes, FM variations, stereo movement, resonators, reverb, and natural ending as live playback. You can export while listening or after Stop; stopping early does not shorten the planned performance. Repeated exports preserve it until the next Play, Replay, or page close. Each playback gets a run identifier consisting of the seed and a base-36 start timestamp. Each export gets its actual export timestamp. The filename also carries the complete replay settings: `open-run-<seed>-<start>-g<engine>-<tone>hz-<length>-<rate>sr-<export-timestamp>.wav`. Replaying creates a new run identifier while retaining the musical seed and settings.
 * **Timing:** Export reproduces the intended performance, excluding browser stalls and manual Stop fades. A timed run includes its complete natural ending and reverb tail, so its WAV can be appreciably longer than the selected time. Infinite exports the same first 30 minutes of planned events plus their remaining decay, while live playback continues. To start a new performance, press Play again.
-* **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. The browser tab title shows preparation, rendering, encoding, and completion or failure. Longer runs take time to render; pressing Shift + E again while busy does not queue another export. The shortcut also works while the length menu or root tone dial has focus. It uses the sample rate captured from the live audio context (commonly 44.1 or 48 kHz). Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
+* **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. Revisit and the browser tab title show preparation, rendering, encoding, and completion or failure. Longer runs take time to render; pressing Shift + E again while busy does not queue another export. The shortcut also works while the length menu or root tone dial has focus, and is ignored while typing in the replay field. New runs use the sample rate captured from the live audio context (commonly 44.1 or 48 kHz); a complete replay link or filename restores its recorded WAV sample rate. Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
 
 **Long exports need memory.** For 30 minutes of stereo audio alone, the uncompressed render buffer is about 635 MB at 44.1 kHz or 691 MB at 48 kHz; the WAV adds about 318 MB or 346 MB. The natural ending, decay, browser, and synthesis add overhead. Leave plenty of available memory and close other demanding tabs or apps before a long export. Available system memory does not guarantee the browser can complete it; if an export fails or the tab closes, start a shorter run and try again. These are calculated data sizes, not measured peak RAM requirements.
 

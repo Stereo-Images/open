@@ -6,7 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Open — Player</title>
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css?v=1" />
+  <link rel="stylesheet" href="style.css?v=1.1" />
 </head>
 <body class="player">
   <main class="shell" aria-label="Audio Instrument">
@@ -54,6 +54,26 @@
           <button type="button" id="stop" class="btn filled" aria-pressed="true">Stop</button>
         </div>
       </form>
+
+      <details id="revisit" class="revisit">
+        <summary>Revisit</summary>
+        <div class="revisit-content">
+          <label for="replayInput">Seed, filename or replay link</label>
+          <input id="replayInput" type="text" autocomplete="off" autocapitalize="off"
+            spellcheck="false" aria-describedby="replayHelp" placeholder="e.g. d1a0b62b" />
+          <p id="replayHelp" class="revisit-help">For a seed or older filename, set the original root tone and length above. Play always creates a new performance.</p>
+          <button type="button" id="replayRun" class="btn">Replay</button>
+          <div class="revisit-actions">
+            <button type="button" id="copyReplay" class="btn" disabled>Copy replay link</button>
+            <button type="button" id="exportWav" class="btn" disabled>Export WAV</button>
+          </div>
+          <div id="replayLinkFallback" class="revisit-fallback" hidden>
+            <label for="replayLink">Replay link</label>
+            <input id="replayLink" type="text" readonly />
+          </div>
+          <p id="replayStatus" class="revisit-help">Play or replay a performance to share or export it.</p>
+        </div>
+      </details>
     </section>
 
     <!-- Polite live region for announcements -->
@@ -65,7 +85,7 @@
     </footer>
   </main>
 
-  <script src="player.js?v=1"></script>
+  <script src="player.js?v=1.1"></script>
 </body>
 </html>
 

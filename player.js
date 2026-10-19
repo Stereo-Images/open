@@ -53,6 +53,118 @@
   window.__OPEN_PLAYER_KILL__ = dispose;
 
   const STATE_KEY = "open_player_settings"; // schema-stable key: don't tie this to the script version
+  // Bump when musical planning or synthesis changes. UI-only releases keep this
+  // version; unknown versions must never silently play with a different engine.
+  const ENGINE_VERSION = "1";
+
+  function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
+
+  function validateReplay(record) {
+    if (record.engine !== ENGINE_VERSION)
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player uses ${ENGINE_VERSION}.`);
+    if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
+      throw new Error("Enter an eight-character hexadecimal seed.");
+    const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
+    if (!Number.isInteger(tone) || tone < 110 || tone > 200)
+      throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
+    if (!["short", "long", "infinite"].includes(record.duration))
+      throw new Error("The replay length must be short, long, or infinite.");
+    if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
+      throw new Error("The replay sample rate is invalid.");
+    return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
+      engine: ENGINE_VERSION, sampleRate: record.sampleRate == null ? null : sampleRate };
+  }
+
+  function parseReplayQuery(params) {
+    const keys = ["seed", "tone", "length", "engine", "rate"];
+    if (keys.some(key => params.getAll(key).length !== 1))
+      throw new Error("The replay link needs one seed, root tone, length, engine version, and sample rate.");
+    return validateReplay({ seed: params.get("seed"), tone: params.get("tone"),
+      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate") });
+  }
+
+  function parseReplayInput(value) {
+    const input = value.trim();
+    if (/^https?:\/\//i.test(input)) {
+      let url;
+      try { url = new URL(input); } catch { throw new Error("The replay link is invalid."); }
+      return parseReplayQuery(url.searchParams);
+    }
+    // A new export is its own compact replay record. Accept download suffixes
+    // added by browsers, while keeping the actual seed/settings strict.
+    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?\.wav$/i);
+    if (file) return validateReplay({ seed: file[1], engine: file[2], tone: file[3],
+      duration: file[4].toLowerCase(), sampleRate: file[5] });
+    const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?\.wav$/i);
+    const seed = legacy ? legacy[1] : input;
+    if (!/^[0-9a-f]{8}$/i.test(seed))
+      throw new Error("Paste an eight-character seed, an Open WAV filename, or a replay link.");
+    return { ...validateReplay({ seed, engine: ENGINE_VERSION,
+      tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
+      partial: true };
+  }
+
+  function replayLink(snapshot) {
+    const url = new URL("player.html", window.location.href);
+    url.search = new URLSearchParams({ seed: seedHex(snapshot.seed), tone: String(snapshot.tone),
+      length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate) }).toString();
+    return url.href;
+  }
+
+  function exportFilename(snapshot, timestamp) {
+    return `open-run-${snapshot.runId}-g${snapshot.engine}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr-${timestamp}.wav`;
+  }
+
+  function replayStatus(message) {
+    if (disposed) return;
+    const status = $("replayStatus");
+    if (status) status.textContent = message;
+    announce(message);
+  }
+
+  function updateReplayControls() {
+    if ($("copyReplay")) $("copyReplay").disabled = !sessionSnapshot;
+    if ($("exportWav")) $("exportWav").disabled = !sessionSnapshot || isExporting;
+  }
+
+  async function replayFromUI() {
+    try {
+      const record = parseReplayInput($("replayInput")?.value || "");
+      await startPerformance(record);
+    } catch (error) { replayStatus(error.message); }
+  }
+
+  async function copyReplayLink() {
+    if (disposed || !sessionSnapshot) return;
+    const snapshot = sessionSnapshot, link = replayLink(snapshot);
+    try {
+      await navigator.clipboard.writeText(link);
+      if (!disposed && snapshot === sessionSnapshot) {
+        $("replayLinkFallback").hidden = true;
+        replayStatus("Replay link copied.");
+      }
+    } catch {
+      if (disposed || snapshot !== sessionSnapshot) return;
+      const fallback = $("replayLink");
+      $("replayLinkFallback").hidden = false;
+      fallback.value = link;
+      fallback.focus();
+      fallback.select();
+      replayStatus("Copy the selected replay link.");
+    }
+  }
+
+  function loadReplayLink() {
+    const params = new URLSearchParams(window.location.search);
+    if (!["seed", "tone", "length", "engine", "rate"].some(key => params.has(key))) return;
+    $("revisit").open = true;
+    $("replayInput").value = window.location.href;
+    try {
+      const record = parseReplayQuery(params);
+      applyControls({ tone: record.tone, songDuration: record.duration });
+      replayStatus(`Seed ${seedHex(record.seed)} ready. Press Replay to listen, or Play for a new performance.`);
+    } catch (error) { replayStatus(error.message); }
+  }
 
   // =========================
   // TUNING
@@ -1104,6 +1216,10 @@
   // CONTROLS
   // =========================
   async function startFromUI() {
+    return startPerformance();
+  }
+
+  async function startPerformance(replay = null) {
     if (disposed) return;
     let request = ++startRequest;
     try {
@@ -1117,17 +1233,24 @@
       request = startRequest;
 
       isEndingNaturally = false;
-      const seed = (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
-      let tone = Number($("tone")?.value ?? 110);
+      const seed = replay ? replay.seed : (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
+      let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
       if (!Number.isFinite(tone)) tone = 110;
-      tone = Math.max(110, Math.min(200, tone));
-      const duration = $("songDuration")?.value ?? "short";
+      tone = Math.round(Math.max(110, Math.min(200, tone)));
+      const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
       const performance = createPerformance(seed, tone, duration);
       buildMixBus(seed);
       setSeed(seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
-      const runId = `${seed.toString(16).padStart(8, "0")}-${Date.now().toString(36)}`;
-      sessionSnapshot = Object.freeze({ ...performance, sampleRate: ctx.sampleRate, runId });
+      const runId = `${seedHex(seed)}-${Date.now().toString(36)}`;
+      sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
+        runId, engine: ENGINE_VERSION });
+      if (replay) {
+        applyControls({ tone, songDuration: duration });
+        saveState(readControls());
+      }
+      if ($("replayLinkFallback")) $("replayLinkFallback").hidden = true;
+      updateReplayControls();
       liveCursor = 0;
       liveTimeShift = 0;
       liveNextGroup = nextLiveGroup();
@@ -1137,13 +1260,17 @@
       if (bridgeAudioEl) bridgeAudioEl.play().catch(()=>{});
 
       setButtonState("playing");
+      replayStatus(replay?.partial
+        ? `Playing seed ${seedHex(seed)} with the selected root tone and length. A seed or older filename cannot verify the original settings or engine.`
+        : `${replay ? "Replaying" : "Playing"} seed ${seedHex(seed)}. You can copy its replay link or export it below.`);
 
       if (timerInterval) clearInterval(timerInterval);
       timerInterval = setInterval(scheduler, SCHEDULER_INTERVAL_MS);
       scheduler();
     } catch (error) {
       if (request === startRequest) {
-        stopAllManual(true, "Playback could not start. Press Play to retry.");
+        stopAllManual(true);
+        replayStatus("Playback could not start. Press Play or Replay to retry.");
       }
     }
   }
@@ -1181,6 +1308,8 @@
 
     setButtonState("stopped");
     announce(statusMsg);
+    if (!isExporting && sessionSnapshot && $("replayStatus"))
+      $("replayStatus").textContent = `${statusMsg}. Seed ${seedHex(sessionSnapshot.seed)} remains available to share or export.`;
   }
 
   function beginNaturalEnd() {
@@ -1197,7 +1326,7 @@
   let isExporting = false;
   function exportStatus(message, finished = false) {
     if (disposed) return;
-    announce(message);
+    replayStatus(message);
     clearTimeout(exportTitleTimer);
     document.title = `${message} — ${idleTitle}`;
     if (finished) exportTitleTimer = setTimeout(() => {
@@ -1211,6 +1340,7 @@
     if (!sessionSnapshot) { exportStatus("Press Play once before exporting", true); return; }
     if (isExporting) { announce("WAV export already in progress"); return; }
     isExporting = true;
+    updateReplayControls();
     exportStatus("Preparing WAV");
     try {
       await renderWavSession({ ...sessionSnapshot });
@@ -1219,6 +1349,7 @@
       console.error("WAV export failed", error);
     } finally {
       isExporting = false;
+      if (!disposed) updateReplayControls();
     }
   }
 
@@ -1276,7 +1407,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = `open-run-${sessionSnapshot.runId}-${Date.now()}.wav`;
+    a.download = exportFilename(sessionSnapshot, Date.now());
     let cleanupTimer;
     const cleanup = () => {
       clearTimeout(cleanupTimer);
@@ -1362,6 +1493,14 @@
 
     listen($("playNow"), "click", startFromUI);
     listen($("stop"), "click", () => stopAllManual(false));
+    listen($("replayRun"), "click", replayFromUI);
+    listen($("copyReplay"), "click", copyReplayLink);
+    listen($("exportWav"), "click", renderWavExport);
+    listen($("replayInput"), "keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || event.repeat) return;
+      event.preventDefault();
+      replayFromUI();
+    });
 
     applyControls(loadState());
     initializeToneDial();
@@ -1369,10 +1508,8 @@
     listen($("tone"), "input", toneChanged);
     listen($("songDuration"), "change", () => saveState(readControls()));
 
-    // Recording/export are documented in README.md, with no on-screen buttons:
-    // keyboard-only, feedback via aria-live and the browser tab title. This makes
-    // them effectively desktop-only (no Shift key on touch) — that's by design,
-    // not a gap to be filled with touch equivalents.
+    // Keep the desktop shortcuts alongside the optional Revisit controls.
+    // Live recording remains keyboard-only.
     listen(document, "keydown", (e) => {
       if (e.repeat || e.isComposing || e.ctrlKey || e.metaKey || e.altKey || isTypingTarget(e.target)) return;
       const k = (e.key || "").toLowerCase();
@@ -1396,6 +1533,8 @@
     }, { capture: true });
 
     setButtonState("stopped");
+    updateReplayControls();
+    loadReplayLink();
   }
   if (document.readyState === "loading") listen(document, "DOMContentLoaded", initialize, { once: true });
   else initialize();
