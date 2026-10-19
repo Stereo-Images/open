@@ -1428,7 +1428,8 @@
   function bufferToWave(abuffer) {
     return new Promise((resolve, reject) => {
       if (disposed) { reject(new Error("Player disposed")); return; }
-      const worker = new Worker("wav-worker.js");
+      // Keep this cache tag aligned with the player.html asset tags.
+      const worker = new Worker("wav-worker.js?v=1.0");
       let offset = 0;
       let finished = false;
       let idleTicks = 0;

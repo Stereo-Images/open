@@ -20,11 +20,10 @@ Additional regressions cover stalled scheduler callbacks, pauses in the audio cl
 Replay checks cover seed and legacy-filename input, full filename/link round trips,
 sample-rate restoration, validation without interrupting playback, URL loading
 without autoplay, fresh seeds on Play, clipboard fallback, and pending-resume
-cancellation. Frozen engine-1 score hashes guard both EP performances: Short
-Study (`d5f9fea7`, 110 Hz, Short) and Long Study (`d1a0b62b`, 121 Hz, Long).
-These fixtures were generated with September commit
-`400bde65e914e3419f84d783f54a2dc2d3cf54e8` and checked against the recordings'
-durations and opening carrier frequencies. Hashes normalize numbers to eight
+cancellation. Frozen engine-1 score hashes guard a Short fixture
+(`d5f9fea7`, 110 Hz) and a Long fixture (`d1a0b62b`, 121 Hz).
+These fixtures were generated with commit
+`400bde65e914e3419f84d783f54a2dc2d3cf54e8`. Hashes normalize numbers to eight
 decimal places to allow last-bit math differences across JavaScript engines.
 They verify planned musical data;
 native rendering is covered separately by the browser suite, including a page
@@ -38,7 +37,7 @@ The sparse interface, musical probabilities, synthesis envelopes, live ending ru
 
 If the scheduler resumes after an event's start time has passed, it schedules the next event 50 ms ahead of the current audio clock and keeps the current phrase state. It does not generate missed events. Normal scheduling, clock suspension, and the live ending rules retain their previous behavior. Export now follows that same planned ending.
 
-WAV encoding runs in a dedicated worker. At most 65,536 frames per channel are copied and transferred in each message; the next chunk is sent only after the worker acknowledges the previous one. The worker builds the final file from Blob parts, preserving the original 16-bit conversion without a full-size WAV ArrayBuffer on the main thread. The full OfflineAudioContext render buffer is still required (roughly 635–691 MB for 30 minutes before the ending and tail, at 44.1–48 kHz), so long exports remain memory intensive.
+WAV encoding runs in a dedicated worker. At most 65,536 frames per channel are copied and transferred in each message; the next chunk is sent only after the worker acknowledges the previous one. The worker builds the final file from Blob parts, preserving the original 16-bit conversion without a full-size WAV ArrayBuffer on the main thread. The full OfflineAudioContext render buffer is still required (roughly 741–806 MB for 35 minutes of rendered audio at 44.1–48 kHz), so long exports remain memory intensive.
 
 ## Root Tone dial
 
@@ -90,7 +89,7 @@ The instance disposer removes event listeners, stops live audio, clears recorder
 
 The export renders stereo audio at the session's native sample rate with 32-bit float samples, then encodes 16-bit PCM. The render length is derived from the longest planned voice plus per-voice settling (100 ms), resonator settling (100 ms), the full impulse response (10 seconds), pre-delay (15 ms), and return-filter margin (250 ms). Fixed durations also include the live engine's resolution beyond the selected duration. Infinite schedules only events before 30 minutes and includes their full decay.
 
-For an actual rendered duration `T` seconds and sample rate `R`, render bytes = `ceil(T * R) * 2 * 4`; WAV bytes = `ceil(T * R) * 2 * 2 + 44`. Thirty minutes without an ending or tail therefore needs 635.04 MB of sample data at 44.1 kHz or 691.20 MB at 48 kHz, plus a 317.52 MB or 345.60 MB WAV. These are payload sizes, not measured RAM peaks.
+For an actual rendered duration `T` seconds and sample rate `R`, render bytes = `ceil(T * R) * 2 * 4`; WAV bytes = `ceil(T * R) * 2 * 2 + 44`. For 35 minutes of rendered audio, this means 740.88 MB of sample data at 44.1 kHz or 806.40 MB at 48 kHz, plus a 370.44 MB or 403.20 MB WAV. The README uses about 35 minutes for Long-export memory planning, not as a hard duration cap; longer performances scale proportionally. These are decimal MB payload sizes, not measured RAM peaks.
 
 The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and temporary copies add overhead. Long exports remain available with a README memory advisory.
 
@@ -104,12 +103,6 @@ A 50 ms scheduling lead-in gives live nodes a common future origin, avoiding lat
 
 Regressions check multiple seeds and durations, full voice modulation/envelopes and panning, room samples and LFO start times, zero seeds, repeat exports after Stop/control changes, exporting during replacement Play, stalls, and bounded Infinite history. Native browser tests compare repeat WAV headers and PCM samples and inspect tail silence. Native DSP summation can round differently: the repeat comparison permits at most two 16-bit PCM steps and requires RMS difference below 0.01% of the signal; it does not require identical file bytes. These establish shared scheduling and repeatable rendering in the tested browser; they do not claim a byte-identical recording of physical device output.
 
-
-## Online experimental player
-
-The stable player is served at `/open/player.html`; the experiment is served at `/open/experiments/moving-resonators/player.html` on the same GitHub Pages domain. The preview is a staged snapshot of `experiment/moving-resonators`, with its source commit recorded in `experiments/moving-resonators/version.json`. Its title, popup name, and localStorage settings key are isolated; audio code is otherwise copied unchanged.
-
-To refresh the online preview, fetch `origin/experiment/moving-resonators`, run `python scripts/stage-experiment.py` in a main checkout, review the generated changes, and commit/push main. A branch push alone does not refresh the published snapshot. Existing GitHub Pages deployment publishes both players together; no Pages settings changes are needed. Keep the root player assets unchanged when refreshing only the experiment.
 
 ## Moving resonators
 

@@ -4,7 +4,7 @@
 
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
 
-What resonates? [*Open*](https://stereo-images.github.io/open/) answers that question in a multitude of ways. In each performance, every tone is a new physical event, ringing in a particular way and gesturing towards the next. As a browser installation, wherever I go, I carry that distance with me.
+What resonates? [*Open*](https://stereo-images.github.io/open/) answers that question in a multitude of ways. In each performance, every tone is a new physical event, ringing in a particular way and gesturing towards the next. Because Open lives in a browser, I carry that distance with me wherever I go.
 
 *Open* renders low, slow bell tones anchored to familiar harmony. Yet the tones themselves are inharmonic—the music resolves from moment to moment, but never within the moment itself. 
 
@@ -25,7 +25,7 @@ Short and Long seek a natural tonic ending after their target duration. Infinite
 
 ### Technical Architecture
 
-Current release: **v1.1** (1.1.0). Musical engine: **1**; the synthesis and musical rules are unchanged by the replay feature.
+Official release: **v1.0** (1.0.0). Musical engine: **1**.
 
 *Open* uses the standard Web Audio API with no runtime dependencies, using a custom procedural engine to synthesize the environment live.
 
@@ -72,19 +72,11 @@ Save the audio for listening and keep its original filename or replay link to pr
 * **Timing:** Export reproduces the intended performance, excluding browser stalls and manual Stop fades. A timed run includes its complete natural ending and reverb tail, so its WAV can be appreciably longer than the selected time. Infinite exports the same first 30 minutes of planned events plus their remaining decay, while live playback continues. To start a new performance, press Play again.
 * **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. Revisit and the browser tab title show preparation, rendering, encoding, and completion or failure. Longer runs take time to render; pressing Shift + E again while busy does not queue another export. The shortcut also works while the length menu or root tone dial has focus, and is ignored while typing in the replay field. New runs use the sample rate captured from the live audio context (commonly 44.1 or 48 kHz); a complete replay link or filename restores its recorded WAV sample rate. Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
 
-**Long exports need memory.** For 30 minutes of stereo audio alone, the uncompressed render buffer is about 635 MB at 44.1 kHz or 691 MB at 48 kHz; the WAV adds about 318 MB or 346 MB. The natural ending, decay, browser, and synthesis add overhead. Leave plenty of available memory and close other demanding tabs or apps before a long export. Available system memory does not guarantee the browser can complete it; if an export fails or the tab closes, start a shorter run and try again. These are calculated data sizes, not measured peak RAM requirements.
+**Long exports need memory.** Plan for Long exports of up to about 35 minutes, though this is not a hard duration limit. For 35 minutes of stereo audio alone, the uncompressed render buffer is about 741 MB at 44.1 kHz or 806 MB at 48 kHz; the WAV adds about 370 MB or 403 MB. Longer endings, decay, browser internals, and synthesis can add to these requirements. Leave plenty of available memory and close other demanding tabs or apps before a long export. Available system memory does not guarantee the browser can complete it; if an export fails or the tab closes, start a shorter run and try again. These are calculated data sizes, not measured peak RAM requirements.
 
 
 ---
 
 ### License
-MIT License
 
-Copyright (c) 2026 Aaron Koppel
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
+[MIT License](LICENSE). Copyright (c) 2026 Aaron Koppel.

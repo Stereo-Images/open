@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>Open — Bell Music for Desktop Listening</title>
+  <desc>A minimal black-on-white title card for Aaron Koppel's browser instrument.</desc>
+  <rect width="1200" height="630" fill="#fff" />
+  <g fill="#000" font-family="Nimbus Sans, Helvetica, Arial, sans-serif" text-anchor="middle">
+    <text x="614" y="277" font-size="96" font-weight="400" letter-spacing="28">OPEN</text>
+    <path d="M310 324H890" fill="none" stroke="#000" stroke-width="2" />
+    <text x="600" y="379" font-size="30">Bell Music for Desktop Listening</text>
+    <text x="600" y="426" font-size="22">By Aaron Koppel</text>
+  </g>
+</svg>

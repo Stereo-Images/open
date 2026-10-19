@@ -253,7 +253,7 @@ test('real WAV rendering and worker encoding allow playback interaction', async 
   // Slow worker acknowledgements to exercise interaction during encoding reliably.
   // All DSP, PCM conversion, transfers, and the resulting download remain native.
   const worker = await fs.readFile(path.join(__dirname, '../../wav-worker.js'), 'utf8');
-  await page.route('**/wav-worker.js', route => route.fulfill({
+  await page.route('**/wav-worker.js?v=1.0', route => route.fulfill({
     contentType: 'text/javascript',
     body: `const send = self.postMessage.bind(self);
       self.postMessage = data => data.type === 'ready' ? setTimeout(() => send(data), 10) : send(data);\n${worker}`

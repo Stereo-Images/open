@@ -77,7 +77,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
   }
   class Worker {
     constructor(url) {
-      assert.equal(url, 'wav-worker.js');
+      assert.equal(url, 'wav-worker.js?v=1.0');
       this.messages = []; this.terminated = false; workers.push(this);
       const self = {
         postMessage: data => queueMicrotask(() => {
@@ -177,9 +177,8 @@ function dialHarness(savedTone = '155') {
   return h;
 }
 
-test('replay restores both EP scores without changing musical choices', async () => {
-  // Frozen from the September engine, independently checked against the EP
-  // recordings' durations and opening carriers before adding replay.
+test('replay restores frozen Short and Long scores without changing musical choices', async () => {
+  // Frozen from the September engine before adding replay.
   const fixtures = [
     ['d5f9fea7', '110', 'short', 404.615480396285, '572bdecd635a3c3f6506cfe721b3b91e52a70a3b752a73cedcd14f44ebe3087f'],
     ['d1a0b62b', '121', 'long', 947.6810024881768, '63e6d2960f072c300c8a3d672844d4dc6e2ea47702b2fca0b4c1444a11aa34a4']
