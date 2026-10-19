@@ -90,12 +90,12 @@
       try { url = new URL(input); } catch { throw new Error("The replay link is invalid."); }
       return parseReplayQuery(url.searchParams);
     }
-    // A new export is its own compact replay record. Accept download suffixes
-    // added by browsers, while keeping the actual seed/settings strict.
-    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?\.wav$/i);
+    // A new export is its own compact replay record. Accept names with or
+    // without .wav and browser download suffixes; keep seed/settings strict.
+    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
     if (file) return validateReplay({ seed: file[1], engine: file[2], tone: file[3],
       duration: file[4].toLowerCase(), sampleRate: file[5] });
-    const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?\.wav$/i);
+    const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
     const seed = legacy ? legacy[1] : input;
     if (!/^[0-9a-f]{8}$/i.test(seed))
       throw new Error("Paste an eight-character seed, an Open WAV filename, or a replay link.");
