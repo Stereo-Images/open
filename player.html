@@ -22,7 +22,7 @@
   <meta name="twitter:image" content="https://stereo-images.github.io/open/social-preview.png" />
   <meta name="twitter:image:alt" content="Open — Bell Music for Desktop Listening. By Aaron Koppel." />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css?v=1.0" />
+  <link rel="stylesheet" href="style.css?v=1.0&amp;rev=replay-button" />
 </head>
 <body class="player">
   <main class="shell" aria-label="Audio Instrument">
@@ -67,8 +67,10 @@
 
         <div class="form-actions">
           <button type="button" id="playNow" class="btn" aria-pressed="false">Play</button>
+          <button type="button" id="replayLast" class="btn btn-replay" disabled aria-describedby="replayLastHelp">Replay</button>
           <button type="button" id="stop" class="btn filled" aria-pressed="true">Stop</button>
         </div>
+        <span id="replayLastHelp" class="sr-only">Restart the current or most recent performance from the beginning with its saved settings. Available until this page is reloaded or closed.</span>
       </form>
 
       <details id="revisit" class="revisit">
@@ -78,7 +80,7 @@
           <input id="replayInput" type="text" autocomplete="off" autocapitalize="off"
             spellcheck="false" aria-describedby="replayHelp" placeholder="e.g. d1a0b62b" />
           <p id="replayHelp" class="revisit-help">Filenames work with or without .wav. For a seed or older filename, set the original root tone and length above. Play always creates a new performance.</p>
-          <button type="button" id="replayRun" class="btn">Replay</button>
+          <button type="button" id="replayRun" class="btn">Load &amp; play</button>
           <div class="revisit-actions">
             <button type="button" id="copyReplay" class="btn" disabled>Copy replay link</button>
             <button type="button" id="exportWav" class="btn" disabled>Export WAV</button>
@@ -101,7 +103,7 @@
     </footer>
   </main>
 
-  <script src="player.js?v=1.0&amp;rev=optional-wav"></script>
+  <script src="player.js?v=1.0&amp;rev=replay-button"></script>
 </body>
 </html>
 

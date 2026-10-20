@@ -20,7 +20,12 @@ Additional regressions cover stalled scheduler callbacks, pauses in the audio cl
 Replay checks cover seed and legacy-filename input, full filename/link round trips,
 sample-rate restoration, validation without interrupting playback, URL loading
 without autoplay, fresh seeds on Play, clipboard fallback, and pending-resume
-cancellation. Frozen engine-1 score hashes guard a Short fixture
+cancellation. The main Replay button restarts the latest session independently
+of edited controls or Revisit input, including after Stop or a natural ending.
+Checks cover its initial disabled state, saved tone/dial/length/export-rate
+restoration, Infinite continuation reset, cancellation, and native button wiring.
+Reloading clears the latest session; Revisit's Load & play restores saved links
+and filenames. Frozen engine-1 score hashes guard a Short fixture
 (`d5f9fea7`, 110 Hz) and a Long fixture (`d1a0b62b`, 121 Hz).
 These fixtures were generated with commit
 `400bde65e914e3419f84d783f54a2dc2d3cf54e8`. Hashes normalize numbers to eight

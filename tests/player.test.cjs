@@ -137,6 +137,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     // Lazy wrappers also allow loading the original source, which predates planning.
     planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
     replayFromUI: () => replayFromUI(), copyReplayLink: () => copyReplayLink(),
+    replayLastPerformance: () => replayLastPerformance(),
     replayLink: (...args) => replayLink(...args), parseReplayInput: (...args) => parseReplayInput(...args),
     state: () => ({ audioContext, bus, isPlaying, isEndingNaturally, isRecording,
       nodes: activeNodes.size, snapshot: sessionSnapshot }),
@@ -176,6 +177,103 @@ function dialHarness(savedTone = '155') {
   };
   return h;
 }
+
+test('one-click Replay restores the latest score and controls during playback, after Stop, and after an ending', async () => {
+  const h = dialHarness('155');
+  assert.equal(h.elements.get('replayLast').disabled, true);
+  await h.api.replayLastPerformance();
+  assert.equal(h.contexts.length, 0);
+  assert.equal(h.api.state().snapshot, null);
+
+  h.elements.get('replayInput').value = 'open-run-00000000-abc-g1-121hz-short-48000sr-123';
+  await h.api.replayFromUI();
+  const original = h.api.state().snapshot;
+  const score = JSON.stringify(original.groups);
+  assert.equal(h.elements.get('replayLast').disabled, false);
+  h.elements.get('replayInput').value = 'unrelated invalid input';
+  let randomDraws = 0;
+  h.sandbox.crypto.getRandomValues = a => { randomDraws++; a[0] = 54321; return a; };
+  const assertReplay = () => {
+    const state = h.api.state();
+    assert.equal(state.isPlaying, true);
+    assert.equal(state.snapshot.seed, 0);
+    assert.equal(state.snapshot.tone, 121);
+    assert.equal(state.snapshot.duration, 'short');
+    assert.equal(state.snapshot.sampleRate, 48000);
+    assert.equal(state.snapshot.engine, '1');
+    assert.equal(state.snapshot.exportDuration, original.exportDuration);
+    assert.equal(JSON.stringify(state.snapshot.groups), score);
+    assert.equal(h.elements.get('tone').value, '121');
+    assert.equal(h.elements.get('songDuration').value, 'short');
+    assert.equal(h.elements.get('hzReadout').textContent, '121');
+    assert.equal(h.elements.get('toneDial').style['--tone-angle'], '-102deg');
+    assert.equal(randomDraws, 0);
+  };
+  h.advance(2);
+  const oldBus = h.api.state().bus;
+  await h.api.replayLastPerformance();
+  assertReplay();
+  assert.notEqual(h.api.state().bus, oldBus);
+  assert.ok(h.api.state().bus.origin > oldBus.origin);
+
+  h.api.stopAllManual(false);
+  h.elements.get('tone').value = '200';
+  h.elements.get('songDuration').value = 'long';
+  await h.api.replayLastPerformance();
+  h.advance(0.3); // The pending manual-stop fade must not tear down Replay.
+  assertReplay();
+
+  h.advance(original.exportDuration + 1);
+  assert.equal(h.api.state().isPlaying, false);
+  assert.equal(h.api.state().bus, null);
+  assert.equal(h.elements.get('replayLast').disabled, false);
+  h.elements.get('replayLast').dispatch('click');
+  assertReplay();
+
+  await h.api.startFromUI();
+  assert.equal(h.api.state().snapshot.seed, 54321);
+  assert.equal(randomDraws, 1);
+  await h.api.replayLastPerformance();
+  assert.equal(h.api.state().snapshot.seed, 54321);
+  assert.equal(randomDraws, 1);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+  await h.api.replayLastPerformance();
+  assert.equal(h.api.state().snapshot, null);
+});
+
+test('one-click Replay rebuilds an advanced Infinite continuation from the beginning', async () => {
+  const h = dialHarness('121');
+  h.elements.get('songDuration').value = 'infinite';
+  await h.api.startFromUI();
+  const original = h.api.state().snapshot;
+  const score = JSON.stringify(original.groups);
+  const continuationTime = original.continuation.nextTime;
+  h.advance(1900);
+  assert.ok(original.continuation.nextTime > continuationTime);
+  await h.api.replayLastPerformance();
+  const replay = h.api.state().snapshot;
+  assert.equal(replay.seed, original.seed);
+  assert.equal(JSON.stringify(replay.groups), score);
+  assert.notEqual(replay.continuation, original.continuation);
+  assert.equal(replay.continuation.nextTime, continuationTime);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('Stop cancels a pending one-click Replay without losing the saved performance', async () => {
+  const h = dialHarness('121');
+  await h.api.startFromUI();
+  const original = h.api.state().snapshot;
+  h.api.suspend();
+  let resume;
+  h.api.resumeWith(() => new Promise(resolve => { resume = resolve; }));
+  const pending = h.api.replayLastPerformance();
+  h.api.stopAllManual(true);
+  resume(); await pending;
+  assert.equal(h.api.state().isPlaying, false);
+  assert.equal(h.api.state().snapshot, original);
+  assert.equal(h.elements.get('replayLast').disabled, false);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
 
 test('replay restores frozen Short and Long scores without changing musical choices', async () => {
   // Frozen from the September engine before adding replay.
@@ -283,7 +381,7 @@ test('invalid replay data never interrupts or replaces a playing performance', a
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('replay URLs wait for an explicit Replay and Play still draws a fresh seed', async () => {
+test('replay URLs wait for explicit Load & play and Play still draws a fresh seed', async () => {
   const h = harness();
   h.sandbox.location = new URL('https://stereo-images.github.io/open/player.html?seed=d1a0b62b&tone=121&length=long&engine=1&rate=48000');
   h.sandbox.document.dispatch('DOMContentLoaded');
@@ -293,6 +391,7 @@ test('replay URLs wait for an explicit Replay and Play still draws a fresh seed'
   assert.equal(h.elements.get('tone').value, '121');
   assert.equal(h.elements.get('songDuration').value, 'long');
   assert.equal(h.elements.get('copyReplay').disabled, true);
+  assert.equal(h.elements.get('replayLast').disabled, true);
   await h.api.replayFromUI();
   assert.equal(h.api.state().snapshot.seed, 0xd1a0b62b);
   assert.equal(h.api.state().snapshot.sampleRate, 48000);

@@ -10,7 +10,7 @@ What resonates? [*Open*](https://stereo-images.github.io/open/) answers that que
 
 The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
 
-*Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Its uniqueness lies in the unpredictability of a first encounter: you discover the music as it happens. Pressing Play draws a fresh seed. A performance you have discovered can be revisited, shared, or saved without changing how the next new performance unfolds.
+*Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Its uniqueness lies in the unpredictability of a first encounter: you discover the music as it happens. Pressing Play draws a fresh seed; Replay returns to the performance you have just discovered. A performance can be revisited, shared, or saved without changing how the next new performance unfolds.
 
 
 
@@ -48,15 +48,21 @@ Set the length and root tone before pressing Play.
 
 1. **Length:** Select Short, Long, or Infinite. Short is a song-like form that begins seeking its natural ending after 1 minute and typically lasts about 1–3 minutes. Long is a more ambient form that begins seeking its natural ending at a point chosen between 10 and 30 minutes for each performance. These are ranges rather than fixed runtimes: resolving the phrase and allowing the sound to decay can carry a performance beyond them. Infinite continues until stopped.
 2. **Root Tone:** Drag the dial up to raise the root frequency or down to lower it, using a mouse or touch. The range is 110–200 Hz. With the dial focused, use the arrow keys for 1 Hz adjustments. The readout below the dial shows the selected frequency.
-3. **Play / Stop:** Press Play to create a new performance; press Stop to fade it out. During playback, including the final notes and reverb tail, Play stays highlighted, the length menu and dial are locked, and both controls and the frequency readout turn gray. Stop becomes highlighted and the controls become available again when the sound finishes, or when you press Stop. Changes then apply to the next run.
+3. **Play:** Create a new performance using the selected root tone and length.
+4. **Replay:** Restart the current or most recent performance from the beginning with its saved root tone, length, and WAV sample rate. Replay restores the dial and length even if you changed them after stopping. It is disabled until a performance has started, then remains available during playback, after Stop, and after a natural ending.
+5. **Stop:** Fade out playback. The most recent performance remains available to replay, share, or export.
 
-Your last length and root tone are remembered locally. On mobile, keep the player page active: switching apps or tabs, or locking the screen, stops playback. Press Play when you return to start a new performance.
+During playback, including the final notes and reverb tail, Play stays highlighted, the length menu and dial are locked, and both controls and the frequency readout turn gray. Stop becomes highlighted and the controls become available again when the sound finishes, or when you press Stop. Changed settings apply to the next new performance started with Play.
+
+Replay remembers only the most recent performance in the current page session. Reloading or closing the page clears it. Keep a replay link or the original WAV filename to return later through Revisit.
+
+Your last length and root tone are remembered locally. On mobile, keep the player page active: switching apps or tabs, or locking the screen, stops playback. Press Replay to restart the last performance if the page session is still available, or Play to start a new one.
 
 ### Revisiting a Performance
 
-Open **Revisit** below Play and Stop when you want to return to something you have heard.
+Open **Revisit** below the playback buttons to load an earlier performance, share a replay link, or export a WAV.
 
-1. **Replay:** Paste an eight-character hexadecimal seed, an Open WAV filename (with or without `.wav`), or a replay link, then press Replay. A seed or older filename uses the root tone and length currently selected above. New WAV filenames and replay links restore those settings automatically, including the root tone dial position. Opening a replay link prepares the controls and waits for you to press Replay; it never starts audio automatically. Play always draws a fresh seed, even when a replay link is open.
+1. **Load & play:** Paste an eight-character hexadecimal seed, an Open WAV filename (with or without `.wav`), or a replay link, then press Load & play. A seed or older filename uses the root tone and length currently selected above. New WAV filenames and replay links restore those settings automatically, including the root tone dial position. Opening a replay link prepares the controls and waits for you to press Load & play; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. Play always draws a fresh seed, even when a replay link is open.
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed, root tone, length, musical engine version, and WAV sample rate. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 

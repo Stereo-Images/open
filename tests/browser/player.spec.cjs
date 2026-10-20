@@ -74,7 +74,7 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
-test('replay links survive the launcher and wait for an explicit Replay', async ({ page }) => {
+test('replay links survive the launcher and wait for explicit Load & play', async ({ page }) => {
   await page.addInitScript(() => { window.open = () => null; });
   await page.goto('/index.html?' + replayQuery);
   await page.locator('#launchPlayer').click();
@@ -84,12 +84,53 @@ test('replay links survive the launcher and wait for an explicit Replay', async 
   await expect(page.locator('#songDuration')).toHaveValue('short');
   expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
   await expect(page.locator('#exportWav')).toBeDisabled();
+  await expect(page.locator('#replayLast')).toBeDisabled();
+  await expect(page.locator('#replayRun')).toHaveText('Load & play');
   await page.locator('#replayRun').click();
   await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
   await expect(page.locator('#exportWav')).toBeEnabled();
   await page.locator('#stop').click();
   await page.locator('#playNow').click();
   await expect(page.locator('#replayStatus')).toContainText('Playing seed 00003039');
+});
+
+test('one-click Replay restores the latest settings and clears on reload', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.goto('/player.html?' + replayQuery.replace('tone=200', 'tone=121'));
+  const replay = page.getByRole('button', { name: 'Replay', exact: true });
+  await expect(replay).toBeDisabled();
+  await page.getByRole('button', { name: 'Load & play', exact: true }).click();
+  await expect(replay).toBeEnabled();
+  await page.locator('#stop').click();
+  await page.locator('#tone').focus();
+  await page.keyboard.press('End');
+  await page.locator('#songDuration').selectOption('long');
+  await page.locator('#replayInput').fill('invalid input should not affect Replay');
+  await page.locator('#revisit summary').click();
+  await replay.focus();
+  await expect(replay).toHaveCSS('outline-style', 'solid');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
+  await expect(page.locator('#tone')).toHaveValue('121');
+  await expect(page.locator('#hzReadout')).toHaveText('121');
+  await expect(page.locator('#toneDial')).toHaveCSS('--tone-angle', '-102deg');
+  await expect(page.locator('#songDuration')).toHaveValue('short');
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  await replay.click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
+  const dimensions = await page.locator('.form-actions button').evaluateAll(buttons =>
+    buttons.map(button => ({ width: button.getBoundingClientRect().width,
+      height: button.getBoundingClientRect().height, fits: button.scrollWidth <= button.clientWidth })));
+  expect(dimensions).toHaveLength(3);
+  expect(dimensions.every(d => d.width >= 44 && d.height >= 44 && d.fits)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  await page.locator('#playNow').click();
+  await expect(page.locator('#replayStatus')).toContainText('Playing seed 00003039');
+  await replay.click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 00003039');
+  await page.reload();
+  await expect(replay).toBeDisabled();
 });
 
 test('invalid replay links stay silent and the Revisit panel fits a narrow viewport', async ({ page }) => {

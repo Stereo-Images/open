@@ -123,6 +123,7 @@
   }
 
   function updateReplayControls() {
+    if ($("replayLast")) $("replayLast").disabled = !sessionSnapshot;
     if ($("copyReplay")) $("copyReplay").disabled = !sessionSnapshot;
     if ($("exportWav")) $("exportWav").disabled = !sessionSnapshot || isExporting;
   }
@@ -132,6 +133,14 @@
       const record = parseReplayInput($("replayInput")?.value || "");
       await startPerformance(record);
     } catch (error) { replayStatus(error.message); }
+  }
+
+  async function replayLastPerformance() {
+    if (disposed || !sessionSnapshot) return;
+    const { seed, tone, duration, sampleRate, engine } = sessionSnapshot;
+    // Start from the saved settings, rebuilding even an advanced Infinite run
+    // from its seed. Edited controls and the Revisit field belong to other runs.
+    return startPerformance({ seed, tone, duration, sampleRate, engine });
   }
 
   async function copyReplayLink() {
@@ -162,7 +171,7 @@
     try {
       const record = parseReplayQuery(params);
       applyControls({ tone: record.tone, songDuration: record.duration });
-      replayStatus(`Seed ${seedHex(record.seed)} ready. Press Replay to listen, or Play for a new performance.`);
+      replayStatus(`Seed ${seedHex(record.seed)} ready. Press Load & play to listen, or Play for a new performance.`);
     } catch (error) { replayStatus(error.message); }
   }
 
@@ -1270,7 +1279,7 @@
     } catch (error) {
       if (request === startRequest) {
         stopAllManual(true);
-        replayStatus("Playback could not start. Press Play or Replay to retry.");
+        replayStatus("Playback could not start. Try again.");
       }
     }
   }
@@ -1493,6 +1502,7 @@
     if (!isPlayerPage()) return;
 
     listen($("playNow"), "click", startFromUI);
+    listen($("replayLast"), "click", replayLastPerformance);
     listen($("stop"), "click", () => stopAllManual(false));
     listen($("replayRun"), "click", replayFromUI);
     listen($("copyReplay"), "click", copyReplayLink);
