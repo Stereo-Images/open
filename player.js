@@ -55,13 +55,16 @@
   const STATE_KEY = "open_player_settings"; // schema-stable key: don't tie this to the script version
   // Bump when musical planning or synthesis changes. UI-only releases keep this
   // version; unknown versions must never silently play with a different engine.
-  const ENGINE_VERSION = "1";
+  // Engine 2 is reserved for the separate tempo experiment. Musical engine
+  // identifiers are independent of the public v1.0 release number.
+  const ENGINE_VERSION = "3";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION]);
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
-    if (record.engine !== ENGINE_VERSION)
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player uses ${ENGINE_VERSION}.`);
+    if (!SUPPORTED_ENGINES.has(record.engine))
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1 and ${ENGINE_VERSION}.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -72,7 +75,7 @@
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
-      engine: ENGINE_VERSION, sampleRate: record.sampleRate == null ? null : sampleRate };
+      engine: record.engine, sampleRate: record.sampleRate == null ? null : sampleRate };
   }
 
   function parseReplayQuery(params) {
@@ -99,9 +102,11 @@
     const seed = legacy ? legacy[1] : input;
     if (!/^[0-9a-f]{8}$/i.test(seed))
       throw new Error("Paste an eight-character seed, an Open WAV filename, or a replay link.");
-    return { ...validateReplay({ seed, engine: ENGINE_VERSION,
+    // Older open-run names use engine 1 by convention. Bare seeds explore the
+    // current engine; complete filenames and links always retain their version.
+    return { ...validateReplay({ seed, engine: legacy ? "1" : ENGINE_VERSION,
       tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
-      partial: true };
+      partial: true, legacy: !!legacy };
   }
 
   function replayLink(snapshot) {
@@ -737,9 +742,42 @@
   let liveNextGroup = null;
   let liveTimeShift = 0;
 
+  // Conservative compositional eligibility, evaluated on already planned notes.
+  // This consumes no random numbers and does not alter the approach to an ending.
+  function qualifiedEnding(history, degree, isMinor, atClimax, droneNotes, time) {
+    if (history.length < 4 || atClimax || (degree !== 4 && degree !== 5)) return null;
+    if (degree === 5 && isMinor) return null;
+    const current = history.at(-1), previous = history.at(-2);
+    const tensionLimit = degree === 5 ? 0.15 : 0.25;
+    if (!history.slice(-4).every(n => n.key === current.key && n.tension <= tensionLimit)) return null;
+    const interval = (a, b) => 12 * Math.log2(a / b);
+    const step = Math.abs(interval(current.freq, previous.freq));
+    if (step > 2.01) return null;
+    const earlier = history.slice(0, -1);
+    const returnAt = earlier.findIndex(n => n.key === current.key && Math.abs(interval(n.freq, current.freq)) < 0.01);
+    if (returnAt < 0) return null;
+    if (degree === 5) {
+      // A sixth must complete a small excursion back to a known pitch, rather
+      // than simply repeat or end a new upward run. No particular melody is prescribed.
+      const gesture = history.slice(returnAt);
+      if (gesture.length < 3 || step < 0.01 || !gesture.every((n, i) =>
+        n.key === current.key && n.tension <= tensionLimit &&
+        (i === 0 || Math.abs(interval(n.freq, gesture[i - 1].freq)) <= 2.01))) return null;
+    }
+    // Include drone release and room decay. Avoid a fresh drone attack and
+    // semitone, major-seventh, or tritone clashes with its nominal pitches.
+    // FM partials remain inharmonic; this is a harmonic safeguard, not an audition.
+    for (const drone of droneNotes) {
+      if (time < drone.time + 2) return null;
+      const pitchClass = ((Math.round(interval(current.freq, drone.freq)) % 12) + 12) % 12;
+      if ([1, 6, 11].includes(pitchClass)) return null;
+    }
+    return degree === 5 ? "sixth" : "fifth";
+  }
+
   // The live musical rules have one owner. Planning draws all musical and
   // spatial choices before rendering; neither renderer consumes these streams.
-  function createPerformanceGenerator(seed, baseFreq, duration) {
+  function createPerformanceGenerator(seed, baseFreq, duration, engine = ENGINE_VERSION) {
     const rand = mulberry32(seed);
     const chance = p => rand() < p;
     const spatialRandom = mulberry32((seed ^ 0x57E2E0) >>> 0);
@@ -750,6 +788,9 @@
     let phraseStep = 0, phraseCount = 0, arcLen = 6, arcPos = -1, arcClimaxAt = 4;
     let tension = 0, lastCadenceType = "none", currentCadenceType = "none";
     let lastDroneStart = -9999, lastDroneDur = 0, finished = false;
+    const allowOpenEnding = engine === ENGINE_VERSION && duration !== Infinity;
+    const endingHistory = [];
+    let endingDrones = [];
     function startNewArc() {
       arcLen = 4 + Math.floor(rand() * 5);
       arcClimaxAt = Math.max(2, arcLen - 2 - Math.floor(rand() * 2));
@@ -861,6 +902,7 @@
             group.notes.push(planBell(fEnd, nextTimeA, 25.0, 0.5, 0, 0, rand, spatialRandom));
             finished = true;
             group.ending = true;
+            if (allowOpenEnding) group.endingKind = "tonic";
             return group;
           }
         }
@@ -1000,6 +1042,30 @@
 
         notesSinceModulation++;
         nextTimeA += (1 / runDensity) * (0.95 + rand() * 0.1);
+        if (allowOpenEnding) {
+          endingDrones = endingDrones.filter(n => group.time < n.time + n.duration + 10.465);
+          endingDrones.push(...group.notes.filter(n => n.kind === "bass"));
+          if (!isDroneSolo) {
+            endingHistory.push({ freq, key: `${((circlePosition % 12) + 12) % 12}:${isMinor}`,
+              tension });
+            if (endingHistory.length > 5) endingHistory.shift();
+            // Consider the strike straddling the target, at most six seconds
+            // early, and later strikes until the existing tonic fallback wins.
+            const earliest = duration - Math.min(6, 1 / runDensity);
+            if (group.time >= earliest && nextTimeA >= duration) {
+              const kind = qualifiedEnding(endingHistory, degNow, isMinor,
+                arcPos === arcClimaxAt, endingDrones, group.time);
+              if (kind) {
+                finished = true;
+                group.ending = true;
+                group.endingKind = kind;
+              }
+            }
+          } else {
+            // Do not join a remembered contour across a drone-only passage.
+            endingHistory.length = 0;
+          }
+        }
         return group;
       }
     };
@@ -1016,9 +1082,10 @@
     throw new Error("Invalid duration");
   }
 
-  function createPerformance(seed, tone, durationInput) {
+  function createPerformance(seed, tone, durationInput, engine = ENGINE_VERSION) {
+    if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
     const duration = resolveDuration(seed, durationInput);
-    const generator = createPerformanceGenerator(seed, tone, duration);
+    const generator = createPerformanceGenerator(seed, tone, duration, engine);
     const groups = [];
     let lastVoiceEnd = 0;
     while (duration !== Infinity || generator.nextTime < 1800) {
@@ -1247,13 +1314,14 @@
       if (!Number.isFinite(tone)) tone = 110;
       tone = Math.round(Math.max(110, Math.min(200, tone)));
       const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
-      const performance = createPerformance(seed, tone, duration);
+      const engine = replay?.engine ?? ENGINE_VERSION;
+      const performance = createPerformance(seed, tone, duration, engine);
       buildMixBus(seed);
       setSeed(seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
       const runId = `${seedHex(seed)}-${Date.now().toString(36)}`;
       sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
-        runId, engine: ENGINE_VERSION });
+        runId, engine });
       if (replay) {
         applyControls({ tone, songDuration: duration });
         saveState(readControls());
@@ -1270,7 +1338,7 @@
 
       setButtonState("playing");
       replayStatus(replay?.partial
-        ? `Playing seed ${seedHex(seed)} with the selected root tone and length. A seed or older filename cannot verify the original settings or engine.`
+        ? `Playing seed ${seedHex(seed)} with the selected root tone and length (engine ${engine}). ${replay.legacy ? "An older filename assumes engine 1 but cannot verify the original settings or engine." : "A seed alone does not include the original settings; keep a replay link or full filename to preserve this version."}`
         : `${replay ? "Replaying" : "Playing"} seed ${seedHex(seed)}. You can copy its replay link or export it below.`);
 
       if (timerInterval) clearInterval(timerInterval);

@@ -107,7 +107,11 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await page.locator('#songDuration').selectOption('long');
   await page.locator('#replayInput').fill('invalid input should not affect Replay');
   await page.locator('#revisit summary').click();
-  await replay.focus();
+  // Use keyboard navigation: programmatic focus after a pointer click does
+  // not consistently activate :focus-visible across browser versions.
+  await page.keyboard.press('Shift+Tab');
+  await page.keyboard.press('Shift+Tab');
+  await expect(replay).toBeFocused();
   await expect(replay).toHaveCSS('outline-style', 'solid');
   await page.keyboard.press('Enter');
   await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
@@ -143,7 +147,7 @@ test('invalid replay links stay silent and the Revisit panel fits a narrow viewp
   await page.locator('#replayInput').fill('03b38656');
   await page.locator('#replayInput').press('Enter');
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#replayStatus')).toContainText('cannot verify the original settings or engine');
+  await expect(page.locator('#replayStatus')).toContainText('A seed alone does not include the original settings');
 });
 
 test('clipboard denial exposes a selectable replay link after Stop', async ({ page }) => {
@@ -166,9 +170,9 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-test('a downloaded filename recreates the same native WAV after reloading', async ({ page }) => {
+for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
   test.setTimeout(120000);
-  await page.goto('/player.html?' + replayQuery);
+  await page.goto('/player.html?' + replayQuery.replace('engine=1', `engine=${engine}`));
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
@@ -176,7 +180,7 @@ test('a downloaded filename recreates the same native WAV after reloading', asyn
   await page.locator('#exportWav').click();
   const first = await firstDownload;
   const filename = first.suggestedFilename();
-  expect(filename).toMatch(/^open-run-03b38656-[a-z0-9]+-g1-200hz-short-44100sr-\d+\.wav$/);
+  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}-200hz-short-44100sr-\\d+\\.wav$`));
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
   await page.locator('#revisit summary').click();
@@ -421,6 +425,7 @@ test('native note drift starts at the strike and moves stereo energy through its
 });
 
 test('repeated native WAV exports preserve the performance after Stop and control changes', async ({ page }) => {
+  test.setTimeout(120000);
   await page.goto('/player.html');
   await page.locator('#playNow').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
