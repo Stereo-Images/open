@@ -38,9 +38,9 @@ PCM tolerance as repeated exports (at most two 16-bit steps, RMS error below
 DSP changes must bump `ENGINE_VERSION`; never reuse an engine version for a
 different performance. UI-only changes can retain it.
 
-The sparse interface, musical probabilities, synthesis envelopes, live ending rules, and manual Stop fade are retained. Completed voices disconnect after a 100 ms filter-settling allowance. Natural completion releases the bus after the last scheduled voice, filter settling, full impulse response, pre-delay, and a 250 ms return-filter margin. Cleanup uses audio time so browser suspension does not truncate a pending tail. New sessions reset drone timing that belonged to earlier sessions.
+The sparse interface, musical probabilities, synthesis envelopes, and manual Stop fade are retained. Engine 1 preserves the original ending rules; engine 3 adds the qualified endings described below. Completed voices disconnect after a 100 ms filter-settling allowance. Natural completion releases the bus after the last scheduled voice, filter settling, full impulse response, pre-delay, and a 250 ms return-filter margin. Cleanup uses audio time so browser suspension does not truncate a pending tail. New sessions reset drone timing that belonged to earlier sessions.
 
-If the scheduler resumes after an event's start time has passed, it schedules the next event 50 ms ahead of the current audio clock and keeps the current phrase state. It does not generate missed events. Normal scheduling, clock suspension, and the live ending rules retain their previous behavior. Export now follows that same planned ending.
+If the scheduler resumes after an event's start time has passed, it schedules the next event 50 ms ahead of the current audio clock and keeps the current phrase state. It does not generate missed events. Normal scheduling and clock suspension retain their previous behavior. Export follows the same planned ending as live playback for the selected engine.
 
 WAV encoding runs in a dedicated worker. At most 65,536 frames per channel are copied and transferred in each message; the next chunk is sent only after the worker acknowledges the previous one. The worker builds the final file from Blob parts, preserving the original 16-bit conversion without a full-size WAV ArrayBuffer on the main thread. The full OfflineAudioContext render buffer is still required (roughly 741–806 MB for 35 minutes of rendered audio at 44.1–48 kHz), so long exports remain memory intensive.
 
@@ -100,11 +100,11 @@ The render buffer remains available during encoding while WAV Blob parts accumul
 
 ## Shared performance and export
 
-Play captures seed, tone, length, its deterministic ending threshold, and the native sample rate. Short begins seeking an ending after 1 minute; Long chooses a threshold from 10–30 minutes using a random stream separate from the musical and spatial streams. A pure planner retains plain note data for the complete timed performance, or the first 30 minutes for Infinite. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
+Play captures seed, tone, length, its deterministic ending threshold, and the native sample rate. Short has a 1-minute target; Long chooses a target from 10–30 minutes using a random stream separate from the musical and spatial streams. Engine 1 seeks its tonic after the target; engine 3 can also accept a qualified fifth or sixth around that target. A pure planner retains plain note data for the complete timed performance, or the first 30 minutes for Infinite. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
 
 Infinite continues with an incremental generator after the retained 30-minute prefix. It does not append later events to the score, so retained history remains bounded. Export never advances that generator. Scheduler-stall offsets belong only to live playback and never mutate the score.
 
-A 50 ms scheduling lead-in gives live nodes a common future origin, avoiding late starts for an opening drone. Export starts at that origin. A common session origin controls master fade, the reverb-send envelope, and resonator LFO phase. The room uses a fixed deterministic impulse seed and the same native sample rate for both renderers. The opening reverb target is scheduled once; repeatedly targeting the same level with the same time constant is unnecessary. Natural-end eligibility uses the planned event time and the existing lookahead allowance, so it no longer depends on callback jitter at the duration threshold.
+A 50 ms scheduling lead-in gives live nodes a common future origin, avoiding late starts for an opening drone. Export starts at that origin. A common session origin controls master fade, the reverb-send envelope, and resonator LFO phase. The room uses a fixed deterministic impulse seed and the same native sample rate for both renderers. The opening reverb target is scheduled once; repeatedly targeting the same level with the same time constant is unnecessary. Tonic-end eligibility uses the planned event time and the existing lookahead allowance, so it does not depend on callback jitter at the duration threshold. Qualified endings also use planned event times.
 
 Regressions check multiple seeds and durations, full voice modulation/envelopes and panning, room samples and LFO start times, zero seeds, repeat exports after Stop/control changes, exporting during replacement Play, stalls, and bounded Infinite history. Native browser tests compare repeat WAV headers and PCM samples and inspect tail silence. Native DSP summation can round differently: the repeat comparison permits at most two 16-bit PCM steps and requires RMS difference below 0.01% of the signal; it does not require identical file bytes. These establish shared scheduling and repeatable rendering in the tested browser; they do not claim a byte-identical recording of physical device output.
 
@@ -130,3 +130,33 @@ stop stream tracks and started oscillators, and permit another Play. Failed offl
 resonator setup stops partial oscillators, preserves live playback, and permits
 another export. These checks exercise resource ownership, not actual out-of-memory
 recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
+
+
+## Qualified endings (engine 3 audition)
+
+Engine 1 retains its exact score and export behavior, including the frozen Short
+and Long fixtures. Engine 3 adds conditional fifth and major-sixth endings to
+finite performances. Engine 2 is reserved for the separate tempo experiment;
+the app's release line stays v1.0. Bare seeds and fresh Play use engine 3;
+versioned links/filenames preserve their engine, and unversioned legacy filenames
+assume engine 1 with a warning about missing settings.
+
+A candidate can be the strike straddling the duration target, at most one nominal
+interval or six seconds early (whichever is shorter), or a later strike before
+the original tonic fallback. It must return to a pitch among the previous four
+bell strikes, arrive by at most two semitones, and retain the same harmonic center
+for the last four strikes. Tension must be at most 0.25 for fifths or 0.15 for
+sixths, and candidates at an arc climax are rejected. A sixth is major-mode only
+and must finish a nontrivial, stepwise excursion to that pitch. History resets
+across drone-only passages. New drone attacks are excluded; nominal semitone,
+major-seventh and tritone clashes with drone voices (including the full room
+tail) are rejected. These are explicit musical heuristics, not a psychoacoustic
+model of every FM partial or a promise of a pleasing ending.
+
+The gate consumes no random draws, adds no notes, and changes no voice or timing
+before the chosen ending. Both renderers consume that same completed score.
+Tests cover the recovered eleven-note sixth-ending contour across nine seeds,
+rejection cases, 400 dispersed seeds at three tones across Short and Long,
+unchanged Infinite continuation, and live/export controls and tail completion.
+Native WAV round trips cover both engines, including reload and restoration
+from a full filename. Engine-3 files require this branch until it is adopted.
