@@ -132,7 +132,7 @@ another export. These checks exercise resource ownership, not actual out-of-memo
 recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
 
 
-## Qualified endings (engine 3 audition)
+## Qualified endings (engine 3)
 
 Engine 1 retains its exact score and export behavior, including the frozen Short
 and Long fixtures. Engine 3 adds conditional fifth and major-sixth endings to
@@ -159,4 +159,5 @@ Tests cover the recovered eleven-note sixth-ending contour across nine seeds,
 rejection cases, 400 dispersed seeds at three tones across Short and Long,
 unchanged Infinite continuation, and live/export controls and tail completion.
 Native WAV round trips cover both engines, including reload and restoration
-from a full filename. Engine-3 files require this branch until it is adopted.
+from a full filename. Engine-3 files select the qualified-ending behavior;
+engine-1 files preserve the original tonic endings.

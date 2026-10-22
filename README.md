@@ -23,13 +23,13 @@ In Short, Long, and Infinite modes, the engine follows the same rules to shape t
 
 Short and Long seek a musical ending around their target duration. The tonic remains the fallback. A fifth can end a settled passage when the melody returns to a recent pitch by step or repetition. A major sixth needs a stepwise excursion back to a recent pitch in a major passage. Both require a stable harmonic center, low tension, and compatibility with any remaining drone. All voices and reverb finish their full decay. Infinite continues developing the same musical structure until stopped.
 
-This branch auditions qualified endings for v1.0. These are general compositional rules, not a guarantee that every ending will be equally convincing; listening across varied performances remains part of the evaluation.
+These ending rules allow a settled passage to remain harmonically open. They guide the choice of a final note without prescribing a particular melody or guaranteeing an equally convincing ending in every performance.
 
 Only ending eligibility changes. Melody generation, note timing, tempo, drones, tuning, synthesis, and stereo movement retain their existing rules. The ending check consumes no random draws and leaves every planned voice before the chosen ending unchanged.
 
 ### Technical Architecture
 
-Release line: **v1.0** (1.0.0). This branch uses musical engine **3**, with engine **1** retained for saved replays. Engine identifiers describe musical behavior independently of the release number; engine 2 belongs to a separate tempo experiment.
+Release line: **v1.0** (1.0.0). Musical engine: **3**, with engine **1** retained for saved replays. Engine identifiers describe musical behavior independently of the release number.
 
 *Open* uses the standard Web Audio API with no runtime dependencies, using a custom procedural engine to synthesize the environment live.
 
@@ -72,7 +72,7 @@ Open **Revisit** below the playback buttons to load an earlier performance, shar
 
 The generator is deterministic: matching seed, root tone, length, and engine version reproduce the planned notes, timing, FM voices, and stereo movement. The sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Repeating a seed deliberately revisits a performance; fresh random seeds are not a mathematical guarantee that a seed can never recur.
 
-Older filenames contain a seed and timestamps but omit the root tone, length, and engine version. Replay cannot infer those missing settings from the filename or verify which engine made it. Links and new filenames with an unsupported engine version are rejected with an explanation, rather than silently replayed with changed musical rules. This branch supports engines 1 and 3. Engine-1 links and filenames preserve the original tonic endings. New performances use engine 3, and their full filenames and replay links retain that version. A bare seed can therefore have a different ending under the current engine. The player does not reconstruct a seed from an audio recording.
+Older filenames contain a seed and timestamps but omit the root tone, length, and engine version. Replay cannot infer those missing settings from the filename or verify which engine made it. Links and new filenames with an unsupported engine version are rejected with an explanation, rather than silently replayed with changed musical rules. The player supports engines 1 and 3. Engine-1 links and filenames preserve the original tonic endings. New performances use engine 3, and their full filenames and replay links retain that version. A bare seed can therefore have a different ending under the current engine. The player does not reconstruct a seed from an audio recording.
 
 ### Output & Saving
 Save the audio for listening and keep its original filename or replay link to preserve the settings. Live recording remains a desktop keyboard feature; WAV export is also available in Revisit.
