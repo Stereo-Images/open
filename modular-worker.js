@@ -1,6 +1,6 @@
 /* One coordinator per named room and origin. No window owns the ensemble. */
 "use strict";
-importScripts("modular-core.js?v=modular-4");
+importScripts("modular-core.js?v=modular-5");
 const { Ensemble, clock } = OpenModular;
 const clients = new Map();
 let ensemble = null, nextId = 0, lastState = 0;
