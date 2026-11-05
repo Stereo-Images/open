@@ -10,7 +10,7 @@
     const mobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent) ||
       (navigator.maxTouchPoints > 0 && /Macintosh/i.test(navigator.userAgent));
     let worker, id, ready = false, joined = false, joining = false, replaying = false;
-    let disposed = false, revision = 0, lastReply = clock(), exporting = false;
+    let disposed = false, revision = 0, lastReply = clock(), exporting = false, startingAudio = false;
     let ensemble = { members: [], notes: 0 }, loadedScore = null, requestId = 0;
     const pending = new Map();
     const listeners = [];
@@ -44,7 +44,7 @@
     function stop(text = "Stopped. Other voices continue.") {
       revision++;
       if (joined || joining) post({ type: "leave" });
-      joined = joining = replaying = false;
+      joined = joining = replaying = startingAudio = false;
       audio?.stop();
       message(text);
       update();
@@ -89,12 +89,14 @@
       if (!Number.isInteger(tone) || tone < 110 || tone > 200) { message("Choose a root from 110 to 200 Hz."); return; }
       const request = ++revision;
       joining = true;
+      startingAudio = true;
       message("Joining…");
       update();
       try {
         if (!await audio.start(crypto.getRandomValues(new Uint32Array(1))[0]) || request !== revision) return;
         post({ type: "join", tone, length: $("modularLength").value });
       } catch (error) { if (request === revision) stop(error.message); }
+      finally { if (request === revision) startingAudio = false; }
     });
     listen($("modularStop"), "click", () => stop());
     listen($("addWindow"), "click", () => {
@@ -132,15 +134,17 @@
       if (!loadedScore || joined || joining || replaying) return;
       const request = ++revision;
       replaying = true;
+      startingAudio = true;
       update();
       try {
         if (await audio.replay(loadedScore) && request === revision) message("Playing the loaded ensemble in this window.");
       } catch (error) { if (request === revision) stop(error.message); }
+      finally { if (request === revision) startingAudio = false; }
     });
     function connect() {
       if (worker) { worker.port.postMessage({ type: "disconnect" }); worker.port.close(); }
       ready = false;
-      worker = new SharedWorker(new URL("modular-worker.js?v=modular-1", location.href), { name: `open-modular-1-${room}` });
+      worker = new SharedWorker(new URL("modular-worker.js?v=modular-2", location.href), { name: `open-modular-2-${room}` });
       worker.onerror = () => fail("Modular could not connect. Reload this page to try again.");
       worker.port.onmessageerror = () => fail("The ensemble connection failed. Reload to try again.");
       worker.port.onmessage = ({ data }) => {
@@ -164,7 +168,7 @@
             break;
           case "event":
             if (joined && data.event.performer === id && !audio.schedule(data.event))
-              stop("This window fell behind. Press Play to rejoin.");
+              stop(audio.state().running ? "This window fell behind. Press Play to rejoin." : "Audio paused. Press Play to rejoin.");
             break;
           case "left":
             if (joined || joining) { joined = joining = false; audio.stop(); message(data.reason); update(); }
@@ -199,8 +203,8 @@
         fail("Connection paused. Reconnecting…");
         try { connect(); } catch { message("Reload this window to reconnect."); }
       }
-      if ((joined || joining || replaying) && !audio.state().running) stop("Audio paused. Press Play to rejoin.");
-      if (replaying && !audio.state().playing) { replaying = false; message("Loaded score finished."); update(); }
+      if (!startingAudio && (joined || replaying) && !audio.state().running) stop("Audio paused. Press Play to rejoin.");
+      if (!startingAudio && replaying && !audio.state().playing) { replaying = false; message("Loaded score finished."); update(); }
     }, 1000);
     function dispose() {
       if (disposed) return;

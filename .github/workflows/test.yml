@@ -19,8 +19,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            browsers: chromium firefox
-            projects: --project=chromium --project=firefox
+            browsers: chromium
+            projects: --project=chromium
+          - os: ubuntu-latest
+            browsers: firefox
+            projects: --project=firefox
           - os: macos-latest
             browsers: webkit
             projects: --project=webkit
@@ -54,6 +57,8 @@ jobs:
       - name: Enable keyboard navigation on macOS
         if: runner.os == 'macOS'
         run: defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
-      - name: Run native browser checks
-        run: npm run test:browser -- ${{ matrix.projects }}
+      - name: Run modular browser checks
+        run: npm run test:browser -- tests/browser/modular.spec.cjs ${{ matrix.projects }}
+      - name: Run solo browser checks
+        run: npm run test:browser -- tests/browser/player.spec.cjs ${{ matrix.projects }}
 

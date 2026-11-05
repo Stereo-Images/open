@@ -27,6 +27,17 @@ test.beforeEach(async ({ context }) => {
     }
   });
 });
+test.afterEach(async ({ context }, info) => {
+  if (info.status === info.expectedStatus) return;
+  for (const page of context.pages()) {
+    console.log('Modular diagnostic', await page.evaluate(() => ({
+      url: location.href, ensemble: document.getElementById('ensembleStatus')?.textContent,
+      status: document.getElementById('windowStatus')?.textContent,
+      clock: window.OpenModular?.clock(), contexts: window.modularProbe?.contexts.map(c => ({ state: c.state, time: c.currentTime })),
+      messages: window.modularProbe?.messages.slice(-8), errors: window.modularProbe?.errors
+    })).catch(() => 'Page closed'));
+  }
+});
 async function open(page, room) {
   await page.goto('/modular.html?room=' + room);
   await expect(page.locator('#modularPlay')).toBeEnabled();

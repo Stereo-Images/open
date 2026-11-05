@@ -164,7 +164,7 @@ engine-1 files preserve the original tonic endings.
 
 # Modular ensemble checks
 
-`node --test tests/modular.test.cjs` covers independent clocks and melodic contours, pitch compatibility through overlapping decays, changing membership/density, separate natural endings, scheduler stalls, bounded score history, score validation, the eight-voice limit, and shared-worker ownership/heartbeat expiry. These are compositional and protocol checks, not judgments of musical quality or browser DSP.
+`node --test tests/modular.test.cjs` covers independent clocks and melodic contours, prominent-pitch compatibility, decay-aware dissonance, common-tone/contrary-motion preferences, prepared downward resolutions, leading-tone resolutions, changing membership/density, separate natural endings, scheduler stalls, bounded score history, score validation, the eight-voice limit, and shared-worker ownership/heartbeat expiry. The modular adapter checks in `tests/player.test.cjs` also cover clock mapping, late-event rejection, replay/export voice equivalence, tail cleanup, and pending-resume cancellation. These are compositional and protocol checks, not judgments of musical quality or browser DSP.
 
 `npx playwright test tests/browser/modular.spec.cjs` exercises real shared workers and Web Audio across three windows, root adoption and individual duration choices, closing the first window, score download/reload and native WAV rendering, startup cancellation, suspended audio, isolated rooms, popup fallback, invalid scores, and narrow layouts. The same suite is configured for Chromium, Firefox, and WebKit. A system Chromium can be selected with `OPEN_CHROMIUM_EXECUTABLE=/path/to/chromium` if the Playwright-managed binary is unavailable.
 

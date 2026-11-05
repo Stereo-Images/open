@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { Ensemble, validateScore, TAIL } = require('../modular-core.js');
+const { Ensemble, validateScore, voiceLeadingWeight, TAIL } = require('../modular-core.js');
 
 function advance(ensemble, from, to, step = 0.2) {
   const events = [], ended = [];
@@ -30,7 +30,7 @@ test('independent voices keep distinct, drifting clocks and melodic contours', (
   assert.ok(events.some((e, i) => i && e.performer === events[i - 1].performer));
 });
 
-test('overlapping nominal pitches remain compatible across roots, seeds, and changing membership', () => {
+test('prominent ringing pitches stay compatible; decaying bells permit prepared resolutions', () => {
   for (const tone of [110, 121, 200]) for (const seed of [1, 42, 54325756, 0xffffffff]) {
     const e = make(seed, tone);
     join(e, 'a', seed ^ 100); join(e, 'b', seed ^ 200); join(e, 'c', seed ^ 300);
@@ -43,13 +43,56 @@ test('overlapping nominal pitches remain compatible across roots, seeds, and cha
         const semi = Math.round(12 * Math.log2(note.freq / tone));
         for (const old of sounding.filter(n => n.until > event.at)) {
           const interval = ((semi - old.semi) % 12 + 12) % 12;
-          assert.ok(![1, 6, 11].includes(interval), `clash ${tone}/${seed} at ${event.at}`);
+          if ([1, 6, 11].includes(interval)) {
+            const age = event.at - old.at;
+            const quiet = old.kind === 'bell' && age >= old.duration / 2;
+            const resolving = ['leading-tone', 'suspension'].includes(event.motion) &&
+              old.kind === 'bell' && old.performer === event.performer &&
+              age >= Math.min(4, old.duration / 4) && Math.abs(semi - old.semi) <= 2;
+            assert.ok(quiet || resolving, `unprepared prominent clash ${tone}/${seed} at ${event.at}`);
+          }
         }
-        sounding.push({ semi, until: event.at + note.duration + TAIL });
+        sounding.push({ semi, until: event.at + note.duration + TAIL, at: event.at,
+          duration: note.duration, kind: note.kind, performer: event.performer });
       }
       assert.ok(events.filter(n => n.at > event.at - 60 && n.at <= event.at).length <= 15);
     }
   }
+});
+
+test('voice leading favors common tones, small moves, and contrary motion over parallel fifths', () => {
+  const member = { id: 'a', lastSemi: 12, lastChord: [0, 4, 7], peerPitches: new Map([['b', 5]]) };
+  assert.ok(voiceLeadingWeight(member, 12, [], [0, 5, 9], true) > voiceLeadingWeight(member, 17, [], [0, 5, 9], true));
+  assert.ok(voiceLeadingWeight(member, 14, [], [2, 7, 11], false) > voiceLeadingWeight(member, 23, [], [2, 7, 11], false));
+  const risingPeer = [{ id: 'b', lastSemi: 7 }];
+  // F–C -> G–D parallels versus F–C -> G–B-flat contrary motion.
+  assert.ok(voiceLeadingWeight(member, 10, risingPeer, [2, 7, 10], false) >
+    voiceLeadingWeight(member, 14, risingPeer, [2, 7, 10], false));
+});
+
+test('a prepared F over C resolves to E on its own next entry, even after its ending target', () => {
+  const e = make(); join(e, 'a', 81);
+  const m = e.members.get('a');
+  m.lastSemi = 5; m.lastKey = 0; m.lastChord = [5, 9, 0]; m.lastHarmony = 0;
+  m.deadline = 8;
+  e.chord = 1; e.nextHarmony = 8; e.rng = () => 0; // IV -> I
+  e.sounding = [{ semi: 5, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
+  const event = e.makeEvent(m, 8);
+  assert.equal(event.motion, 'suspension');
+  assert.equal(Math.round(12 * Math.log2(event.notes[0].freq / 121)), 4);
+  assert.equal(event.ending, false); // Finish the resolution before seeking an ending.
+  assert.equal(m.resolution, null);
+});
+
+test('the leading tone resolves up a semitone when tonic harmony returns', () => {
+  const e = make(); join(e, 'a', 81);
+  const m = e.members.get('a');
+  m.lastSemi = 11; m.lastKey = 0; m.lastChord = [7, 11, 2];
+  e.sounding = [{ semi: 11, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
+  const event = e.makeEvent(m, 8);
+  assert.equal(event.motion, 'leading-tone');
+  assert.equal(Math.round(12 * Math.log2(event.notes[0].freq / 121)), 12);
+  assert.equal(event.at, 8);
 });
 
 test('adding voices changes existing players while leaving already scheduled music intact', () => {
