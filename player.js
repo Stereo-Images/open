@@ -1386,7 +1386,9 @@
     setButtonState("stopped");
     announce(statusMsg);
     if (!isExporting && sessionSnapshot && $("replayStatus"))
-      $("replayStatus").textContent = `${statusMsg}. Seed ${seedHex(sessionSnapshot.seed)} remains available to share or export.`;
+      $("replayStatus").textContent = sessionSnapshot.modular
+        ? `${statusMsg}. The loaded ensemble score remains available.`
+        : `${statusMsg}. Seed ${seedHex(sessionSnapshot.seed)} remains available to share or export.`;
   }
 
   function beginNaturalEnd() {
@@ -1484,7 +1486,7 @@
     const a = document.createElement("a");
     a.style.display = "none";
     a.href = url;
-    a.download = exportFilename(sessionSnapshot, Date.now());
+    a.download = sessionSnapshot.filename || exportFilename(sessionSnapshot, Date.now());
     let cleanupTimer;
     const cleanup = () => {
       clearTimeout(cleanupTimer);
@@ -1560,6 +1562,80 @@
     });
   }
 
+  // The modular page reuses the existing bell, bass, room, and WAV renderer.
+  // The solo page never installs this adapter or changes its musical generator.
+  function initializeModularAudio() {
+    if (document.body?.dataset?.modular !== "true") return;
+    function planEvent(event, time) {
+      const random = mulberry32(event.seed);
+      const spatial = mulberry32((event.seed ^ 0x57E2E0) >>> 0);
+      return { time, ending: false, notes: event.notes.map(note => note.kind === "bell"
+        ? planBell(note.freq, time, note.duration, note.volume, note.instability, note.tension, random, spatial)
+        : { kind: "bass", freq: note.freq, time, duration: note.duration, volume: note.volume,
+            detune: (random() - 0.5) * 8, pan: choosePan(spatial) }) };
+    }
+    function scorePerformance(input) {
+      const score = window.OpenModular.validateScore(input);
+      const groups = score.events.map(event => planEvent(event, event.time));
+      groups.at(-1).ending = true;
+      const lastEnd = Math.max(...groups.flatMap(g => g.notes.map(n => n.time + n.duration)));
+      return { modular: true, seed: score.seed, tone: score.tone, density: 0.12,
+        groups, continuation: null, sampleRate: 44100,
+        exportDuration: lastEnd + 10.465,
+        filename: `open-modular-${seedHex(score.seed)}-${Date.now()}.wav` };
+    }
+    async function start(seed) {
+      if (disposed) throw Error("Reload this window to play.");
+      ensureAudioContext();
+      const request = ++startRequest, ctx = audioContext;
+      if (ctx.state === "suspended") await ctx.resume();
+      if (request !== startRequest || ctx !== audioContext) return false;
+      if (ctx.state !== "running") throw Error("Audio could not start. Press Play to try again.");
+      stopAllManual(true);
+      sessionSnapshot = null;
+      buildMixBus(seed);
+      automateMix(bus.masterGain, bus.reverbSend, bus.origin, 0.12);
+      isPlaying = true;
+      if (bridgeAudioEl) bridgeAudioEl.play().catch(() => {});
+      return true;
+    }
+    const api = Object.freeze({
+      start,
+      stop() { stopAllManual(false); },
+      state() { return { playing: isPlaying || isEndingNaturally, running: audioContext?.state === "running" }; },
+      schedule(event) {
+        if (!isPlaying || !bus || audioContext?.state !== "running") return false;
+        const remaining = event.at - window.OpenModular.clock();
+        // Never replay a backlog or shift other voices to catch this one up.
+        if (remaining < 0.03 || remaining > 5) return false;
+        const origin = audioContext.currentTime + remaining;
+        renderGroup(audioContext, bus.masterGain, bus.reverbSend, planEvent(event, 0), origin);
+        return true;
+      },
+      async replay(input) {
+        const performance = scorePerformance(input);
+        if (!await start(performance.seed)) return false;
+        sessionSnapshot = performance;
+        liveCursor = 0;
+        liveTimeShift = 0;
+        liveNextGroup = nextLiveGroup();
+        sessionStartTime = bus.origin;
+        timerInterval = setInterval(scheduler, SCHEDULER_INTERVAL_MS);
+        scheduler();
+        return true;
+      },
+      async export(input) {
+        if (isExporting) throw Error("A WAV is already rendering in this window.");
+        const performance = scorePerformance(input);
+        isExporting = true;
+        try { await renderWavSession(performance); }
+        finally { isExporting = false; }
+      }
+    });
+    window.OpenModularAudio = api;
+    removeListeners.push(() => { if (window.OpenModularAudio === api) delete window.OpenModularAudio; });
+  }
+
   // =========================
   // INIT & LISTENERS
   // =========================
@@ -1615,9 +1691,11 @@
     updateReplayControls();
     loadReplayLink();
   }
-  if (document.readyState === "loading") listen(document, "DOMContentLoaded", initialize, { once: true });
-  else initialize();
+  function initializePage() { initializeModularAudio(); initialize(); }
+  if (document.readyState === "loading") listen(document, "DOMContentLoaded", initializePage, { once: true });
+  else initializePage();
 
 })();
 // --- END OF SCRIPT ---
+
 

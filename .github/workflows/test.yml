@@ -2,7 +2,7 @@ name: Audio regression checks
 
 on:
   push:
-    branches: [main, engineering-hardening, engineering/matching-wav-performance, experiment/moving-resonators]
+    branches: [main, modular, engineering-hardening, engineering/matching-wav-performance, experiment/moving-resonators]
   pull_request:
 
 permissions:
@@ -56,3 +56,4 @@ jobs:
         run: defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
       - name: Run native browser checks
         run: npm run test:browser -- ${{ matrix.projects }}
+

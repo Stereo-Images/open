@@ -138,6 +138,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
     createPerformance: (...args) => createPerformance(...args),
     qualifiedEnding: (...args) => qualifiedEnding(...args),
+    initializeModularAudio: () => initializeModularAudio(),
     replayFromUI: () => replayFromUI(), copyReplayLink: () => copyReplayLink(),
     replayLastPerformance: () => replayLastPerformance(),
     replayLink: (...args) => replayLink(...args), parseReplayInput: (...args) => parseReplayInput(...args),
@@ -179,6 +180,68 @@ function dialHarness(savedTone = '155') {
   };
   return h;
 }
+
+function modularAudioHarness() {
+  const h = harness();
+  h.sandbox.document.body.dataset = { modular: 'true' };
+  h.sandbox.OpenModular = { ...require('../modular-core.js'), clock: () => 0 };
+  h.api.initializeModularAudio();
+  return h;
+}
+
+test('modular audio maps each future event to its own clock and drops late events', async () => {
+  const h = modularAudioHarness(), audio = h.sandbox.OpenModularAudio;
+  await audio.start(42);
+  const event = { at: 2.5, seed: 81, notes: [{ kind: 'bell', freq: 121,
+    duration: 25, volume: 0.4, tension: 0.12, instability: 0.12 }] };
+  assert.equal(audio.schedule(event), true);
+  const voices = h.contexts[0].nodes.filter(n => n.kind === 'oscillator' && n.frequency.value > 10);
+  assert.ok(voices.length > 0);
+  assert.ok(voices.every(n => n.startTime === 2.5));
+  const count = h.contexts[0].nodes.length;
+  assert.equal(audio.schedule({ ...event, at: -1 }), false);
+  assert.equal(h.contexts[0].nodes.length, count);
+  audio.stop(); h.advance(0.2);
+  assert.equal(h.api.state().nodes, 0);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+  assert.equal(h.sandbox.OpenModularAudio, undefined);
+});
+
+test('modular score replay and WAV share all planned voice parameters and finish their tails', async () => {
+  const h = modularAudioHarness(), audio = h.sandbox.OpenModularAudio;
+  const e = new h.sandbox.OpenModular.Ensemble({ seed: 42, tone: 121, now: 0 });
+  e.join('a', { seed: 81, length: 'short', now: 0 });
+  e.join('b', { seed: 217, length: 'infinite', now: 0 });
+  for (let t = 0; t < 45; t += 0.2) e.plan(t);
+  const score = e.snapshot(45);
+  await audio.replay(score);
+  const origin = h.api.state().bus.origin;
+  const exporting = audio.export(score);
+  const offline = h.contexts[1];
+  h.advance(90);
+  assert.deepEqual(voiceControls(h.contexts[0], origin), voiceControls(offline));
+  assert.equal(audio.state().playing, false);
+  offline.resolve(audioBuffer([new Float32Array(20), new Float32Array(20)]));
+  await exporting;
+  assert.match(h.downloads[0], /^open-modular-0000002a-\d+\.wav$/);
+  assert.equal(h.api.state().nodes, 0);
+});
+
+test('modular Stop cancels a pending resume; export validates before allocating audio', async () => {
+  const h = modularAudioHarness(), audio = h.sandbox.OpenModularAudio;
+  await audio.start(42);
+  h.api.suspend();
+  let resume;
+  h.api.resumeWith(() => new Promise(resolve => { resume = resolve; }));
+  const pending = audio.start(99);
+  audio.stop();
+  h.contexts[0].state = 'running'; resume();
+  assert.equal(await pending, false);
+  assert.equal(audio.state().playing, false);
+  const before = h.contexts.length;
+  await assert.rejects(audio.export({ format: 'open-modular', version: 99 }));
+  assert.equal(h.contexts.length, before);
+});
 
 test('one-click Replay restores the latest score and controls during playback, after Stop, and after an ending', async () => {
   const h = dialHarness('155');
@@ -1283,3 +1346,4 @@ test('failed offline resonator setup stops partial oscillators and leaves export
   await retry;
   h.api.stopAllManual(true);
 });
+

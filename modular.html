@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Open — Modular</title>
+  <meta name="description" content="An ensemble of Open windows. Independent melodies and tempos, a shared harmonic space." />
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css?v=modular-1" />
+</head>
+<body class="player modular" data-modular="true">
+  <main class="shell" aria-labelledby="modularTitle">
+    <h1 id="modularTitle" class="title-style">Open</h1>
+    <p class="modular-subtitle">Modular</p>
+    <p class="modular-intro">Each window a voice.<br />A shared harmony, a pace of its own.</p>
+    <section aria-label="Ensemble controls" class="modular-controls">
+      <div class="modular-settings">
+        <div class="form-group">
+          <label for="modularLength">Length</label>
+          <select id="modularLength">
+            <option value="short">Short</option>
+            <option value="long">Long</option>
+            <option value="infinite" selected>Infinite</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="modularTone">Root tone</label>
+          <input id="modularTone" class="modular-tone" type="number" min="110" max="200" step="1" value="121" aria-describedby="modularRootHelp" />
+          <p id="modularRootHelp" class="revisit-help">Hz · The first voice sets the ensemble’s root.</p>
+        </div>
+      </div>
+      <div class="modular-actions">
+        <button id="modularPlay" class="btn" type="button" disabled>Play</button>
+        <button id="modularStop" class="btn" type="button" disabled>Stop</button>
+      </div>
+      <button id="addWindow" class="btn" type="button" disabled>Add a window</button>
+      <p id="ensembleStatus" class="revisit-help" role="status" aria-live="polite">Connecting…</p>
+      <p id="windowStatus" class="revisit-help" role="status" aria-live="polite">Press Play in each window to join.</p>
+      <a id="popupFallback" class="modular-link" target="_blank" rel="noopener" hidden>Open another window</a>
+    </section>
+    <details class="revisit modular-scores">
+      <summary>Keep a performance</summary>
+      <div class="revisit-content">
+        <p class="revisit-help">Save the ensemble’s last 30 minutes of planned notes, including every voice. Saved scores keep full decays; interrupted audio and each window’s room motion may differ.</p>
+        <button id="saveScore" type="button" class="btn" disabled>Save ensemble score</button>
+        <button id="exportEnsemble" type="button" class="btn" disabled>Export ensemble WAV</button>
+        <label for="loadScore">Load an ensemble score</label>
+        <input id="loadScore" type="file" accept=".json,application/json" />
+        <p id="loadedScoreStatus" class="revisit-help">A saved score plays all voices in this window.</p>
+        <button id="replayScore" type="button" class="btn" disabled>Play loaded score</button>
+        <button id="exportScore" type="button" class="btn" disabled>Export loaded WAV</button>
+        <p id="replayStatus" class="revisit-help" role="status" aria-live="polite"></p>
+      </div>
+    </details>
+    <p class="modular-help revisit-help">Use the same desktop browser and website for every window. Each voice can finish at its own time. Up to eight voices.</p>
+    <nav class="modular-nav" aria-label="Player navigation"><a href="player.html">Solo Open</a></nav>
+    <div id="playerStatus" class="sr-only" aria-live="polite"></div>
+    <footer id="credits"><div>By Aaron Koppel</div><div>Stereo Images, 2026</div></footer>
+  </main>
+  <script src="modular-core.js?v=modular-1"></script>
+  <script src="player.js?v=modular-1"></script>
+  <script src="modular-ui.js?v=modular-1"></script>
+</body>
+</html>

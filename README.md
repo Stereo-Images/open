@@ -2,6 +2,33 @@
 
 > *Bell Music for Desktop Listening*
 
+## Modular
+
+The `modular` branch adds an optional ensemble at **[modular.html](modular.html)**. Each window is a voice with its own tempo, melodic contour, phrase spacing, and ending. Voices share harmonic context and respond to notes still ringing. Their phrases can drift into and out of alignment; there is no shared beat or requirement to synchronize.
+
+1. Serve this branch over HTTP(S), open **Modular**, choose a root tone and length, and press **Play**.
+2. Select **Add a window**, then press **Play** in the new window. All windows in the same room adopt the first active voice’s root tuning. A new window stays silent until its Play button is pressed.
+3. Choose Short, Long, or Infinite independently in each window. Short seeks an ending after about a minute; Long chooses its own 10–30 minute target; Infinite continues until stopped. Compatible final notes and full decays can extend those targets.
+4. Stop or close any window to remove its voice. The others continue and gradually take up more space. Finishing a timed voice does not end the other performances.
+
+Use the same desktop browser/profile and the same hosted copy of Open for every window. Up to eight voices can join a room. Start with two or three. The optional `?room=name` URL parameter creates a separate local ensemble; **Add a window** preserves it. This is local communication, not a connection between computers. Mobile background playback and browsers without `SharedWorker` are not supported by this mode. The page offers Solo Open when the ensemble is unavailable. Opening the HTML directly as a `file:` URL is insufficient.
+
+**Musical behavior.** Each voice has its own random stream and event clock. Register preferences spread out as voices join. The existing players gradually leave more space and soften new strikes; the whole ensemble has a ceiling of 15 bell attacks in any 60 seconds. This ceiling does not impose a pulse or alternate turns. Shared harmony moves through related chords and occasional neighboring keys. New pitches avoid nominal semitone, major-seventh, and tritone conflicts with notes and bass tails still ringing; other intervals and the bells’ inharmonic FM partials retain tension. One bass layer is coordinated across the ensemble. This is a new compositional planner, not a reproduction of a solo engine-3 seed. The bell/bass synthesis and room renderer are reused from Open.
+
+**Keeping a performance.** Under **Keep a performance**, save an ensemble score (`.json`) or export an ensemble WAV. Each captures all voices’ planned events from the most recent 30 minutes, through the time of the request. A score can be loaded later and played in one window, or rendered as a 16-bit stereo WAV at 44.1 kHz. Scores have a separate format/version; ordinary solo seeds and replay links do not encode a modular performance. Save before closing every window or starting a new ensemble after all voices stop. A WAV preserves the intended notes, timing, timbral choices, and full decays; abrupt window closures, missed device audio, and the independently moving room filters in each live window are not captured as an exact live mix. A 30-minute WAV export requires substantial memory.
+
+**Coordination.** A `SharedWorker` owns membership and harmonic context, so closing the first window does not remove the coordinator. It schedules each independently timed event about 2.5 seconds ahead; windows map those timestamps to their own Web Audio clocks. Late events are not played in a catch-up burst. A suspended or unresponsive voice leaves the ensemble and requires Play to rejoin. Small device timing differences are acceptable to the composition. Musical planning, protocol/expiry, score validation, and multi-window browser checks live in `tests/`.
+
+To try the branch locally:
+
+```sh
+git switch modular
+node tests/serve.cjs
+# Open http://127.0.0.1:4173/modular.html
+```
+
+The ordinary solo player and its engine-1/engine-3 replay rules remain available below.
+
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
 
 What resonates? [*Open*](https://stereo-images.github.io/open/) answers that question in a multitude of ways. In each performance, every tone is a new physical event, ringing in a particular way and gesturing towards the next. Because Open lives in a browser, I carry that distance with me wherever I go.
@@ -90,3 +117,4 @@ Save the audio for listening and keep its original filename or replay link to pr
 ### License
 
 [MIT License](LICENSE). Copyright (c) 2026 Aaron Koppel.
+

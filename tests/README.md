@@ -161,3 +161,12 @@ unchanged Infinite continuation, and live/export controls and tail completion.
 Native WAV round trips cover both engines, including reload and restoration
 from a full filename. Engine-3 files select the qualified-ending behavior;
 engine-1 files preserve the original tonic endings.
+
+# Modular ensemble checks
+
+`node --test tests/modular.test.cjs` covers independent clocks and melodic contours, pitch compatibility through overlapping decays, changing membership/density, separate natural endings, scheduler stalls, bounded score history, score validation, the eight-voice limit, and shared-worker ownership/heartbeat expiry. These are compositional and protocol checks, not judgments of musical quality or browser DSP.
+
+`npx playwright test tests/browser/modular.spec.cjs` exercises real shared workers and Web Audio across three windows, root adoption and individual duration choices, closing the first window, score download/reload and native WAV rendering, startup cancellation, suspended audio, isolated rooms, popup fallback, invalid scores, and narrow layouts. The same suite is configured for Chromium, Firefox, and WebKit. A system Chromium can be selected with `OPEN_CHROMIUM_EXECUTABLE=/path/to/chromium` if the Playwright-managed binary is unavailable.
+
+The `modular` branch is included in the existing GitHub Actions workflow. The original solo lifecycle, deterministic voice, WAV, and native-browser checks still run alongside these additions.
+

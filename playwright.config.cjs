@@ -9,7 +9,8 @@ module.exports = defineConfig({
   use: { baseURL: 'http://127.0.0.1:4173' },
   projects: ['chromium', 'firefox', 'webkit'].map(browserName => ({
     name: browserName,
-    use: { browserName }
+    use: { browserName, ...(browserName === 'chromium' && process.env.OPEN_CHROMIUM_EXECUTABLE
+      ? { launchOptions: { executablePath: process.env.OPEN_CHROMIUM_EXECUTABLE } } : {}) }
   })),
   webServer: {
     command: 'node tests/serve.cjs',
@@ -18,3 +19,4 @@ module.exports = defineConfig({
     timeout: 10000
   }
 });
+
