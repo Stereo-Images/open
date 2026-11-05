@@ -491,13 +491,13 @@
   }
 
   // One trajectory per note, shared by its FM partials and both output paths.
-  function createNoteDrift(ctx, destination, wetSend, time, duration, plannedPan) {
+  function createNoteDrift(ctx, destination, wetSend, time, duration, plannedPan, initialPan = 0) {
     const state = spatialStates.get(ctx);
     const random = state.random;
     const pan = trackNode(ctx, ctx.createStereoPanner());
     const level = trackNode(ctx, ctx.createGain());
     level.gain.value = Math.SQRT2; // Preserve the mono voice's centered level.
-    pan.pan.setValueAtTime(0, time);
+    pan.pan.setValueAtTime(initialPan, time);
     const target = plannedPan === undefined ? choosePan(random) : plannedPan;
     if (target !== null) pan.pan.linearRampToValueAtTime(target, time + duration);
     pan.connect(level);
@@ -1164,7 +1164,7 @@
     freq = note.freq;
     const { voices, totalAmp } = note;
 
-    const spatialInput = createNoteDrift(ctx, destination, wetSend, time, duration, note.pan);
+    const spatialInput = createNoteDrift(ctx, destination, wetSend, time, duration, note.pan, note.panStart);
     voices.forEach(voice => {
       const carrier = trackNode(ctx, ctx.createOscillator());
       const modulator = trackNode(ctx, ctx.createOscillator());
@@ -1173,7 +1173,7 @@
       const filter = trackNode(ctx, ctx.createBiquadFilter());
 
       filter.type = "lowpass";
-      filter.frequency.value = Math.min(freq * 3.5, 6000);
+      filter.frequency.value = note.filterCutoff ?? Math.min(freq * 3.5, 6000);
       filter.Q.value = 0.6;
 
       carrier.frequency.value = voice.frequency;
@@ -1225,7 +1225,7 @@
 
     modulator.connect(modGain); modGain.connect(carrier.frequency);
     carrier.connect(ampGain); ampGain.connect(lp);
-    lp.connect(createNoteDrift(ctx, destination, wetSend, time, duration, planned?.pan));
+    lp.connect(createNoteDrift(ctx, destination, wetSend, time, duration, planned?.pan, planned?.panStart));
 
     modulator.start(time); carrier.start(time);
     modulator.stop(time + duration); carrier.stop(time + duration);
@@ -1569,10 +1569,26 @@
     function planEvent(event, time) {
       const random = mulberry32(event.seed);
       const spatial = mulberry32((event.seed ^ 0x57E2E0) >>> 0);
-      return { time, ending: false, notes: event.notes.map(note => note.kind === "bell"
-        ? planBell(note.freq, time, note.duration, note.volume, note.instability, note.tension, random, spatial)
-        : { kind: "bass", freq: note.freq, time, duration: note.duration, volume: note.volume,
-            detune: (random() - 0.5) * 8, pan: choosePan(spatial) }) };
+      return { time, ending: false, notes: event.notes.map(note => {
+        const planned = note.kind === "bell"
+          ? planBell(note.freq, time, note.duration, note.volume, note.instability, note.tension, random, spatial)
+          : { kind: "bass", freq: note.freq, time, duration: note.duration, volume: note.volume,
+              detune: (random() - 0.5) * 8, pan: choosePan(spatial) };
+        // Version-1 scores have no production plan and retain their original sound.
+        if (note.production) {
+          const { brightness, panStart, panEnd } = note.production;
+          planned.panStart = panStart;
+          planned.pan = panEnd;
+          if (note.kind === "bell") {
+            planned.filterCutoff = Math.min(note.freq * (2.2 + 3.3 * brightness), 6000);
+            for (const voice of planned.voices) {
+              const variation = (voice.modIndex - 1 - note.tension * 2) / 3;
+              voice.modIndex = 0.7 + 3.3 * brightness + 0.35 * variation;
+            }
+          }
+        }
+        return planned;
+      }) };
     }
     function scorePerformance(input) {
       const score = window.OpenModular.validateScore(input);

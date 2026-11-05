@@ -46,7 +46,7 @@ test('prominent ringing pitches stay compatible; decaying bells permit prepared 
           if ([1, 6, 11].includes(interval)) {
             const age = event.at - old.at;
             const quiet = old.kind === 'bell' && age >= old.duration / 2;
-            const resolving = ['leading-tone', 'suspension'].includes(event.motion) &&
+            const resolving = ['leading-tone', 'suspension', 'passing', 'neighbor', 'passing-resolution', 'neighbor-resolution'].includes(event.motion) &&
               old.kind === 'bell' && old.performer === event.performer &&
               age >= Math.min(4, old.duration / 4) && Math.abs(semi - old.semi) <= 2;
             assert.ok(quiet || resolving, `unprepared prominent clash ${tone}/${seed} at ${event.at}`);
@@ -157,19 +157,103 @@ test('score loading rejects unsafe resource sizes, versions, and synthesis value
   const e = make(); join(e, 'a', 1); advance(e, 0, 50);
   const valid = e.snapshot(50);
   for (const mutate of [
-    s => s.version = 2,
+    s => s.version = 99,
     s => s.events = Array(600).fill(s.events[0]),
     s => s.events[0].time = -1,
     s => s.events[0].notes[0].freq = Infinity,
     s => s.events[0].notes[0].volume = 10,
     s => s.events[0].notes[0].duration = 100000,
     s => s.events[0].performer = '<script>',
+    s => delete s.events[0].notes[0].production,
+    s => s.events[0].notes[0].production.brightness = 1,
+    s => s.events[0].notes[0].production.panStart = NaN,
+    s => s.events[0].notes[0].production.panEnd = -5,
     s => s.events[0].notes.push(...Array(10).fill(s.events[0].notes[0]))
   ]) {
     const copy = structuredClone(valid); mutate(copy);
     assert.throws(() => validateScore(copy), /supported/);
   }
   assert.deepEqual(validateScore(valid), validateScore(JSON.parse(JSON.stringify(valid))));
+});
+
+test('passing and neighbor departures resolve by step on the next own entry, before ending', () => {
+  for (const [choice, motion, departure, destination] of [
+    [0.1, 'neighbor', 11, 12], [0.7, 'passing', 14, 16]
+  ]) {
+    const e = make(); join(e, 'a', 81);
+    const m = e.members.get('a');
+    Object.assign(m, { lastSemi: 12, lastKey: 0, lastChord: [0, 4, 7], lastHarmony: 0, step: 2, deadline: 15 });
+    e.nextHarmony = Infinity;
+    // Direction, contour size, ornament probability, then the ornament choice.
+    const draws = [0.5, 0.5, 0, choice];
+    m.rng = () => draws.length ? draws.shift() : 0.5;
+    e.sounding = [{ semi: 12, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
+    const first = e.makeEvent(m, 8);
+    assert.equal(first.motion, motion);
+    assert.equal(Math.round(12 * Math.log2(first.notes[0].freq / 121)), departure);
+    assert.equal(m.resolution.target, destination);
+    e.nextHarmony = 9;
+    e.harmony(10);
+    assert.equal(e.chord, 0, 'hold the harmony while the departure resolves');
+    const second = e.makeEvent(m, 18);
+    assert.equal(second.motion, `${motion}-resolution`);
+    assert.equal(Math.round(12 * Math.log2(second.notes[0].freq / 121)), destination);
+    assert.equal(second.ending, false);
+    assert.equal(m.resolution, null);
+    assert.ok(m.ornamentAfter > m.step);
+    assert.equal(e.makeEvent(m, 55).ending, true);
+  }
+});
+
+test('new entries reserve the pending destination; a blocked resolution waits and survives', () => {
+  const e = make(); join(e, 'a', 81); join(e, 'b', 217);
+  e.nextHarmony = Infinity; // I: no new F neighbor may obscure a promised E.
+  const m = e.members.get('a');
+  Object.assign(m, { lastSemi: 5, lastKey: 0, lastChord: [0, 4, 7], resolution: { type: 'neighbor-resolution', target: 4 } });
+  Object.assign(e.members.get('b'), { lastSemi: 4, lastKey: 0, lastChord: [0, 4, 7], lastHarmony: 0, step: 2, rng: () => 0 });
+  const other = e.makeEvent(e.members.get('b'), 3);
+  assert.notEqual(Math.round(12 * Math.log2(other.notes[0].freq / 121)) % 12, 5);
+  e.chord = 0;
+  e.sounding = [{ semi: 5, kind: 'bell', performer: 'b', at: 9, duration: 28, until: 37 + TAIL }];
+  assert.equal(e.makeEvent(m, 10), null);
+  assert.equal(m.resolution.target, 4);
+  assert.equal(e.makeEvent(m, 25).motion, 'neighbor-resolution');
+  e.leave('a', 26);
+  assert.ok(![...e.members.values()].some(m => m.resolution));
+});
+
+test('production spreads strikes, gives bright peers darker answers, and shares level headroom', () => {
+  const e = make(); join(e, 'a', 81); join(e, 'b', 217);
+  const a = e.members.get('a'), b = e.members.get('b');
+  a.mixRng = b.mixRng = () => 0.99;
+  const first = e.makeEvent(a, 3).notes[0];
+  const committed = structuredClone(first);
+  const second = e.makeEvent(b, 4).notes[0];
+  assert.ok(first.production.panStart < -0.4 && second.production.panStart > 0.4);
+  assert.ok(first.production.brightness > 0.7 && second.production.brightness < 0.3);
+  assert.ok(first.production.brightness + second.production.brightness <= 0.98 + 1e-9);
+  assert.ok(first.volume < 0.4 / Math.sqrt(2) && second.volume < 0.4 / Math.sqrt(2));
+  // Removing a bright owner still accounts for its fading intended tail.
+  e.leave('a', 4.1);
+  const oldPan = b.panCenter;
+  const after = e.makeEvent(b, 5).notes[0];
+  assert.ok(after.production.brightness < 0.4);
+  assert.ok(after.volume < 0.4 / Math.sqrt(2));
+  assert.ok(Math.abs(b.panCenter - oldPan) <= 0.18 + 1e-9);
+  assert.deepEqual(first, committed, 'already planned strikes do not move');
+});
+
+test('version-1 scores retain their rendering contract and version-2 production survives saving', () => {
+  const e = make(); join(e, 'a', 81); advance(e, 0, 60);
+  const current = e.snapshot(60);
+  assert.equal(current.version, 2);
+  const clean = validateScore(JSON.parse(JSON.stringify(current)));
+  assert.deepEqual(clean.events.map(e => e.notes), current.events.map(e => e.notes));
+  const old = structuredClone(current); old.version = 1;
+  old.events.forEach(e => e.notes.forEach(n => delete n.production));
+  const legacy = validateScore(old);
+  assert.equal(legacy.version, 1);
+  assert.ok(legacy.events.every(e => e.notes.every(n => !('production' in n))));
 });
 
 test('eight voices share the density ceiling; a ninth is rejected', () => {

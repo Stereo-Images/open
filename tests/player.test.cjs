@@ -243,6 +243,31 @@ test('modular Stop cancels a pending resume; export validates before allocating 
   assert.equal(h.contexts.length, before);
 });
 
+test('modular brightness controls FM depth and filtering; strikes start at their assigned positions', async () => {
+  const h = modularAudioHarness(), audio = h.sandbox.OpenModularAudio;
+  await audio.start(42);
+  function strike(production) {
+    const ctx = h.contexts[0], before = ctx.nodes.length;
+    audio.schedule({ at: 2.5, seed: 81, notes: [{ kind: 'bell', freq: 200,
+      duration: 20, volume: 0.25, tension: 0.12, instability: 0.12, ...(production ? { production } : {}) }] });
+    const nodes = ctx.nodes.slice(before);
+    return { pan: nodes.find(n => n.kind === 'panner').pan.events,
+      cutoffs: nodes.filter(n => n.kind === 'filter').map(n => n.frequency.value),
+      indices: nodes.filter(n => n.kind === 'gain' && n.gain.events[0]?.[1] > 1).map(n => n.gain.events[0][1]) };
+  }
+  const bright = strike({ brightness: 0.78, panStart: -0.5, panEnd: -0.46 });
+  const dark = strike({ brightness: 0.2, panStart: 0.5, panEnd: 0.46 });
+  assert.deepEqual(bright.pan, [['set', -0.5, 2.5], ['ramp', -0.46, 22.5]]);
+  assert.deepEqual(dark.pan, [['set', 0.5, 2.5], ['ramp', 0.46, 22.5]]);
+  assert.ok(bright.indices.length >= 2 && bright.indices.every((n, i) => n > dark.indices[i] * 2));
+  assert.ok(bright.cutoffs.every((n, i) => n > dark.cutoffs[i] * 1.5));
+  const legacy = strike();
+  assert.equal(legacy.pan[0][1], 0);
+  assert.ok(legacy.cutoffs.every(n => n === 700));
+  audio.stop(); h.advance(0.2);
+  assert.equal(h.api.state().nodes, 0);
+});
+
 test('one-click Replay restores the latest score and controls during playback, after Stop, and after an ending', async () => {
   const h = dialHarness('155');
   assert.equal(h.elements.get('replayLast').disabled, true);

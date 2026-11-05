@@ -3,7 +3,7 @@
  * This has its own score version and does not change solo engines 1 or 3. */
 (function(root) {
   "use strict";
-  const VERSION = 1;
+  const VERSION = 2;
   const MAX_MEMBERS = 8;
   const SCORE_SECONDS = 1800;
   const TAIL = 10.465;
@@ -14,6 +14,7 @@
     { name: "ii", tones: [2, 5, 9] }
   ];
   const pc = n => ((n % 12) + 12) % 12;
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
   const clock = () => (performance.timeOrigin + performance.now()) / 1000;
   function random(seed) {
     let a = seed >>> 0;
@@ -31,6 +32,23 @@
   }
   function compatible(semi, sounding) {
     return sounding.every(n => ![1, 6, 11].includes(pc(semi - n.semi)));
+  }
+
+  // One diatonic step away from a chord tone, with a destination already chosen.
+  function ornamentsFrom(anchor, chord, scale, tone) {
+    if (anchor === null || !chord.includes(pc(anchor))) return [];
+    const inRange = semi => tone * Math.pow(2, semi / 12) >= 110 && tone * Math.pow(2, semi / 12) <= 415.30;
+    const step = (semi, direction) => [1, 2].map(n => semi + direction * n).find(n => scale.includes(pc(n)));
+    const options = [];
+    for (const direction of [-1, 1]) {
+      const semi = step(anchor, direction);
+      if (semi === undefined || !inRange(semi) || chord.includes(pc(semi))) continue;
+      options.push({ type: "neighbor", semi, target: anchor });
+      const target = step(semi, direction);
+      if (target !== undefined && inRange(target) && chord.includes(pc(target)))
+        options.push({ type: "passing", semi, target });
+    }
+    return options;
   }
 
   // These are preferences from tonal voice leading, not strict SATB rules.
@@ -98,10 +116,11 @@
       const basePeriod = 7.5 + rng() * 8;
       this.members.set(id, {
         id, seed: seed >>> 0, length, rng, basePeriod,
+        mixRng: random((seed ^ 0xC01A0B0) >>> 0), panCenter: null, brightness: null,
         period: basePeriod * Math.pow(this.members.size + 1, 0.75),
         nextAt: now + 2.5 + rng() * 3, deadline: now + duration,
         step: 0, lastSemi: null, lastDelta: 0, lastKey: null, lastChord: [],
-        lastHarmony: -1, peerPitches: new Map(), resolution: null, ending: false, endAt: Infinity
+        lastHarmony: -1, peerPitches: new Map(), resolution: null, ornamentAfter: 0, ending: false, endAt: Infinity
       });
     }
     leave(id, now) {
@@ -115,6 +134,7 @@
       const playing = [...this.members.values()].filter(m => !m.ending);
       return new Map(playing.map((m, i) => [m.id, {
         center: playing.length === 1 ? 220 : 145 * Math.pow(340 / 145, i / (playing.length - 1)),
+        pan: playing.length === 1 ? 0 : -0.5 + i / (playing.length - 1),
         name: playing.length === 1 ? "Solo" : i === 0 ? "Lower voice" : i === playing.length - 1 ? "Upper voice" : "Middle voice"
       }]));
     }
@@ -156,6 +176,28 @@
       }
       this.nextHarmony = at + 65 + this.rng() * 55;
     }
+    production(member, at, role, count) {
+      // A separate random stream keeps production decisions out of melodic timing.
+      const random = member.mixRng;
+      if (member.panCenter === null) member.panCenter = role.pan;
+      else member.panCenter += clamp(role.pan - member.panCenter, -0.18, 0.18);
+      const panStart = clamp(member.panCenter + (random() - 0.5) * 0.035, -0.6, 0.6);
+      const panEnd = clamp(panStart + (random() - 0.5) * 0.08, -0.6, 0.6);
+      // Keep contrast across successive entries, and include the tails of voices
+      // that have finished/left. This is a planning estimate, not microphone input.
+      const peers = [...this.members.values()].filter(m => m.id !== member.id && !m.ending)
+        .map(m => m.brightness ?? 0);
+      const tails = this.sounding.filter(n => n.performer !== member.id && n.kind === "bell")
+        .map(n => (n.brightness || 0) * Math.exp(-Math.max(0, at - n.at) / (n.duration * 0.45)));
+      const brightest = Math.max(0, ...peers, ...tails);
+      const brightness = Math.min(0.26 + random() * 0.52, clamp(0.98 - brightest, 0.18, 0.78));
+      member.brightness = brightness;
+      const audible = new Set([...this.members.values()].filter(m => !m.ending).map(m => m.id));
+      for (const note of this.sounding)
+        if (note.kind === "bell" && at - note.at < note.duration * 0.5) audible.add(note.performer);
+      return { production: { panStart, panEnd, brightness },
+        volume: 0.4 / Math.sqrt(Math.max(count, audible.size)) * (1 - 0.12 * brightness) };
+    }
     makeEvent(member, at) {
       this.sounding = this.sounding.filter(n => n.until > at);
       this.harmony(at);
@@ -168,6 +210,10 @@
       if (!resolution && member.lastKey === this.key && pc(member.lastSemi) === pc(this.key + 11) &&
           chord.includes(this.key) && this.tone * Math.pow(2, (member.lastSemi + 1) / 12) <= 415.30)
         resolution = { type: "leading-tone", target: member.lastSemi + 1 };
+      member.resolution = resolution;
+      // Later entries must leave room for an already promised resolution.
+      const reserved = [...this.members.values()].filter(m => m.id !== member.id && m.resolution)
+        .map(m => ({ semi: m.resolution.target }));
       const wantsEnd = at >= member.deadline && !resolution;
       const phraseEnd = member.step % 8 >= 6;
       const direction = member.rng() < 0.5 ? -1 : 1;
@@ -177,10 +223,10 @@
         const reply = this.previous && this.previous.performer !== member.id && member.rng() < 0.35;
         target += reply ? -Math.sign(this.previous.delta) * 2 : direction * (member.rng() < 0.7 ? 2 : 4);
       }
-      const candidates = [];
+      let candidates = [];
       for (let semi = -12; semi <= 24; semi++) {
         const freq = this.tone * Math.pow(2, semi / 12);
-        if (freq < 110 || freq > 415.30 || !scale.includes(pc(semi))) continue;
+        if (freq < 110 || freq > 415.30 || !scale.includes(pc(semi)) || !compatible(semi, reserved)) continue;
         const overlap = overlapWeight(semi, this.sounding, at, member, resolution);
         if (!overlap) continue;
         if (resolution && semi !== resolution.target) continue;
@@ -188,36 +234,49 @@
         const distance = target === null ? 0 : Math.abs(semi - target);
         const register = Math.abs(12 * Math.log2(freq / role.center));
         const isChord = chord.includes(pc(semi));
+        if (!isChord) continue; // Non-chord departures are deliberately prepared below.
         let weight = Math.exp(-distance / 5) * Math.exp(-register / (count === 1 ? 14 : 5));
         weight *= overlap * voiceLeadingWeight(member, semi, this.members.values(), chord, member.lastHarmony !== this.harmonySerial);
         weight *= isChord ? (phraseEnd || wantsEnd ? 8 : 3) : 0.8;
         if (semi === member.lastSemi) weight *= 0.55;
         candidates.push({ value: { semi, freq }, weight });
       }
+      if (!resolution && !wantsEnd && member.lastHarmony === this.harmonySerial &&
+          member.step >= member.ornamentAfter && ![...this.members.values()].some(m => m.resolution) && member.rng() < 0.18) {
+        const ornaments = ornamentsFrom(member.lastSemi, chord, scale, this.tone).filter(o =>
+          compatible(o.semi, reserved) && overlapWeight(o.semi, this.sounding, at, member, o));
+        if (ornaments.length) candidates = ornaments.map(ornament => ({ weight: 1, value: {
+          semi: ornament.semi, freq: this.tone * Math.pow(2, ornament.semi / 12), ornament
+        } }));
+      }
       if (!candidates.length) return null; // Silence is preferable to forcing a clash.
-      const { semi, freq } = choose(candidates, member.rng);
+      const { semi, freq, ornament } = choose(candidates, member.rng);
       const delta = member.lastSemi === null ? 0 : semi - member.lastSemi;
       const tension = chord.includes(pc(semi)) ? 0.12 : 0.45;
       const duration = wantsEnd ? 25 : 18 + member.rng() * 10;
+      const mix = this.production(member, at, role, count);
       const notes = [{ kind: "bell", freq, duration,
-        volume: 0.4 / (1 + 0.06 * (count - 1)), tension, instability: 0.12 }];
+        ...mix, tension, instability: 0.12 }];
       // One shared bass layer: all windows see it when choosing later notes.
       if (member.step % 8 === 0 && !wantsEnd && member.rng() < 0.35 &&
           !this.sounding.some(n => n.kind === "bass")) {
         let bassSemi = chord[0] - 12;
         while (this.tone * Math.pow(2, bassSemi / 12) < 87.31) bassSemi += 12;
-        if (compatible(bassSemi, [...this.sounding, { semi }])) {
+        const destinations = [...reserved, ...(ornament ? [{ semi: ornament.target }] : [])];
+        if (compatible(bassSemi, [...this.sounding, { semi }, ...destinations])) {
           notes.push({ kind: "bass", freq: this.tone * Math.pow(2, bassSemi / 12),
-            duration: 28, volume: 0.09, tension: 0, instability: 0 });
+            duration: 28, volume: 0.09, tension: 0, instability: 0,
+            production: { panStart: 0, panEnd: 0, brightness: 0.2 } });
         }
       }
       const event = { id: ++this.sequence, at, performer: member.id,
         seed: Math.floor(member.rng() * 4294967296), notes, ending: wantsEnd,
         harmony: CHORDS[this.chord].name, key: this.key,
-        motion: resolution?.type || (semi === member.lastSemi ? "common-tone" : "free") };
+        motion: ornament?.type || resolution?.type || (semi === member.lastSemi ? "common-tone" : "free") };
       for (const note of notes) this.sounding.push({
         semi: Math.round(12 * Math.log2(note.freq / this.tone)), kind: note.kind,
-        performer: member.id, at, duration: note.duration, until: at + note.duration + TAIL
+        performer: member.id, at, duration: note.duration, until: at + note.duration + TAIL,
+        brightness: note.production.brightness
       });
       this.previous = { performer: member.id, delta };
       member.lastSemi = semi;
@@ -226,7 +285,8 @@
       member.lastChord = chord;
       member.lastHarmony = this.harmonySerial;
       member.peerPitches = new Map([...this.members.values()].map(m => [m.id, m.lastSemi]));
-      member.resolution = null;
+      member.resolution = ornament ? { type: `${ornament.type}-resolution`, target: ornament.target } : null;
+      if (ornament) member.ornamentAfter = member.step + 4;
       member.step++;
       if (wantsEnd) { member.ending = true; member.endAt = at + duration + TAIL; }
       return event;
@@ -280,7 +340,7 @@
     const fail = () => { throw Error("This is not a supported Open Modular score."); };
     const number = (n, min, max) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
     const seed = n => number(n, 0, 4294967295) && Number.isInteger(n);
-    if (!input || input.format !== "open-modular" || input.version !== VERSION ||
+    if (!input || input.format !== "open-modular" || ![1, VERSION].includes(input.version) ||
         !seed(input.seed) || !Number.isInteger(input.tone) || !number(input.tone, 110, 200) ||
         !Array.isArray(input.events) || !input.events.length || input.events.length > 512) fail();
     let previous = -1;
@@ -298,13 +358,21 @@
             !number(n.freq, n.kind === "bell" ? 110 : 87.31, 415.30) ||
             !number(n.duration, 5, 40) || !number(n.volume, 0, 0.5) ||
             !number(n.tension, 0, 1) || !number(n.instability, 0, 1)) fail();
-        return { kind: n.kind, freq: n.freq, duration: n.duration, volume: n.volume,
+        const clean = { kind: n.kind, freq: n.freq, duration: n.duration, volume: n.volume,
           tension: n.tension, instability: n.instability };
+        if (input.version === 2) {
+          const p = n.production;
+          if (!p || !number(p.panStart, -0.6, 0.6) || !number(p.panEnd, -0.6, 0.6) ||
+              !number(p.brightness, 0.18, 0.78) ||
+              (n.kind === "bass" && (p.panStart !== 0 || p.panEnd !== 0))) fail();
+          clean.production = { panStart: p.panStart, panEnd: p.panEnd, brightness: p.brightness };
+        }
+        return clean;
       });
       return { id: i + 1, time: e.time, seed: e.seed, performer: e.performer,
         ending: e.ending === true, notes };
     });
-    return { format: "open-modular", version: VERSION, seed: input.seed, tone: input.tone, events };
+    return { format: "open-modular", version: input.version, seed: input.seed, tone: input.tone, events };
   }
   const api = { VERSION, MAX_MEMBERS, SCORE_SECONDS, TAIL, clock, random,
     voiceLeadingWeight, overlapWeight, Ensemble, validateScore };

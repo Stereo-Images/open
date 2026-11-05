@@ -170,3 +170,38 @@ test('unsupported browsers fail clearly; malformed scores stay silent; narrow la
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   await expect(page.getByRole('link', { name: 'Solo Open' })).toBeVisible();
 });
+
+test('saved production renders left/right placement and contrasting bright/dark attacks in native WAV audio', async ({ page }) => {
+  const score = { format: 'open-modular', version: 2, seed: 42, tone: 200,
+    events: [[0, -0.5, 0.78], [20, 0.5, 0.2]].map(([time, pan, brightness], i) => ({
+      time, seed: 81, performer: `w${i + 1}`, notes: [{ kind: 'bell', freq: 200,
+        duration: 8, volume: 0.25, tension: 0.12, instability: 0.12,
+        production: { panStart: pan, panEnd: pan, brightness } }]
+    })) };
+  await open(page, 'production');
+  await scoreControls(page);
+  await page.locator('#loadScore').setInputFiles({ name: 'production.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(score)) });
+  await expect(page.locator('#exportScore')).toBeEnabled();
+  const download = page.waitForEvent('download');
+  await page.locator('#exportScore').click();
+  const wav = await fs.readFile(await (await download).path());
+  const rate = wav.readUInt32LE(24);
+  function attack(at) {
+    let left = 0, right = 0, mono = 0, difference = 0, previous = 0;
+    // First 30–250 ms: direct strike and early room response, before the FM settles.
+    for (let i = Math.floor((at + 0.03) * rate); i < (at + 0.25) * rate; i++) {
+      const l = wav.readInt16LE(44 + i * 4) / 32768, r = wav.readInt16LE(46 + i * 4) / 32768;
+      const sum = l + r;
+      left += l * l; right += r * r; mono += sum * sum;
+      if (previous) difference += (sum - previous) ** 2;
+      previous = sum;
+    }
+    return { left, right, highFrequencyProxy: difference / mono };
+  }
+  const bright = attack(0), dark = attack(20);
+  console.log('Modular production PCM', { bright, dark });
+  expect(bright.left).toBeGreaterThan(bright.right * 1.5);
+  expect(dark.right).toBeGreaterThan(dark.left * 1.5);
+  // Normalized sample-to-sample energy measures high-frequency emphasis, not loudness.
+  expect(bright.highFrequencyProxy).toBeGreaterThan(dark.highFrequencyProxy * 1.2);
+});

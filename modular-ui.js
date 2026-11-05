@@ -144,7 +144,7 @@
     function connect() {
       if (worker) { worker.port.postMessage({ type: "disconnect" }); worker.port.close(); }
       ready = false;
-      worker = new SharedWorker(new URL("modular-worker.js?v=modular-2", location.href), { name: `open-modular-2-${room}` });
+      worker = new SharedWorker(new URL("modular-worker.js?v=modular-3", location.href), { name: `open-modular-3-${room}` });
       worker.onerror = () => fail("Modular could not connect. Reload this page to try again.");
       worker.port.onmessageerror = () => fail("The ensemble connection failed. Reload to try again.");
       worker.port.onmessage = ({ data }) => {
