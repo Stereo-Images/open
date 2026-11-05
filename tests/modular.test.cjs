@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { Ensemble, validateScore, voiceLeadingWeight, TAIL } = require('../modular-core.js');
+const { Ensemble, validateScore, voiceLeadingWeight, MAX_ATTACKS, MAX_EVENTS, TAIL } = require('../modular-core.js');
 
 function advance(ensemble, from, to, step = 0.2) {
   const events = [], ended = [];
@@ -15,8 +15,12 @@ function advance(ensemble, from, to, step = 0.2) {
 }
 function make(seed = 42, tone = 121) { return new Ensemble({ seed, tone, now: 0 }); }
 function join(e, id, seed, now = 0, length = 'infinite') { e.join(id, { seed, now, length }); }
+function onPulse(event, member) {
+  const pulse = (event.at - member.phase) / member.period;
+  assert.ok(Math.abs(pulse - Math.round(pulse)) < 1e-6, `off pulse: ${event.performer}/${event.at}`);
+}
 
-test('independent voices keep distinct, drifting clocks and melodic contours', () => {
+test('independent voices keep steady, distinct pulses and different melodic contours', () => {
   const e = make();
   join(e, 'a', 81); join(e, 'b', 217);
   const { events } = advance(e, 0, 900);
@@ -24,7 +28,12 @@ test('independent voices keep distinct, drifting clocks and melodic contours', (
   assert.ok(voices.every(v => v.length > 15));
   const gaps = voices.map(v => v.slice(1).map((n, i) => n.at - v[i].at));
   assert.notDeepEqual(gaps[0], gaps[1]);
-  assert.ok(gaps.every(g => Math.max(...g) - Math.min(...g) > 5));
+  assert.notEqual(e.members.get('a').period, e.members.get('b').period);
+  for (const event of events) onPulse(event, e.members.get(event.performer));
+  for (const [i, id] of ['a', 'b'].entries()) {
+    const period = e.members.get(id).period;
+    assert.ok(gaps[i].filter(g => Math.abs(g - period) < 1e-6).length > gaps[i].length * 0.8);
+  }
   assert.notDeepEqual(voices[0].map(e => e.notes[0].freq), voices[1].map(e => e.notes[0].freq));
   // Different clocks allow either voice to enter again before its partner.
   assert.ok(events.some((e, i) => i && e.performer === events[i - 1].performer));
@@ -55,7 +64,7 @@ test('prominent ringing pitches stay compatible; decaying bells permit prepared 
         sounding.push({ semi, until: event.at + note.duration + TAIL, at: event.at,
           duration: note.duration, kind: note.kind, performer: event.performer });
       }
-      assert.ok(events.filter(n => n.at > event.at - 60 && n.at <= event.at).length <= 15);
+      assert.ok(events.filter(n => n.at > event.at - 60 && n.at <= event.at).length <= MAX_ATTACKS);
     }
   }
 });
@@ -95,21 +104,48 @@ test('the leading tone resolves up a semitone when tonic harmony returns', () =>
   assert.equal(event.at, 8);
 });
 
-test('adding voices changes existing players while leaving already scheduled music intact', () => {
+test('joining and leaving changes harmony and production without changing any existing pulse', () => {
   const e = make(); join(e, 'a', 81);
   const first = advance(e, 0, 60).events;
   const committed = structuredClone(e.events);
-  const originalPeriod = e.members.get('a').period;
+  const a = e.members.get('a');
+  const originalPeriod = a.period, originalPhase = a.phase;
   join(e, 'b', 217, 60); join(e, 'c', 876, 60);
   assert.deepEqual(e.events, committed);
-  advance(e, 60.2, 240);
-  const crowdedPeriod = e.members.get('a').period;
-  assert.ok(crowdedPeriod > originalPeriod * 1.5);
+  const together = advance(e, 60.2, 240).events;
+  assert.equal(a.period, originalPeriod);
+  assert.equal(a.phase, originalPhase);
   e.leave('b', 240); e.leave('c', 240);
   const after = advance(e, 240.2, 420).events;
   assert.ok(after.every(n => n.performer === 'a'));
-  assert.ok(e.members.get('a').period < crowdedPeriod * 0.8);
+  assert.equal(a.period, originalPeriod);
+  assert.equal(a.phase, originalPhase);
+  for (const event of [...first, ...together, ...after].filter(n => n.performer === 'a')) onPulse(event, a);
   assert.ok(first.length > 2);
+});
+
+test('each tempo and phase depend only on its own seed and start, not peers or length', () => {
+  const solo = make(), ensemble = make(99);
+  join(solo, 'a', 81, 17, 'short');
+  join(ensemble, 'b', 217); join(ensemble, 'c', 876);
+  join(ensemble, 'a', 81, 17, 'long');
+  for (const key of ['period', 'phase', 'nextAt'])
+    assert.equal(solo.members.get('a')[key], ensemble.members.get('a')[key]);
+});
+
+test('a harmonic rest skips pulses without delaying the following entries', () => {
+  const e = make(); join(e, 'a', 81);
+  const m = e.members.get('a');
+  e.nextHarmony = Infinity;
+  Object.assign(m, { lastSemi: 5, lastKey: 0, lastChord: [0, 4, 7],
+    resolution: { type: 'neighbor-resolution', target: 4 } });
+  e.sounding = [{ semi: 5, kind: 'bell', performer: 'other', at: m.phase,
+    duration: 28, until: m.phase + 28 + TAIL }];
+  const events = advance(e, 0, 80).events;
+  assert.ok(events[0].at >= m.phase + 14);
+  assert.equal(events[0].motion, 'neighbor-resolution');
+  assert.ok(events.length > 3);
+  for (const event of events) onPulse(event, m);
 });
 
 test('voices end individually and Infinite continues after Short voices finish', () => {
@@ -130,10 +166,10 @@ test('voices end individually and Infinite continues after Short voices finish',
 test('a long scheduler suspension skips missed notes instead of playing a burst', () => {
   const e = make(); join(e, 'a', 1); join(e, 'b', 2);
   advance(e, 0, 20);
-  assert.equal(e.plan(900).events.length, 0);
-  const later = advance(e, 900.2, 920).events;
+  const later = [...e.plan(900).events, ...advance(e, 900.2, 920).events];
   assert.ok(later.length > 0 && later.length < 8);
-  assert.ok(later.every(n => n.at > 902));
+  assert.ok(later.every(n => n.at >= 900.25));
+  for (const event of later) onPulse(event, e.members.get(event.performer));
 });
 
 test('scores include all voices, omit unheard future events, and retain a bounded timeline', () => {
@@ -144,7 +180,7 @@ test('scores include all voices, omit unheard future events, and retain a bounde
   assert.equal(score.events[0].time, 0);
   assert.ok(score.events.at(-1).time <= 1800);
   assert.deepEqual(new Set(score.events.map(n => n.performer)), new Set(['a', 'b']));
-  assert.ok(e.events.length < 450);
+  assert.ok(e.events.length <= MAX_EVENTS);
   assert.equal(score.events.length, e.events.filter(n => n.at <= 3900).length);
   const future = e.events.find(n => n.at > 3900);
   if (future) {
@@ -158,7 +194,7 @@ test('score loading rejects unsafe resource sizes, versions, and synthesis value
   const valid = e.snapshot(50);
   for (const mutate of [
     s => s.version = 99,
-    s => s.events = Array(600).fill(s.events[0]),
+    s => s.events = Array(MAX_EVENTS + 1).fill(s.events[0]),
     s => s.events[0].time = -1,
     s => s.events[0].notes[0].freq = Infinity,
     s => s.events[0].notes[0].volume = 10,
@@ -243,12 +279,14 @@ test('production spreads strikes, gives bright peers darker answers, and shares 
   assert.deepEqual(first, committed, 'already planned strikes do not move');
 });
 
-test('version-1 scores retain their rendering contract and version-2 production survives saving', () => {
+test('version-3 production survives saving and version-1/2 scores retain their rendering contracts', () => {
   const e = make(); join(e, 'a', 81); advance(e, 0, 60);
   const current = e.snapshot(60);
-  assert.equal(current.version, 2);
+  assert.equal(current.version, 3);
   const clean = validateScore(JSON.parse(JSON.stringify(current)));
   assert.deepEqual(clean.events.map(e => e.notes), current.events.map(e => e.notes));
+  const version2 = structuredClone(current); version2.version = 2;
+  assert.deepEqual(validateScore(version2).events, clean.events);
   const old = structuredClone(current); old.version = 1;
   old.events.forEach(e => e.notes.forEach(n => delete n.production));
   const legacy = validateScore(old);
@@ -256,13 +294,20 @@ test('version-1 scores retain their rendering contract and version-2 production 
   assert.ok(legacy.events.every(e => e.notes.every(n => !('production' in n))));
 });
 
-test('eight voices share the density ceiling; a ninth is rejected', () => {
+test('eight steady voices fit score limits without the old ensemble slowdown; a ninth is rejected', () => {
   const e = make();
   for (let i = 0; i < 8; i++) join(e, `w${i}`, i + 4);
   assert.throws(() => join(e, 'extra', 42), /eight/);
-  const events = advance(e, 0, 600).events;
+  const events = advance(e, 0, 1800).events;
   assert.equal(new Set(events.map(e => e.performer)).size, 8);
-  assert.ok(events.every(e => events.filter(n => n.at > e.at - 60 && n.at <= e.at).length <= 15));
+  const densities = events.map(e => events.filter(n => n.at > e.at - 60 && n.at <= e.at).length);
+  assert.ok(Math.max(...densities) > 15);
+  assert.ok(Math.max(...densities) <= MAX_ATTACKS);
+  for (const event of events) onPulse(event, e.members.get(event.performer));
+  const snapshot = e.snapshot(1800);
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot)) < 2 * 1024 * 1024);
+  assert.equal(validateScore(snapshot).events.length, snapshot.events.length);
+  assert.throws(() => validateScore({ ...snapshot, version: 2 }), /supported/);
 });
 
 test('shared coordinator survives the first window, expires a frozen voice, and does not rejoin on ping', () => {

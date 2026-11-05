@@ -3,9 +3,12 @@
  * This has its own score version and does not change solo engines 1 or 3. */
 (function(root) {
   "use strict";
-  const VERSION = 2;
+  const VERSION = 3;
   const MAX_MEMBERS = 8;
   const SCORE_SECONDS = 1800;
+  const MIN_PERIOD = 7.5;
+  const MAX_ATTACKS = MAX_MEMBERS * Math.ceil(60 / MIN_PERIOD);
+  const MAX_EVENTS = 2048;
   const TAIL = 10.465;
   const SCALE = [0, 2, 4, 5, 7, 9, 11];
   const CHORDS = [
@@ -113,12 +116,15 @@
       if (!["short", "long", "infinite"].includes(length)) throw Error("Choose Short, Long, or Infinite.");
       const rng = random(seed);
       const duration = length === "short" ? 60 : length === "long" ? 600 + Math.floor(rng() * 1201) : Infinity;
-      const basePeriod = 7.5 + rng() * 8;
+      // Timing depends only on this voice's seed and start, never on its peers,
+      // melodic choices, or the ensemble size. Separate clocks naturally drift.
+      const timingRng = random((seed ^ 0x54494D45) >>> 0);
+      const period = MIN_PERIOD + timingRng() * 8;
+      const phase = now + 2.5 + timingRng() * 3;
       this.members.set(id, {
-        id, seed: seed >>> 0, length, rng, basePeriod,
+        id, seed: seed >>> 0, length, rng, period, phase, pulse: 0,
         mixRng: random((seed ^ 0xC01A0B0) >>> 0), panCenter: null, brightness: null,
-        period: basePeriod * Math.pow(this.members.size + 1, 0.75),
-        nextAt: now + 2.5 + rng() * 3, deadline: now + duration,
+        nextAt: phase, deadline: now + duration,
         step: 0, lastSemi: null, lastDelta: 0, lastKey: null, lastChord: [],
         lastHarmony: -1, peerPitches: new Map(), resolution: null, ornamentAfter: 0, ending: false, endAt: Infinity
       });
@@ -142,7 +148,7 @@
       const roles = this.roles();
       return { tone: this.tone, seed: this.seed, harmony: CHORDS[this.chord].name,
         members: [...this.members.values()].map(m => ({ id: m.id, length: m.length,
-          role: m.ending ? "Finishing" : roles.get(m.id).name, ending: m.ending })) };
+          role: m.ending ? "Finishing" : roles.get(m.id).name, bpm: 60 / m.period, ending: m.ending })) };
     }
     harmony(at) {
       if (at < this.nextHarmony) return;
@@ -298,8 +304,9 @@
           ended.push(member.id);
           this.members.delete(member.id);
         } else if (!member.ending && member.nextAt < now + 0.25) {
-          // Sleep/throttling never causes a catch-up burst or clock convergence.
-          member.nextAt = now + 2.5 + member.rng() * 3;
+          // Skip missed pulses after a stall, retaining the original phase.
+          member.pulse = Math.ceil((now + 0.25 - member.phase) / member.period);
+          member.nextAt = member.phase + member.pulse * member.period;
         }
       }
       const events = [];
@@ -308,22 +315,18 @@
           .sort((a, b) => a.nextAt - b.nextAt || a.id.localeCompare(b.id))[0];
         if (!member) break;
         const at = member.nextAt;
+        // A harmonic rest skips a pulse; it never moves the following pulse.
+        member.nextAt = member.phase + (++member.pulse) * member.period;
         this.attacks = this.attacks.filter(e => e.at > at - 60);
-        if (this.attacks.length >= 15) {
-          member.nextAt = this.attacks[0].at + 60.1 + member.rng();
-          continue;
-        }
+        // Eight uninterrupted clocks naturally fit this bound. This protects
+        // against rapid stop/rejoin churn, without retiming any voice.
+        if (this.attacks.length >= MAX_ATTACKS) continue;
         const event = this.makeEvent(member, at);
         if (event) {
           events.push(event);
           this.events.push(event);
           this.attacks.push({ at, performer: member.id });
         }
-        const count = [...this.members.values()].filter(m => !m.ending).length || 1;
-        const target = member.basePeriod * Math.pow(count, 0.75);
-        member.period += (target - member.period) * 0.3;
-        const breath = event && member.step % 8 === 0 ? 1.35 : 1;
-        member.nextAt = at + member.period * (0.84 + member.rng() * 0.32) * breath;
       }
       this.events = this.events.filter(e => e.at >= now - SCORE_SECONDS);
       return { events, ended };
@@ -340,9 +343,10 @@
     const fail = () => { throw Error("This is not a supported Open Modular score."); };
     const number = (n, min, max) => typeof n === "number" && Number.isFinite(n) && n >= min && n <= max;
     const seed = n => number(n, 0, 4294967295) && Number.isInteger(n);
-    if (!input || input.format !== "open-modular" || ![1, VERSION].includes(input.version) ||
+    if (!input || input.format !== "open-modular" || ![1, 2, VERSION].includes(input.version) ||
         !seed(input.seed) || !Number.isInteger(input.tone) || !number(input.tone, 110, 200) ||
-        !Array.isArray(input.events) || !input.events.length || input.events.length > 512) fail();
+        !Array.isArray(input.events) || !input.events.length ||
+        input.events.length > (input.version >= 3 ? MAX_EVENTS : 512)) fail();
     let previous = -1;
     const attacks = [];
     const events = input.events.map((e, i) => {
@@ -351,7 +355,7 @@
           !Array.isArray(e.notes) || !e.notes.length || e.notes.length > 2) fail();
       previous = e.time;
       while (attacks.length && attacks[0] <= e.time - 60) attacks.shift();
-      if (attacks.length >= 15) fail();
+      if (attacks.length >= (input.version >= 3 ? MAX_ATTACKS : 15)) fail();
       attacks.push(e.time);
       const notes = e.notes.map((n, j) => {
         if (!n || n.kind !== (j === 0 ? "bell" : "bass") ||
@@ -360,7 +364,7 @@
             !number(n.tension, 0, 1) || !number(n.instability, 0, 1)) fail();
         const clean = { kind: n.kind, freq: n.freq, duration: n.duration, volume: n.volume,
           tension: n.tension, instability: n.instability };
-        if (input.version === 2) {
+        if (input.version >= 2) {
           const p = n.production;
           if (!p || !number(p.panStart, -0.6, 0.6) || !number(p.panEnd, -0.6, 0.6) ||
               !number(p.brightness, 0.18, 0.78) ||
@@ -374,7 +378,7 @@
     });
     return { format: "open-modular", version: input.version, seed: input.seed, tone: input.tone, events };
   }
-  const api = { VERSION, MAX_MEMBERS, SCORE_SECONDS, TAIL, clock, random,
+  const api = { VERSION, MAX_MEMBERS, SCORE_SECONDS, MAX_ATTACKS, MAX_EVENTS, TAIL, clock, random,
     voiceLeadingWeight, overlapWeight, Ensemble, validateScore };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.OpenModular = api;

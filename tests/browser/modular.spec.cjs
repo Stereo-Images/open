@@ -52,6 +52,8 @@ test('three real windows share tuning, keep their own lengths, and continue afte
   await page.locator('#modularLength').selectOption('short');
   await page.locator('#modularPlay').click();
   await expect(page.locator('#ensembleStatus')).toHaveText('1 voice · 121 Hz');
+  await expect(page.locator('#windowStatus')).toHaveText(/Solo · \d+\.\d BPM/);
+  const initialBpm = await page.evaluate(() => modularProbe.messages.filter(m => m.type === 'state').at(-1).members[0].bpm);
   const popup = page.waitForEvent('popup');
   await page.locator('#addWindow').click();
   const second = await popup;
@@ -69,6 +71,8 @@ test('three real windows share tuning, keep their own lengths, and continue afte
   }
   const state = await third.evaluate(() => modularProbe.messages.filter(m => m.type === 'state').at(-1));
   expect(state.members.map(m => m.length)).toEqual(['short', 'long', 'infinite']);
+  expect(state.members[0].bpm).toBe(initialBpm);
+  expect(new Set(state.members.map(m => m.bpm)).size).toBe(3);
   await page.close();
   await expect(third.locator('#ensembleStatus')).toHaveText('2 voices · 121 Hz');
   const count = await third.evaluate(() => modularProbe.starts.length);
@@ -76,6 +80,8 @@ test('three real windows share tuning, keep their own lengths, and continue afte
   await second.locator('#modularStop').click();
   await expect(third.locator('#ensembleStatus')).toHaveText('1 voice · 121 Hz');
   await expect(third.locator('#windowStatus')).toContainText('Solo');
+  const remaining = await third.evaluate(() => modularProbe.messages.filter(m => m.type === 'state').at(-1).members[0]);
+  expect(remaining.bpm).toBe(state.members[2].bpm);
   expect(await third.evaluate(() => modularProbe.errors)).toEqual([]);
 });
 
