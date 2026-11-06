@@ -2,7 +2,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
-const { Ensemble, validateScore, voiceLeadingWeight, overlapWeight, CHORDS,
+const { Ensemble, validateScore, melodicTarget, random, voiceLeadingWeight, overlapWeight, CHORDS,
   MIN_BPM, MAX_BPM, MAX_ATTACKS, MAX_EVENTS, TAIL } = require('../modular-core.js');
 
 function advance(ensemble, from, to, step = 0.2) {
@@ -40,13 +40,14 @@ test('independent voices keep steady, distinct pulses and different melodic cont
   assert.ok(events.some((e, i) => i && e.performer === events[i - 1].performer));
 });
 
-test('prominent ringing pitches stay compatible; decaying bells permit prepared resolutions', () => {
+test('prominent overlaps protect other voices while allowing own steps and spaced scale sevenths', () => {
   for (const tone of [110, 121, 200]) for (const seed of [1, 42, 54325756, 0xffffffff]) {
     const e = make(seed, tone);
     join(e, 'a', seed ^ 100); join(e, 'b', seed ^ 200); join(e, 'c', seed ^ 300);
     const { events } = advance(e, 0, 1800);
     assert.ok(events.length > 60, `too much silence: ${tone}/${seed}`);
     const sounding = [];
+    const previous = new Map();
     for (const event of events) {
       for (const note of event.notes) {
         assert.ok(note.freq >= (note.kind === 'bell' ? 110 : 87.31) && note.freq <= 415.3);
@@ -55,19 +56,23 @@ test('prominent ringing pitches stay compatible; decaying bells permit prepared 
           const interval = ((semi - old.semi) % 12 + 12) % 12;
           if ([1, 6, 11].includes(interval)) {
             const age = event.at - old.at;
-            const quiet = old.kind === 'bell' && age >= old.duration / 2;
-            const resolving = ['leading-tone', 'suspension', 'passing', 'neighbor', 'passing-resolution', 'neighbor-resolution'].includes(event.motion) &&
-              old.kind === 'bell' && old.performer === event.performer &&
+            const quiet = age >= old.duration * (old.kind === 'bell' ? 0.5 : 1);
+            const ownStep = note.kind === 'bell' && old.kind === 'bell' && old.performer === event.performer &&
+              old.semi === previous.get(event.performer) &&
               age >= Math.min(4, old.duration / 4) && Math.abs(semi - old.semi) <= 2;
             const chord = CHORDS.find(c => c.name === event.harmony).tones.map(n => (n + event.key) % 12);
             const chordColor = chord.length === 4 && chord.includes((semi % 12 + 12) % 12) &&
               chord.includes((old.semi % 12 + 12) % 12) && (interval === 6 || Math.abs(semi - old.semi) >= 11);
-            assert.ok(quiet || resolving || chordColor, `unprepared prominent clash ${tone}/${seed} at ${event.at}`);
+            const scale = [...new Set([...chord, ...[0, 2, 4, 5, 7, 9, 11].map(n => (n + event.key) % 12)])];
+            const spacedSeventh = interval !== 6 && Math.abs(semi - old.semi) >= 11 &&
+              scale.includes((semi % 12 + 12) % 12) && scale.includes((old.semi % 12 + 12) % 12);
+            assert.ok(quiet || ownStep || chordColor || spacedSeventh, `unprepared prominent clash ${tone}/${seed} at ${event.at}`);
           }
         }
         sounding.push({ semi, until: event.at + note.duration + TAIL, at: event.at,
           duration: note.duration, kind: note.kind, performer: event.performer });
       }
+      previous.set(event.performer, Math.round(12 * Math.log2(event.notes[0].freq / tone)));
       assert.ok(events.filter(n => n.at > event.at - 60 && n.at <= event.at).length <= MAX_ATTACKS);
     }
   }
@@ -89,7 +94,7 @@ test('a prepared F over C resolves to E on its own next entry, even after its en
   m.lastSemi = 5; m.lastKey = 0; m.lastChord = [5, 9, 0]; m.lastHarmony = 0;
   m.deadline = 8;
   e.chord = 1; e.nextHarmony = 8; e.rng = () => 0; // IV -> I
-  e.pendingHarmony = { chord: 0, key: 0, progression: [1, 0], step: 1 };
+  e.pendingHarmony = { chord: 0, key: 0 };
   e.sounding = [{ semi: 5, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
   const event = e.makeEvent(m, 8);
   assert.equal(event.motion, 'suspension');
@@ -229,12 +234,12 @@ test('passing and neighbor departures resolve by step on the next own entry, bef
   ]) {
     const e = make(); join(e, 'a', 81);
     e.chord = 0;
-    e.bassHarmony = e.harmonySerial; // This phrase's bass has already entered.
+    e.nextBass = Infinity;
     const m = e.members.get('a');
     Object.assign(m, { lastSemi: 12, lastKey: 0, lastChord: [0, 4, 7], lastHarmony: 0, step: 2, deadline: 15 });
     e.nextHarmony = Infinity;
-    // Direction, contour size, ornament probability, then the ornament choice.
-    const draws = [0.5, 0.5, 0, choice];
+    // Melodic proposals have their own stream; force a deliberate excursion.
+    const draws = [0, choice];
     m.rng = () => draws.length ? draws.shift() : 0.5;
     e.sounding = [{ semi: 12, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
     const first = e.makeEvent(m, 8);
@@ -352,27 +357,32 @@ test('major sevenths and dominant tritones are intentional colors, with no adjac
 
 test('a major seventh may remain a chord tone; an applied dominant leading tone resolves into minor', () => {
   const e = make(); join(e, 'a', 81); const m = e.members.get('a');
-  e.chord = CHORDS.findIndex(c => c.name === 'Imaj7'); e.bassHarmony = e.harmonySerial;
+  e.chord = CHORDS.findIndex(c => c.name === 'Imaj7'); e.nextBass = Infinity;
   Object.assign(m, { lastSemi: 11, lastKey: 0, lastChord: [7, 11, 2, 5], rng: () => 0.5 });
   assert.notEqual(e.makeEvent(m, 3).motion, 'leading-tone');
   e.chord = CHORDS.findIndex(c => c.name === 'vi'); e.sounding = [];
+  e.harmonySerial++;
   Object.assign(m, { lastSemi: 8, lastChord: [4, 8, 11, 2] });
   const resolution = e.makeEvent(m, 20);
   assert.equal(resolution.motion, 'leading-tone');
   assert.equal(Math.round(12 * Math.log2(resolution.notes[0].freq / e.tone)), 9);
 });
 
-test('minor-centered arcs progress in order and produce major sevenths and real bass inversions', () => {
+test('harmonic colors vary with the melodies, retaining seventh colors and sparse bass inversions', () => {
+  const paths = [], colors = new Set(), inversions = new Set();
+  let sevenths = 0, bassCount = 0, changeCount = 0;
   for (const tone of [110, 121, 200]) {
     const e = make(42, tone);
-    const path = [...e.progression].map(i => CHORDS[i].name);
     for (let i = 0; i < 3; i++) join(e, `w${i}`, 81 + i * 136);
-    const events = advance(e, 0, 900).events;
+    const events = advance(e, 0, 1800).events;
     const changes = events.filter((n, i) => !i || n.harmony !== events[i - 1].harmony || n.key !== events[i - 1].key);
-    assert.deepEqual(changes.slice(0, path.length).map(e => e.harmony), path);
-    assert.ok(events.filter(n => /^(vi|ii|iii)(7)?$/.test(n.harmony)).length > events.length * 0.4);
+    paths.push(changes.map(e => `${e.harmony}/${e.key}`).join(','));
+    changes.forEach(e => colors.add(e.harmony));
+    changeCount += changes.length;
+    assert.ok(changes.length < 18, 'harmony should have time to linger');
     const basses = events.filter(n => n.notes[1]);
-    assert.ok(new Set(basses.map(n => n.inversion)).size >= 3);
+    bassCount += basses.length;
+    basses.forEach(e => inversions.add(e.inversion));
     for (const event of basses) {
       const chord = CHORDS.find(c => c.name === event.harmony).tones.map(n => (n + event.key) % 12);
       const bassSemi = Math.round(12 * Math.log2(event.notes[1].freq / tone));
@@ -382,25 +392,89 @@ test('minor-centered arcs progress in order and produce major sevenths and real 
         assert.ok(later.notes[0].freq >= event.notes[1].freq);
     }
     const majorSevenths = events.filter(n => n.harmony.endsWith('maj7'));
-    assert.ok(majorSevenths.some(n => {
+    sevenths += majorSevenths.filter(n => {
       const chord = CHORDS.find(c => c.name === n.harmony).tones.map(v => (v + n.key) % 12);
       const semi = Math.round(12 * Math.log2(n.notes[0].freq / tone));
       return ((semi % 12) + 12) % 12 === chord[3];
-    }), 'the seventh must actually sound, not only appear in a chord label');
+    }).length;
+  }
+  assert.equal(new Set(paths).size, 3, 'same ensemble seed need not prescribe the same path through different melodies');
+  assert.ok(colors.size >= 5);
+  assert.ok([...colors].some(c => /^(vi|ii|iii)(7)?$/.test(c)));
+  assert.ok(sevenths > 0, 'sevenths remain audible colors');
+  assert.ok(inversions.size >= 2);
+  assert.ok(bassCount > 0 && bassCount < 36, 'bass stays occasional');
+  assert.ok(changeCount > 5);
+});
+
+test('a blocked new color waits for the decay; holding the current color is also valid', () => {
+  const e = make(); e.nextHarmony = 0;
+  e.chord = 1;
+  e.pendingHarmony = { chord: 0, key: 0 };
+  e.sounding = Array.from({ length: 37 }, (_, i) => ({ semi: i - 12, at: 0, duration: 28, until: 38, kind: 'bell', performer: 'old' }));
+  e.harmony(1);
+  assert.equal(e.chord, 1);
+  assert.equal(e.pendingHarmony.chord, 0);
+  e.sounding = []; e.harmony(10);
+  assert.equal(e.chord, 0);
+  assert.equal(e.pendingHarmony, null);
+  const serial = e.harmonySerial;
+  e.pendingHarmony = { chord: 0, key: 0 }; e.nextHarmony = 11;
+  e.harmony(12);
+  assert.equal(e.harmonySerial, serial);
+  assert.equal(e.pendingHarmony, null);
+  assert.ok(e.nextHarmony >= 102);
+});
+
+test('ordinary melodies explore the full scale with mostly stepwise motion, without compulsory resolutions', () => {
+  for (const tone of [110, 121, 200]) {
+    const e = make(42, tone); e.chord = 0; e.nextHarmony = e.nextBass = Infinity;
+    join(e, 'a', 81); join(e, 'b', 217);
+    const events = advance(e, 0, 900).events;
+    const normal = events.filter(n => n.motion === 'free');
+    const nonChord = normal.filter(n => ![0, 4, 7].includes((Math.round(12 * Math.log2(n.notes[0].freq / tone)) % 12 + 12) % 12));
+    assert.ok(nonChord.length > events.length * 0.25, 'non-chord scale tones should be ordinary melody notes');
+    const motions = ['a', 'b'].flatMap(id => {
+      const notes = events.filter(n => n.performer === id).map(n => n.notes[0].freq);
+      return notes.slice(1).map((freq, i) => Math.abs(12 * Math.log2(freq / notes[i])));
+    });
+    assert.ok(motions.filter(n => n > 0.01 && n < 2.01).length > motions.length * 0.6);
+    assert.ok(events.every(n => n.notes[0].freq >= 110 && n.notes[0].freq <= 415.30));
   }
 });
 
-test('a blocked harmonic change retains its place in the progression until the decay permits it', () => {
-  const e = make(); e.nextHarmony = 0;
-  const expected = e.progression[1];
-  e.sounding = Array.from({ length: 37 }, (_, i) => ({ semi: i - 12, at: 0, duration: 28, until: 38, kind: 'bell', performer: 'old' }));
-  e.harmony(1);
-  assert.equal(e.progressionStep, 0);
-  assert.equal(e.pendingHarmony.chord, expected);
-  e.sounding = []; e.harmony(10);
-  assert.equal(e.chord, expected);
-  assert.equal(e.progressionStep, 1);
-  assert.equal(e.pendingHarmony, null);
+test('melodic proposals use their own randomness and turn away from register edges', () => {
+  for (const lastSemi of [0, 20]) {
+    const a = { step: 2, lastSemi, melodyRng: random(8) };
+    const b = { ...a, melodyRng: random(8), rng: () => 0.99, peerPitches: new Map([['peer', 5]]) };
+    const notes = Array.from({ length: 100 }, () => melodicTarget(a, 121, 0, 220));
+    assert.deepEqual(notes, Array.from({ length: 100 }, () => melodicTarget(b, 121, 0, 220)));
+    const inward = notes.filter(n => lastSemi === 0 ? n > lastSemi : n < lastSemi);
+    assert.ok(inward.length > 70);
+  }
+});
+
+test('selective overlap ignores faded tails and permits own steps, without exposing another voice to a close clash', () => {
+  const m = { id: 'a', lastSemi: 4 };
+  const old = { semi: 4, kind: 'bell', performer: 'b', at: 0, duration: 20 };
+  assert.equal(overlapWeight(5, [old], 3, m, null, [0, 4, 7]), 0);
+  assert.equal(overlapWeight(5, [old], 10, m, null, [0, 4, 7]), 1);
+  assert.ok(overlapWeight(5, [{ ...old, performer: 'a' }], 5, m, null, [0, 4, 7]) > 0);
+  const scale = [0, 2, 4, 5, 7, 9, 11];
+  assert.ok(overlapWeight(11, [{ ...old, semi: 0 }], 1, m, null, [0, 4, 7], scale) > 0);
+  assert.equal(overlapWeight(12, [{ ...old, semi: 11 }], 1, m, null, [0, 4, 7], scale), 0);
+});
+
+test('a viable scale-step proposal is preserved even if a peer suggests different voice leading', () => {
+  const e = make(); e.chord = 0; e.nextHarmony = e.nextBass = Infinity;
+  join(e, 'a', 81); join(e, 'b', 217);
+  const m = e.members.get('a');
+  Object.assign(m, { step: 2, lastSemi: 4, lastKey: 0, lastHarmony: 0, lastChord: [0, 4, 7],
+    melodyProposal: { semi: 5, key: 0 }, rng: () => 0.99 });
+  const event = e.makeEvent(m, 10);
+  assert.equal(Math.round(12 * Math.log2(event.notes[0].freq / e.tone)), 5);
+  assert.equal(m.resolution, null);
+  assert.equal(event.motion, 'free');
 });
 
 test('an inversion cannot put the bass above a promised melodic resolution', () => {
