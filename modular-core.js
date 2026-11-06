@@ -10,6 +10,9 @@
   const MAX_BPM = 20;
   const MAX_ATTACKS = MAX_MEMBERS * MAX_BPM;
   const MAX_EVENTS = 5120;
+  const ALIGNMENT_WINDOW = 0.12;
+  const ALIGNMENT_RELEASE = 0.24;
+  const ALIGNMENT_COOLDOWN = 20;
   const TAIL = 10.465;
   const SCALE = [0, 2, 4, 5, 7, 9, 11];
   const CHORDS = [
@@ -48,8 +51,8 @@
       if (Math.abs(scaleSemi(i, key) - semi) < Math.abs(scaleSemi(best, key) - semi)) best = i;
     return best;
   }
-  // Like solo Open: mostly a one-degree walk with gravity at the range edges,
-  // and an independent 16-note phrase that may close, turn aside, or stay open.
+  // At a meeting, choose the next pitch using solo Open's one-degree walk
+  // and register gravity. Phrases count pitch decisions, not repeated strikes.
   // This stream never reads another voice's contour or changes a pulse time.
   function melodicTarget(member, tone, key, center) {
     const rng = member.melodyRng, phraseStep = member.step % 16;
@@ -88,25 +91,12 @@
     // are valid chord tones rather than blanket forbidden intervals.
     return ([1, 11].includes(pc(distance)) && distance >= 11) || pc(distance) === 6;
   }
-  function compatible(semi, sounding, chord = []) {
-    return sounding.every(n => ![1, 6, 11].includes(pc(semi - n.semi)) || chordDissonanceAllowed(semi, n.semi, chord));
+  function scaleSeventhAllowed(a, b, scale) {
+    return [1, 11].includes(pc(a - b)) && Math.abs(a - b) >= 11 && scale.includes(pc(a)) && scale.includes(pc(b));
   }
-
-  // One diatonic step away from a chord tone, with a destination already chosen.
-  function ornamentsFrom(anchor, chord, scale, tone) {
-    if (anchor === null || !chord.includes(pc(anchor))) return [];
-    const inRange = semi => tone * Math.pow(2, semi / 12) >= 110 && tone * Math.pow(2, semi / 12) <= 415.30;
-    const step = (semi, direction) => [1, 2].map(n => semi + direction * n).find(n => scale.includes(pc(n)));
-    const options = [];
-    for (const direction of [-1, 1]) {
-      const semi = step(anchor, direction);
-      if (semi === undefined || !inRange(semi) || chord.includes(pc(semi))) continue;
-      options.push({ type: "neighbor", semi, target: anchor });
-      const target = step(semi, direction);
-      if (target !== undefined && inRange(target) && chord.includes(pc(target)))
-        options.push({ type: "passing", semi, target });
-    }
-    return options;
+  function compatible(semi, sounding, chord = [], scale = []) {
+    return sounding.every(n => ![1, 6, 11].includes(pc(semi - n.semi)) ||
+      chordDissonanceAllowed(semi, n.semi, chord) || scaleSeventhAllowed(semi, n.semi, scale));
   }
 
   // These are preferences from tonal voice leading, not strict SATB rules.
@@ -137,8 +127,7 @@
       if (!prominent(old, at)) continue;
       const interval = pc(semi - old.semi);
       if (![1, 6, 11].includes(interval)) continue;
-      const spacedSeventh = [1, 11].includes(interval) && Math.abs(semi - old.semi) >= 11 &&
-        scale.includes(pc(semi)) && scale.includes(pc(old.semi));
+      const spacedSeventh = scaleSeventhAllowed(semi, old.semi, scale);
       if (chordDissonanceAllowed(semi, old.semi, chord) || spacedSeventh) { weight *= 0.85; continue; }
       const age = at - old.at;
       // A voice may walk by step through its own decay. Other voices still
@@ -164,14 +153,13 @@
       this.sounding = [];
       this.attacks = [];
       this.sequence = 0;
-      this.pendingHarmony = null;
       this.chord = this.rng() < 0.5 ? 0 : 3;
       this.key = 0;
-      this.harmonyChanges = 0;
       this.harmonySerial = 0;
-      this.nextHarmony = now + 90 + this.rng() * 90;
+      this.contacts = new Map();
+      this.nextAlignmentChange = now;
+      this.lastAlignment = null;
       this.lastBassSemi = null;
-      this.nextBass = now + 30 + this.bassRng() * 45;
       this.inversion = null;
     }
     join(id, { seed, length, now }) {
@@ -187,15 +175,16 @@
       const phase = now + 2.5 + timingRng() * 3;
       this.members.set(id, {
         id, seed: seed >>> 0, length, rng, period, phase, pulse: 0,
-        melodyRng: random((seed ^ 0x4D454C) >>> 0), melodyProposal: null, cadence: null,
+        melodyRng: random((seed ^ 0x4D454C) >>> 0), cadence: null,
         mixRng: random((seed ^ 0xC01A0B0) >>> 0), panCenter: null, brightness: null,
         nextAt: phase, deadline: now + duration,
         step: 0, lastSemi: null, lastKey: null, lastChord: [],
-        lastHarmony: -1, peerPitches: new Map(), resolution: null, ornamentAfter: 0, ending: false, endAt: Infinity
+        lastHarmony: -1, peerPitches: new Map(), ending: false, endAt: Infinity
       });
     }
     leave(id, now) {
       this.members.delete(id);
+      for (const [pair, ids] of this.contacts) if (ids.includes(id)) this.contacts.delete(pair);
       // A stopped/closed window cannot play its already dispatched future note.
       this.events = this.events.filter(e => e.performer !== id || e.at <= now);
       this.sounding = this.sounding.filter(n => n.performer !== id || n.at <= now);
@@ -212,77 +201,114 @@
     state() {
       const roles = this.roles();
       return { tone: this.tone, seed: this.seed, harmony: CHORDS[this.chord].name, inversion: this.inversion,
+        alignmentCount: this.harmonySerial,
         members: [...this.members.values()].map(m => ({ id: m.id, length: m.length,
-          role: m.ending ? "Finishing" : roles.get(m.id).name, bpm: 60 / m.period, ending: m.ending })) };
+          role: m.ending ? "Finishing" : roles.get(m.id).name, bpm: 60 / m.period,
+          frequency: m.lastSemi === null ? null : this.tone * Math.pow(2, m.lastSemi / 12), ending: m.ending })) };
     }
-    harmony(at) {
-      if (at < this.nextHarmony) return;
-      if ([...this.members.values()].some(m => !m.ending && m.resolution)) {
-        this.nextHarmony = at + 10;
-        return;
-      }
-      if (!this.pendingHarmony) {
-        const key = this.harmonyChanges >= 2 && this.rng() < 0.12
-          ? pc(this.key + (this.rng() < 0.5 ? 7 : -7)) : this.key;
-        const current = CHORDS[this.chord].tones.map(n => pc(n + this.key));
-        const recent = this.events.filter(e => at - e.at < 45).map(e => pc(Math.round(12 * Math.log2(e.notes[0].freq / this.tone))));
-        // No harmonic itinerary: favor common tones and what the melodies have
-        // actually played. Holding the current color is a valid outcome.
-        const options = CHORDS.map((c, chord) => {
-          const tones = c.tones.map(n => pc(n + key));
-          const shared = current.filter(n => tones.includes(n)).length;
-          const fit = recent.length ? recent.filter(n => tones.includes(n)).length / recent.length : 0;
-          const color = c.name.startsWith("V") ? 0.15 : c.tones.length === 4 ? 0.5 : 1;
-          return { value: { chord, key }, weight: color * (1 + shared) * (1 + fit) *
-            (chord === this.chord && key === this.key ? 2.5 : 1) };
-        });
-        this.pendingHarmony = choose(options, this.rng);
-      }
-      const { chord, key } = this.pendingHarmony;
-      if (chord === this.chord && key === this.key) {
-        this.pendingHarmony = null;
-        this.nextHarmony = at + 90 + this.rng() * 120;
-        return;
-      }
-      const nextChord = CHORDS[chord].tones.map(t => pc(t + key));
-      // A change enters through tones compatible with the remaining decays.
-      const available = new Set();
+    pitchPalette(chord = this.chord, key = this.key) {
+      const tones = CHORDS[chord].tones.map(n => pc(n + key));
+      return { chord: tones, scale: [...new Set([...SCALE.map(n => pc(n + key)), ...tones])] };
+    }
+    choosePitch(member, at, chord, key, held) {
+      const { scale } = this.pitchPalette(chord, key);
+      const tones = CHORDS[chord].tones.map(n => pc(n + key));
+      const roles = this.roles(), role = roles.get(member.id);
+      const target = melodicTarget(member, this.tone, key, role.center);
+      const others = [...held].filter(([id, semi]) => id !== member.id && semi !== null)
+        .map(([, semi]) => ({ semi }));
+      const bass = this.sounding.find(n => n.kind === "bass" && n.until > at);
+      const peers = [...this.members.values()].filter(m => m.id !== member.id && !m.ending &&
+        this.sounding.some(n => n.performer === m.id && n.kind === "bell" && prominent(n, at)));
+      const options = [];
       for (let semi = -12; semi <= 24; semi++) {
         const freq = this.tone * Math.pow(2, semi / 12);
-        if (freq >= 110 && freq <= 415.30 && nextChord.includes(pc(semi)) &&
-            overlapWeight(semi, this.sounding, at, { id: null }, null, nextChord)) available.add(pc(semi));
+        if (freq < 110 || freq > 415.30 || (bass && semi < bass.semi) ||
+            !scale.includes(pc(semi)) || !compatible(semi, others, tones, scale)) continue;
+        const overlap = overlapWeight(semi, this.sounding, at, member, null, tones, scale);
+        if (!overlap) continue;
+        const register = Math.abs(12 * Math.log2(freq / role.center));
+        let weight = Math.exp(-Math.abs(semi - target) / 1.25) * Math.exp(-register / 18) * overlap;
+        weight *= voiceLeadingWeight(member, semi, peers, tones, member.lastHarmony !== this.harmonySerial);
+        if (tones.includes(pc(semi))) weight *= member.step % 16 >= 13 ? 1.5 : 1.1;
+        if (semi === member.lastSemi) weight *= 0.7;
+        options.push({ value: semi, weight });
       }
-      if (available.size >= 2) {
-        // A prepared bell can carry across a change, then resolve down by step
-        // on that voice's own next entry (a suspension without metrical accents).
-        const prepared = this.rng() < 0.25 && [...this.members.values()].find(m => !m.ending && m.lastSemi !== null &&
-          m.lastChord.includes(pc(m.lastSemi)) && !nextChord.includes(pc(m.lastSemi)) &&
-          this.sounding.some(n => n.kind === "bell" && n.performer === m.id && n.semi === m.lastSemi && prominent(n, at)) &&
-          [1, 2].some(step => nextChord.includes(pc(m.lastSemi - step))));
-        if (prepared) {
-          const step = [1, 2].find(n => nextChord.includes(pc(prepared.lastSemi - n)));
-          const target = prepared.lastSemi - step;
-          if (this.tone * Math.pow(2, target / 12) >= 110)
-            prepared.resolution = { type: "suspension", target };
+      if (!options.length) return null;
+      return options.some(o => o.value === target) ? target : choose(options, member.rng);
+    }
+    releaseContacts(entries) {
+      for (const [pair, ids] of this.contacts) {
+        const members = ids.map(id => this.members.get(id));
+        if (members.some(m => !m || m.ending)) { this.contacts.delete(pair); continue; }
+        for (const entry of entries) {
+          const index = ids.indexOf(entry.member.id);
+          if (index < 0) continue;
+          const peer = members[1 - index];
+          const nearest = peer.phase + Math.round((entry.at - peer.phase) / peer.period) * peer.period;
+          if (Math.abs(entry.at - nearest) > ALIGNMENT_RELEASE + 1e-7) this.contacts.delete(pair);
         }
-        this.chord = chord;
-        this.key = key;
-        this.pendingHarmony = null;
-        this.inversion = null;
-        this.harmonyChanges++;
-        this.harmonySerial++;
-        this.nextHarmony = at + 90 + this.rng() * 120;
-      } else {
-        // Retry this possible color after the prominent old harmony fades.
-        this.nextHarmony = at + 8;
       }
     }
-    chooseBass(chord, reserved, at = 0) {
+    synchronize(entries) {
+      // Only actual, accepted strikes qualify. Clock projections and skipped
+      // pulses cannot change harmony. New voices first establish their note.
+      const voices = entries.filter(e => e.member.lastSemi !== null);
+      if (voices.length !== entries.length || voices.length < 2 ||
+          voices.at(-1).at - voices[0].at > ALIGNMENT_WINDOW + 1e-7) return null;
+      let fresh = false;
+      for (let i = 0; i < voices.length; i++) for (let j = i + 1; j < voices.length; j++) {
+        const ids = [voices[i].member.id, voices[j].member.id].sort(), pair = ids.join("|");
+        if (!this.contacts.has(pair)) fresh = true;
+        this.contacts.set(pair, ids);
+      }
+      const at = voices[0].at;
+      if (!fresh || at < this.nextAlignmentChange) return null;
+      this.sounding = this.sounding.filter(n => n.until > at);
+      const participants = new Set(voices.map(e => e.member.id));
+      const held = new Map([...this.members.values()].filter(m => !m.ending).map(m => [m.id, m.lastSemi]));
+      const current = this.pitchPalette().chord;
+      const fixed = [...held].filter(([id, semi]) => !participants.has(id) && semi !== null).map(([, semi]) => semi);
+      const recent = this.events.filter(e => at - e.at < 45).map(e => pc(Math.round(12 * Math.log2(e.notes[0].freq / this.tone))));
+      const keys = this.harmonySerial >= 2 && this.rng() < 0.12
+        ? [this.key, pc(this.key + (this.rng() < 0.5 ? 7 : -7))] : [this.key];
+      const options = keys.flatMap(key => CHORDS.map((c, chord) => {
+        const palette = this.pitchPalette(chord, key);
+        if (fixed.some(semi => !palette.scale.includes(pc(semi)))) return null;
+        const shared = current.filter(n => palette.chord.includes(n)).length;
+        const fit = recent.length ? recent.filter(n => palette.chord.includes(n)).length / recent.length : 0;
+        const color = c.name.startsWith("V") ? 0.15 : c.tones.length === 4 ? 0.5 : 1;
+        return { value: { chord, key }, weight: color * (1 + shared) * (1 + fit) *
+          (chord === this.chord && key === this.key ? 2.5 : 1) };
+      }).filter(Boolean));
+      const next = choose(options, this.rng), pitches = new Map();
+      for (const { member, at: strikeAt } of voices) {
+        const semi = this.choosePitch(member, strikeAt, next.chord, next.key, held);
+        if (semi === null) return null; // Keep the old voicing; wait for a fresh meeting.
+        pitches.set(member.id, semi);
+        held.set(member.id, semi);
+      }
+      const palette = this.pitchPalette(next.chord, next.key);
+      const notes = [...held.values()].filter(n => n !== null).map(semi => ({ semi }));
+      if (!notes.every(n => compatible(n.semi, notes, palette.chord, palette.scale))) return null;
+      if (next.chord === this.chord && next.key === this.key &&
+          voices.every(e => pitches.get(e.member.id) === e.member.lastSemi)) return null;
+      this.chord = next.chord;
+      this.key = next.key;
+      this.inversion = null;
+      this.nextAlignmentChange = at + ALIGNMENT_COOLDOWN;
+      const bass = !this.sounding.some(n => n.kind === "bass") && this.bassRng() < 0.4
+        ? this.chooseBass(palette.chord, notes, at) : null;
+      const alignment = { id: ++this.harmonySerial, at, performers: [...participants], pitches, bass };
+      this.lastAlignment = { id: alignment.id, at, performers: alignment.performers };
+      return alignment;
+    }
+    chooseBass(chord, held, at = 0) {
       const options = [];
       for (let semi = -18; semi <= 12; semi++) {
         const freq = this.tone * Math.pow(2, semi / 12), inversion = chord.indexOf(pc(semi));
-        if (freq < 87.31 || freq > 174.62 || inversion < 0 || reserved.some(n => n.semi < semi) ||
-            !compatible(semi, [...this.sounding.filter(n => prominent(n, at)), ...reserved], chord)) continue;
+        if (freq < 87.31 || freq > 174.62 || inversion < 0 || held.some(n => n.semi < semi) ||
+            !compatible(semi, [...this.sounding.filter(n => prominent(n, at)), ...held], chord)) continue;
         const movement = this.lastBassSemi === null ? 0 : Math.abs(semi - this.lastBassSemi);
         options.push({ value: semi, weight: [1, 0.85, 0.65, 0.35][inversion] * Math.exp(-movement / 4) });
       }
@@ -311,106 +337,53 @@
         volume: 0.4 / Math.sqrt(Math.max(count, audible.size)) * (1 - 0.12 * brightness) *
           Math.min(1, Math.sqrt(member.period / 7.5)) };
     }
-    makeEvent(member, at) {
+    makeEvent(member, at, alignment = null) {
       this.sounding = this.sounding.filter(n => n.until > at);
-      this.harmony(at);
-      const roles = this.roles();
-      const count = roles.size;
-      const role = roles.get(member.id);
-      const chord = CHORDS[this.chord].tones.map(n => pc(n + this.key));
-      const scale = [...new Set([...SCALE.map(n => pc(n + this.key)), ...chord])];
-      let resolution = member.resolution;
-      if (!resolution && member.lastSemi !== null && member.lastKey === this.key &&
-          member.lastHarmony !== this.harmonySerial && member.lastChord.includes(pc(member.lastSemi)) &&
-          !chord.includes(pc(member.lastSemi)) && pc(member.lastSemi + 1) === chord[0] &&
-          this.tone * Math.pow(2, (member.lastSemi + 1) / 12) <= 415.30)
-        resolution = { type: "leading-tone", target: member.lastSemi + 1 };
-      member.resolution = resolution;
-      // Later entries must leave room for an already promised resolution.
-      const reserved = [...this.members.values()].filter(m => m.id !== member.id && m.resolution)
-        .map(m => ({ semi: m.resolution.target }));
-      const wantsEnd = at >= member.deadline && !resolution;
-      if (!resolution && !wantsEnd && member.melodyProposal?.key !== this.key)
-        member.melodyProposal = { key: this.key, semi: melodicTarget(member, this.tone, this.key, role.center) };
-      const target = resolution?.target ?? member.melodyProposal?.semi ?? member.lastSemi;
-      const activeBass = this.sounding.find(n => n.kind === "bass");
-      let newBass = null;
-      if (!activeBass && at >= this.nextBass && !resolution && !wantsEnd) {
-        this.nextBass = at + 60 + this.bassRng() * 90;
-        // An occasional underpinning, not an announcement of every chord.
-        // It must accommodate the melody's intended next note, too.
-        if (this.bassRng() < 0.4)
-          newBass = this.chooseBass(chord, [...reserved, ...(target === null ? [] : [{ semi: target }])], at);
+      const roles = this.roles(), role = roles.get(member.id);
+      const { chord } = this.pitchPalette();
+      const previous = member.lastSemi;
+      let semi = alignment?.pitches.get(member.id) ?? previous;
+      if (semi === null) {
+        const held = new Map([...this.members.values()].filter(m => !m.ending).map(m => [m.id, m.lastSemi]));
+        if (alignment) for (const [id, pitch] of alignment.pitches) held.set(id, pitch);
+        semi = this.choosePitch(member, at, this.chord, this.key, held);
       }
-      const bassSemi = activeBass?.semi ?? newBass;
-      const phraseEnd = member.step % 16 >= 13;
-      const audiblePeers = [...this.members.values()].filter(m => m.id !== member.id &&
-        this.sounding.some(n => n.performer === m.id && n.kind === "bell" && prominent(n, at)));
-      let candidates = [];
-      for (let semi = -12; semi <= 24; semi++) {
-        const freq = this.tone * Math.pow(2, semi / 12);
-        if (freq < 110 || freq > 415.30 || (bassSemi !== null && semi < bassSemi) ||
-            !scale.includes(pc(semi)) || !compatible(semi, reserved, chord)) continue;
-        if (newBass !== null && !compatible(semi, [{ semi: newBass }], chord)) continue;
-        const overlap = overlapWeight(semi, this.sounding, at, member, resolution, chord, scale);
-        if (!overlap) continue;
-        if (resolution && semi !== resolution.target) continue;
-        if (wantsEnd && ![chord[0], chord[2]].includes(pc(semi))) continue;
-        const distance = target === null ? 0 : Math.abs(semi - target);
-        const register = Math.abs(12 * Math.log2(freq / role.center));
-        const isChord = chord.includes(pc(semi));
-        let weight = Math.exp(-distance / 1.25) * Math.exp(-register / (count === 1 ? 28 : 18));
-        weight *= overlap * voiceLeadingWeight(member, semi, audiblePeers, chord, member.lastHarmony !== this.harmonySerial);
-        if (isChord) weight *= phraseEnd || wantsEnd ? 1.5 : 1.1;
-        if (semi === member.lastSemi) weight *= 0.7;
-        candidates.push({ value: { semi, freq }, weight });
-      }
-      if (!resolution && !wantsEnd && member.lastHarmony === this.harmonySerial &&
-          member.step >= member.ornamentAfter && ![...this.members.values()].some(m => m.resolution) && member.rng() < 0.12) {
-        const ornaments = ornamentsFrom(member.lastSemi, chord, scale, this.tone).filter(o =>
-          (bassSemi === null || (o.semi >= bassSemi && o.target >= bassSemi)) && compatible(o.semi, reserved, chord) &&
-          (newBass === null || compatible(newBass, [{ semi: o.semi }, { semi: o.target }], chord)) &&
-          overlapWeight(o.semi, this.sounding, at, member, o, chord, scale));
-        if (ornaments.length) candidates = ornaments.map(ornament => ({ weight: 1, value: {
-          semi: ornament.semi, freq: this.tone * Math.pow(2, ornament.semi / 12), ornament
-        } }));
-      }
-      if (!candidates.length) return null; // Retain the proposal and the original pulse grid.
-      // Let a viable melodic proposal through unchanged. Voice-leading weights
-      // choose a nearby alternative only when the actual overlap requires one.
-      const preferred = candidates.find(c => c.value.semi === target && !c.value.ornament);
-      const { semi, freq, ornament } = preferred?.value || choose(candidates, member.rng);
-      const tension = chord.includes(pc(semi)) ? (pc(semi) === chord[3] ? 0.24 : 0.12) : ornament ? 0.45 : 0.25;
+      if (semi === null) return null;
+      const wantsEnd = at >= member.deadline;
       const duration = wantsEnd ? 25 : Math.min(18 + member.rng() * 10, Math.max(9, member.period * 2.5));
-      const mix = this.production(member, at, role, count);
-      const notes = [{ kind: "bell", freq, duration,
-        ...mix, tension, instability: 0.12 }];
-      // Sparse bass colors may use inversions, with no required harmonic route.
-      if (newBass !== null) {
-        notes.push({ kind: "bass", freq: this.tone * Math.pow(2, newBass / 12),
+      const notes = [{ kind: "bell", freq: this.tone * Math.pow(2, semi / 12), duration,
+        ...this.production(member, at, role, roles.size),
+        tension: chord.includes(pc(semi)) ? (pc(semi) === chord[3] ? 0.24 : 0.12) : 0.25, instability: 0.12 }];
+      // Bass may enter/change only at the same meeting as the bell pitches.
+      if (alignment && alignment.bass !== null && alignment.performers[0] === member.id) {
+        const bass = alignment.bass;
+        notes.push({ kind: "bass", freq: this.tone * Math.pow(2, bass / 12),
           duration: 28, volume: 0.09, tension: 0, instability: 0,
           production: { panStart: 0, panEnd: 0, brightness: 0.2 } });
-        this.lastBassSemi = newBass;
-        this.inversion = chord.indexOf(pc(newBass));
+        this.lastBassSemi = bass;
+        this.inversion = chord.indexOf(pc(bass));
       }
       const event = { id: ++this.sequence, at, performer: member.id,
         seed: Math.floor(member.rng() * 4294967296), notes, ending: wantsEnd,
         harmony: CHORDS[this.chord].name, key: this.key, inversion: this.inversion,
-        motion: ornament?.type || resolution?.type || (semi === member.lastSemi ? "common-tone" : "free") };
+        motion: previous === null ? "enter" : semi === previous ? "hold" : "alignment" };
+      if (alignment?.pitches.has(member.id)) event.alignment = {
+        id: alignment.id, at: alignment.at, performers: alignment.performers
+      };
       for (const note of notes) this.sounding.push({
         semi: Math.round(12 * Math.log2(note.freq / this.tone)), kind: note.kind,
         performer: member.id, at, duration: note.duration, until: at + note.duration + TAIL,
         brightness: note.production.brightness
       });
-      member.melodyProposal = null;
       member.lastSemi = semi;
-      member.lastKey = this.key;
-      member.lastChord = chord;
-      member.lastHarmony = this.harmonySerial;
-      member.peerPitches = new Map([...this.members.values()].map(m => [m.id, m.lastSemi]));
-      member.resolution = ornament ? { type: `${ornament.type}-resolution`, target: ornament.target } : null;
-      if (ornament) member.ornamentAfter = member.step + 4;
-      member.step++;
+      if (previous === null || alignment?.pitches.has(member.id)) {
+        member.lastKey = this.key;
+        member.lastChord = chord;
+        member.lastHarmony = this.harmonySerial;
+        member.peerPitches = new Map([...this.members.values()].map(m => [m.id, m.lastSemi]));
+        member.step++;
+      }
+      // End on the held pitch, even if no further meeting occurs.
       if (wantsEnd) { member.ending = true; member.endAt = at + duration + TAIL; }
       return event;
     }
@@ -421,28 +394,37 @@
           ended.push(member.id);
           this.members.delete(member.id);
         } else if (!member.ending && member.nextAt < now + 0.25) {
-          // Skip missed pulses after a stall, retaining the original phase.
+          for (const [pair, ids] of this.contacts) if (ids.includes(member.id)) this.contacts.delete(pair);
           member.pulse = Math.ceil((now + 0.25 - member.phase) / member.period);
           member.nextAt = member.phase + member.pulse * member.period;
         }
       }
       const events = [];
       for (let guard = 0; guard < MAX_MEMBERS * 2; guard++) {
-        const member = [...this.members.values()].filter(m => !m.ending && m.nextAt <= horizon)
-          .sort((a, b) => a.nextAt - b.nextAt || a.id.localeCompare(b.id))[0];
-        if (!member) break;
-        const at = member.nextAt;
-        // A harmonic rest skips a pulse; it never moves the following pulse.
-        member.nextAt = member.phase + (++member.pulse) * member.period;
-        this.attacks = this.attacks.filter(e => e.at > at - 60);
-        // Eight uninterrupted clocks naturally fit this bound. This protects
-        // against rapid stop/rejoin churn, without retiming any voice.
-        if (this.attacks.length >= MAX_ATTACKS) continue;
-        const event = this.makeEvent(member, at);
-        if (event) {
-          events.push(event);
-          this.events.push(event);
-          this.attacks.push({ at, performer: member.id });
+        const upcoming = [...this.members.values()].filter(m => !m.ending)
+          .sort((a, b) => a.nextAt - b.nextAt || a.id.localeCompare(b.id));
+        if (!upcoming.length || upcoming[0].nextAt > horizon) break;
+        const first = upcoming[0].nextAt;
+        // Include the full 120 ms encounter even across the normal lookahead
+        // boundary, without moving any timestamp or splitting a meeting in two.
+        const group = upcoming.filter(m => m.nextAt - first <= ALIGNMENT_WINDOW + 1e-7)
+          .map(member => ({ member, at: member.nextAt }));
+        this.releaseContacts(group);
+        const accepted = [];
+        for (const entry of group) {
+          const { member, at } = entry;
+          member.nextAt = member.phase + (++member.pulse) * member.period;
+          this.attacks = this.attacks.filter(e => e.at > at - 60);
+          if (this.attacks.length + accepted.length < MAX_ATTACKS) accepted.push(entry);
+        }
+        const alignment = this.synchronize(accepted);
+        for (const { member, at } of accepted) {
+          const event = this.makeEvent(member, at, alignment);
+          if (event) {
+            events.push(event);
+            this.events.push(event);
+            this.attacks.push({ at, performer: member.id });
+          }
         }
       }
       this.events = this.events.filter(e => e.at >= now - SCORE_SECONDS);
@@ -495,7 +477,7 @@
     });
     return { format: "open-modular", version: input.version, seed: input.seed, tone: input.tone, events };
   }
-  const api = { VERSION, MAX_MEMBERS, SCORE_SECONDS, MIN_BPM, MAX_BPM, MAX_ATTACKS, MAX_EVENTS, TAIL, CHORDS, clock, random,
+  const api = { VERSION, MAX_MEMBERS, SCORE_SECONDS, MIN_BPM, MAX_BPM, MAX_ATTACKS, MAX_EVENTS, TAIL, CHORDS, ALIGNMENT_WINDOW, ALIGNMENT_RELEASE, ALIGNMENT_COOLDOWN, clock, random,
     melodicTarget, chordDissonanceAllowed, voiceLeadingWeight, overlapWeight, Ensemble, validateScore };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.OpenModular = api;

@@ -38,7 +38,8 @@
         ? count ? `${count} ${count === 1 ? "voice" : "voices"} · ${ensemble.tone} Hz` : "Ready for a voice."
         : "Ensemble connection unavailable.";
       const me = ensemble.members.find(member => member.id === id);
-      if (joined && me) message(me.ending ? "Your final note is ringing out." : `${me.role} · ${me.bpm.toFixed(1)} BPM · ${ensemble.harmony}`);
+      if (joined && me) message(me.ending ? "Your final note is ringing out." :
+        `${me.role} · ${me.bpm.toFixed(1)} BPM · ${ensemble.harmony}${me.frequency ? ` · ${me.frequency.toFixed(1)} Hz` : ""}`);
     }
     function post(data) { if (worker && !disposed) worker.port.postMessage(data); }
     function stop(text = "Stopped. Other voices continue.") {
@@ -144,7 +145,7 @@
     function connect() {
       if (worker) { worker.port.postMessage({ type: "disconnect" }); worker.port.close(); }
       ready = false;
-      worker = new SharedWorker(new URL("modular-worker.js?v=modular-6", location.href), { name: `open-modular-6-${room}` });
+      worker = new SharedWorker(new URL("modular-worker.js?v=modular-7", location.href), { name: `open-modular-7-${room}` });
       worker.onerror = () => fail("Modular could not connect. Reload this page to try again.");
       worker.port.onmessageerror = () => fail("The ensemble connection failed. Reload to try again.");
       worker.port.onmessage = ({ data }) => {

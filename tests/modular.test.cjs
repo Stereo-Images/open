@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const { Ensemble, validateScore, melodicTarget, random, voiceLeadingWeight, overlapWeight, CHORDS,
-  MIN_BPM, MAX_BPM, MAX_ATTACKS, MAX_EVENTS, TAIL } = require('../modular-core.js');
+  MIN_BPM, MAX_BPM, MAX_ATTACKS, MAX_EVENTS, TAIL, ALIGNMENT_WINDOW, ALIGNMENT_COOLDOWN } = require('../modular-core.js');
 
 function advance(ensemble, from, to, step = 0.2) {
   const events = [], ended = [];
@@ -20,6 +20,175 @@ function onPulse(event, member) {
   const pulse = (event.at - member.phase) / member.period;
   assert.ok(Math.abs(pulse - Math.round(pulse)) < 1e-6, `off pulse: ${event.performer}/${event.at}`);
 }
+
+function fixedVoice(e, id, { seed = 81, period = 6, phase = 10, semi = 0 } = {}) {
+  join(e, id, seed);
+  const m = e.members.get(id);
+  Object.assign(m, { period, phase, nextAt: phase, pulse: 0, lastSemi: semi, step: 2,
+    lastKey: 0, lastHarmony: 0, lastChord: [0, 4, 7], cadence: [6, 2] });
+  m.melodyRng = () => id === 'b' ? 0.9 : 0.1;
+  return m;
+}
+
+test('a lone voice holds one pitch indefinitely while FM seeds and production keep evolving', () => {
+  const e = make(); join(e, 'a', 81);
+  const events = advance(e, 0, 3600).events;
+  assert.ok(events.length > 100);
+  assert.equal(new Set(events.map(n => n.notes[0].freq)).size, 1);
+  assert.equal(new Set(events.map(n => `${n.harmony}/${n.key}`)).size, 1);
+  assert.equal(e.harmonySerial, 0);
+  assert.ok(events.every(n => !n.alignment && n.notes.length === 1));
+  assert.ok(new Set(events.map(n => n.seed)).size > 50);
+  assert.ok(new Set(events.map(n => n.notes[0].production.brightness)).size > 50);
+});
+
+test('elapsed time alone cannot change notes or harmony when two pulse grids never meet', () => {
+  const e = make(); e.chord = 0;
+  fixedVoice(e, 'a', { phase: 3, semi: 0 });
+  fixedVoice(e, 'b', { phase: 4.5, semi: 7 });
+  const events = advance(e, 0, 3600).events;
+  for (const id of ['a', 'b']) assert.equal(new Set(events.filter(n => n.performer === id).map(n => n.notes[0].freq)).size, 1);
+  assert.equal(e.harmonySerial, 0);
+  assert.ok(events.every(n => n.motion === 'hold' && n.harmony === 'I' && n.key === 0));
+});
+
+test('the 120 ms tolerance includes a meeting across the scheduling horizon without moving either strike', () => {
+  for (const offset of [0.119, 0.121]) {
+    const e = make(); e.chord = 0; e.rng = () => 0;
+    const a = fixedVoice(e, 'a');
+    const b = fixedVoice(e, 'b', { phase: 10 + offset, semi: 7 });
+    const first = e.plan(7.5, 10).events;
+    if (offset < ALIGNMENT_WINDOW) {
+      assert.deepEqual(first.map(n => n.at), [10, 10 + offset]);
+      assert.equal(e.harmonySerial, 1);
+      assert.ok(first.every(n => n.alignment?.performers.length === 2));
+    } else {
+      assert.deepEqual(first.map(n => n.at), [10]);
+      e.plan(7.7, 10.2);
+      assert.equal(e.harmonySerial, 0);
+    }
+    for (const n of e.events) onPulse(n, n.performer === 'a' ? a : b);
+    assert.equal(a.phase, 10); assert.equal(b.phase, 10 + offset);
+    assert.equal(a.period, 6); assert.equal(b.period, 6);
+  }
+});
+
+test('only voices in the meeting may change pitch; another active voice holds its note', () => {
+  const e = make(); e.chord = 0; e.rng = () => 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.08, semi: 7 });
+  fixedVoice(e, 'c', { phase: 12.5, period: 11, semi: 12 });
+  const events = advance(e, 7.5, 20).events;
+  assert.ok(events.some(n => n.motion === 'alignment'));
+  const third = events.filter(n => n.performer === 'c');
+  assert.ok(third.length);
+  assert.ok(third.every(n => n.notes[0].freq === 242 && !n.alignment));
+});
+
+test('a sustained alignment counts once until the voices separate and encounter one another again', () => {
+  const e = make(); e.chord = 0; e.rng = () => 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.08, semi: 7 });
+  const events = advance(e, 7.5, 180).events;
+  assert.equal(e.harmonySerial, 1);
+  assert.ok(events.filter(n => n.at > 10.12).every(n => n.motion === 'hold' && !n.alignment));
+  const drifting = make(); drifting.chord = 0; drifting.rng = () => 0;
+  fixedVoice(drifting, 'a'); fixedVoice(drifting, 'b', { phase: 10.08, period: 6.04, semi: 7 });
+  advance(drifting, 7.5, 1800);
+  assert.ok(drifting.harmonySerial >= 2, 'the pair must re-arm after drifting apart');
+});
+
+test('a fresh meeting inside the cooldown holds all pitches and does not create a timed retry', () => {
+  const e = make(); e.chord = 0; e.rng = () => 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.05, semi: 7 });
+  fixedVoice(e, 'c', { phase: 15.99, period: 13, semi: 12 });
+  const events = advance(e, 7.5, 32).events;
+  const changes = events.filter(n => n.alignment);
+  assert.ok(changes.length >= 2);
+  assert.ok(changes.every(n => n.at < 10.12));
+  assert.ok(events.filter(n => n.at > 10.12).every(n => n.motion === 'hold'));
+  assert.ok(e.nextAlignmentChange >= 10 + ALIGNMENT_COOLDOWN);
+});
+
+test('a pulse skipped by the attack limit cannot supply a phantom synchronization partner', () => {
+  const e = make(); e.chord = 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.05, semi: 7 });
+  e.attacks = Array.from({ length: MAX_ATTACKS - 1 }, () => ({ at: 1, performer: 'old' }));
+  const events = e.plan(7.5, 10).events;
+  assert.equal(events.length, 1);
+  assert.equal(events[0].motion, 'hold');
+  assert.equal(e.harmonySerial, 0);
+});
+
+test('removing a partner before an encounter leaves the remaining pitch and harmony fixed', () => {
+  const e = make(); e.chord = 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.05, semi: 7 });
+  e.leave('b', 7);
+  const events = advance(e, 7.5, 120).events;
+  assert.ok(events.every(n => n.performer === 'a' && n.notes[0].freq === 121 && !n.alignment));
+  assert.equal(e.harmonySerial, 0);
+});
+
+test('a blocked voicing stays held after the obstruction fades, with no delayed timer-based change', () => {
+  const e = make(); e.chord = 0; e.rng = () => 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.05, semi: 7 });
+  e.sounding = Array.from({ length: 37 }, (_, i) => ({ semi: i - 12, at: 0,
+    kind: 'bell', performer: 'old', duration: 40, until: 50 }));
+  const events = advance(e, 7.5, 100).events;
+  assert.equal(e.harmonySerial, 0);
+  assert.ok(events.length > 20);
+  assert.ok(events.every(n => n.motion === 'hold' && !n.alignment));
+});
+
+test('a missed meeting during a scheduler stall does not change pitches on resumption', () => {
+  const e = make(); e.chord = 0;
+  fixedVoice(e, 'a'); fixedVoice(e, 'b', { phase: 10.05, period: 6.3, semi: 7 });
+  const events = advance(e, 11, 30).events;
+  assert.ok(events.length > 2);
+  assert.ok(events.every(n => n.at >= 16 && n.motion === 'hold'));
+  assert.equal(e.harmonySerial, 0);
+});
+
+test('timed voices end on their held pitch without requiring a meeting or adding a final cadence', () => {
+  const e = make(); join(e, 'a', 81, 0, 'short');
+  const events = advance(e, 0, 150).events;
+  assert.equal(events.filter(n => n.ending).length, 1);
+  assert.equal(new Set(events.map(n => n.notes[0].freq)).size, 1);
+  assert.equal(events.at(-1).notes[0].duration, 25);
+  assert.equal(e.members.size, 0);
+});
+
+test('every changed pitch, harmonic context, and bass entry has real coincident strikes across seeded runs', () => {
+  let changes = 0, basses = 0;
+  for (const tone of [110, 121, 200]) for (const count of [2, 3, 8]) {
+    const e = make(42, tone);
+    for (let i = 0; i < count; i++) join(e, `w${i}`, 81 + i * 136);
+    const events = advance(e, 0, 1800).events, last = new Map();
+    let context;
+    for (const event of events) {
+      onPulse(event, e.members.get(event.performer));
+      const changed = last.has(event.performer) && last.get(event.performer) !== event.notes[0].freq;
+      const nextContext = `${event.harmony}/${event.key}`;
+      if (changed || (context && context !== nextContext) || event.notes[1]) {
+        assert.ok(event.alignment, 'no musical change without a real meeting');
+        assert.ok(events.some(peer => peer !== event && peer.performer !== event.performer &&
+          peer.alignment?.id === event.alignment.id && Math.abs(peer.at - event.at) <= ALIGNMENT_WINDOW + 1e-7));
+      }
+      if (changed) changes++;
+      if (event.notes[1]) { basses++; assert.ok(event.notes[1].freq <= event.notes[0].freq); }
+      last.set(event.performer, event.notes[0].freq);
+      context = nextContext;
+    }
+  }
+  assert.ok(changes > 30);
+  assert.ok(basses > 0);
+});
+
+test('different scheduler polling intervals produce the same meetings and recorded notes', () => {
+  const run = step => {
+    const e = make(); join(e, 'a', 81); join(e, 'b', 217); join(e, 'c', 353);
+    return advance(e, 0, 900, step).events.filter(n => n.at <= 900);
+  };
+  assert.deepEqual(run(0.1), run(0.2));
+});
 
 test('independent voices keep steady, distinct pulses and different melodic contours', () => {
   const e = make();
@@ -88,34 +257,7 @@ test('voice leading favors common tones, small moves, and contrary motion over p
     voiceLeadingWeight(member, 14, risingPeer, [2, 7, 10], false));
 });
 
-test('a prepared F over C resolves to E on its own next entry, even after its ending target', () => {
-  const e = make(); join(e, 'a', 81);
-  const m = e.members.get('a');
-  m.lastSemi = 5; m.lastKey = 0; m.lastChord = [5, 9, 0]; m.lastHarmony = 0;
-  m.deadline = 8;
-  e.chord = 1; e.nextHarmony = 8; e.rng = () => 0; // IV -> I
-  e.pendingHarmony = { chord: 0, key: 0 };
-  e.sounding = [{ semi: 5, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
-  const event = e.makeEvent(m, 8);
-  assert.equal(event.motion, 'suspension');
-  assert.equal(Math.round(12 * Math.log2(event.notes[0].freq / 121)), 4);
-  assert.equal(event.ending, false); // Finish the resolution before seeking an ending.
-  assert.equal(m.resolution, null);
-});
-
-test('the leading tone resolves up a semitone when tonic harmony returns', () => {
-  const e = make(); join(e, 'a', 81);
-  e.chord = 0;
-  const m = e.members.get('a');
-  m.lastSemi = 11; m.lastKey = 0; m.lastChord = [7, 11, 2];
-  e.sounding = [{ semi: 11, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
-  const event = e.makeEvent(m, 8);
-  assert.equal(event.motion, 'leading-tone');
-  assert.equal(Math.round(12 * Math.log2(event.notes[0].freq / 121)), 12);
-  assert.equal(event.at, 8);
-});
-
-test('joining and leaving changes harmony and production without changing any existing pulse', () => {
+test('joining and leaving preserves existing pitches and pulses while production adapts', () => {
   const e = make(); join(e, 'a', 81);
   const first = advance(e, 0, 60).events;
   const committed = structuredClone(e.events);
@@ -142,22 +284,6 @@ test('each tempo and phase depend only on its own seed and start, not peers or l
   join(ensemble, 'a', 81, 17, 'long');
   for (const key of ['period', 'phase', 'nextAt'])
     assert.equal(solo.members.get('a')[key], ensemble.members.get('a')[key]);
-});
-
-test('a harmonic rest skips pulses without delaying the following entries', () => {
-  const e = make(); join(e, 'a', 81);
-  e.chord = 0;
-  const m = e.members.get('a');
-  e.nextHarmony = Infinity;
-  Object.assign(m, { lastSemi: 5, lastKey: 0, lastChord: [0, 4, 7],
-    resolution: { type: 'neighbor-resolution', target: 4 } });
-  e.sounding = [{ semi: 5, kind: 'bell', performer: 'other', at: m.phase,
-    duration: 28, until: m.phase + 28 + TAIL }];
-  const events = advance(e, 0, 80).events;
-  assert.ok(events[0].at >= m.phase + 14);
-  assert.equal(events[0].motion, 'neighbor-resolution');
-  assert.ok(events.length > 3);
-  for (const event of events) onPulse(event, m);
 });
 
 test('voices end individually and Infinite continues after Short voices finish', () => {
@@ -226,55 +352,6 @@ test('score loading rejects unsafe resource sizes, versions, and synthesis value
     assert.throws(() => validateScore(copy), /supported/);
   }
   assert.deepEqual(validateScore(valid), validateScore(JSON.parse(JSON.stringify(valid))));
-});
-
-test('passing and neighbor departures resolve by step on the next own entry, before ending', () => {
-  for (const [choice, motion, departure, destination] of [
-    [0.1, 'neighbor', 11, 12], [0.7, 'passing', 14, 16]
-  ]) {
-    const e = make(); join(e, 'a', 81);
-    e.chord = 0;
-    e.nextBass = Infinity;
-    const m = e.members.get('a');
-    Object.assign(m, { lastSemi: 12, lastKey: 0, lastChord: [0, 4, 7], lastHarmony: 0, step: 2, deadline: 15 });
-    e.nextHarmony = Infinity;
-    // Melodic proposals have their own stream; force a deliberate excursion.
-    const draws = [0, choice];
-    m.rng = () => draws.length ? draws.shift() : 0.5;
-    e.sounding = [{ semi: 12, kind: 'bell', performer: 'a', at: 0, duration: 28, until: 28 + TAIL }];
-    const first = e.makeEvent(m, 8);
-    assert.equal(first.motion, motion);
-    assert.equal(Math.round(12 * Math.log2(first.notes[0].freq / 121)), departure);
-    assert.equal(m.resolution.target, destination);
-    e.nextHarmony = 9;
-    e.harmony(10);
-    assert.equal(e.chord, 0, 'hold the harmony while the departure resolves');
-    const second = e.makeEvent(m, 18);
-    assert.equal(second.motion, `${motion}-resolution`);
-    assert.equal(Math.round(12 * Math.log2(second.notes[0].freq / 121)), destination);
-    assert.equal(second.ending, false);
-    assert.equal(m.resolution, null);
-    assert.ok(m.ornamentAfter > m.step);
-    assert.equal(e.makeEvent(m, 55).ending, true);
-  }
-});
-
-test('new entries reserve the pending destination; a blocked resolution waits and survives', () => {
-  const e = make(); join(e, 'a', 81); join(e, 'b', 217);
-  e.chord = 0;
-  e.nextHarmony = Infinity; // I: no new F neighbor may obscure a promised E.
-  const m = e.members.get('a');
-  Object.assign(m, { lastSemi: 5, lastKey: 0, lastChord: [0, 4, 7], resolution: { type: 'neighbor-resolution', target: 4 } });
-  Object.assign(e.members.get('b'), { lastSemi: 4, lastKey: 0, lastChord: [0, 4, 7], lastHarmony: 0, step: 2, rng: () => 0 });
-  const other = e.makeEvent(e.members.get('b'), 3);
-  assert.notEqual(Math.round(12 * Math.log2(other.notes[0].freq / 121)) % 12, 5);
-  e.chord = 0;
-  e.sounding = [{ semi: 5, kind: 'bell', performer: 'b', at: 9, duration: 28, until: 37 + TAIL }];
-  assert.equal(e.makeEvent(m, 10), null);
-  assert.equal(m.resolution.target, 4);
-  assert.equal(e.makeEvent(m, 25).motion, 'neighbor-resolution');
-  e.leave('a', 26);
-  assert.ok(![...e.members.values()].some(m => m.resolution));
 });
 
 test('production spreads strikes, gives bright peers darker answers, and shares level headroom', () => {
@@ -355,94 +432,6 @@ test('major sevenths and dominant tritones are intentional colors, with no adjac
   assert.equal(overlapWeight(11, old(0), 1, m, null, [0, 4, 7]), 0);
 });
 
-test('a major seventh may remain a chord tone; an applied dominant leading tone resolves into minor', () => {
-  const e = make(); join(e, 'a', 81); const m = e.members.get('a');
-  e.chord = CHORDS.findIndex(c => c.name === 'Imaj7'); e.nextBass = Infinity;
-  Object.assign(m, { lastSemi: 11, lastKey: 0, lastChord: [7, 11, 2, 5], rng: () => 0.5 });
-  assert.notEqual(e.makeEvent(m, 3).motion, 'leading-tone');
-  e.chord = CHORDS.findIndex(c => c.name === 'vi'); e.sounding = [];
-  e.harmonySerial++;
-  Object.assign(m, { lastSemi: 8, lastChord: [4, 8, 11, 2] });
-  const resolution = e.makeEvent(m, 20);
-  assert.equal(resolution.motion, 'leading-tone');
-  assert.equal(Math.round(12 * Math.log2(resolution.notes[0].freq / e.tone)), 9);
-});
-
-test('harmonic colors vary with the melodies, retaining seventh colors and sparse bass inversions', () => {
-  const paths = [], colors = new Set(), inversions = new Set();
-  let sevenths = 0, bassCount = 0, changeCount = 0;
-  for (const tone of [110, 121, 200]) {
-    const e = make(42, tone);
-    for (let i = 0; i < 3; i++) join(e, `w${i}`, 81 + i * 136);
-    const events = advance(e, 0, 1800).events;
-    const changes = events.filter((n, i) => !i || n.harmony !== events[i - 1].harmony || n.key !== events[i - 1].key);
-    paths.push(changes.map(e => `${e.harmony}/${e.key}`).join(','));
-    changes.forEach(e => colors.add(e.harmony));
-    changeCount += changes.length;
-    assert.ok(changes.length < 18, 'harmony should have time to linger');
-    const basses = events.filter(n => n.notes[1]);
-    bassCount += basses.length;
-    basses.forEach(e => inversions.add(e.inversion));
-    for (const event of basses) {
-      const chord = CHORDS.find(c => c.name === event.harmony).tones.map(n => (n + event.key) % 12);
-      const bassSemi = Math.round(12 * Math.log2(event.notes[1].freq / tone));
-      assert.equal(chord[event.inversion], ((bassSemi % 12) + 12) % 12);
-      assert.ok(event.notes[0].freq >= event.notes[1].freq);
-      for (const later of events.filter(n => n.at > event.at && n.at < event.at + event.notes[1].duration + TAIL))
-        assert.ok(later.notes[0].freq >= event.notes[1].freq);
-    }
-    const majorSevenths = events.filter(n => n.harmony.endsWith('maj7'));
-    sevenths += majorSevenths.filter(n => {
-      const chord = CHORDS.find(c => c.name === n.harmony).tones.map(v => (v + n.key) % 12);
-      const semi = Math.round(12 * Math.log2(n.notes[0].freq / tone));
-      return ((semi % 12) + 12) % 12 === chord[3];
-    }).length;
-  }
-  assert.equal(new Set(paths).size, 3, 'same ensemble seed need not prescribe the same path through different melodies');
-  assert.ok(colors.size >= 5);
-  assert.ok([...colors].some(c => /^(vi|ii|iii)(7)?$/.test(c)));
-  assert.ok(sevenths > 0, 'sevenths remain audible colors');
-  assert.ok(inversions.size >= 2);
-  assert.ok(bassCount > 0 && bassCount < 36, 'bass stays occasional');
-  assert.ok(changeCount > 5);
-});
-
-test('a blocked new color waits for the decay; holding the current color is also valid', () => {
-  const e = make(); e.nextHarmony = 0;
-  e.chord = 1;
-  e.pendingHarmony = { chord: 0, key: 0 };
-  e.sounding = Array.from({ length: 37 }, (_, i) => ({ semi: i - 12, at: 0, duration: 28, until: 38, kind: 'bell', performer: 'old' }));
-  e.harmony(1);
-  assert.equal(e.chord, 1);
-  assert.equal(e.pendingHarmony.chord, 0);
-  e.sounding = []; e.harmony(10);
-  assert.equal(e.chord, 0);
-  assert.equal(e.pendingHarmony, null);
-  const serial = e.harmonySerial;
-  e.pendingHarmony = { chord: 0, key: 0 }; e.nextHarmony = 11;
-  e.harmony(12);
-  assert.equal(e.harmonySerial, serial);
-  assert.equal(e.pendingHarmony, null);
-  assert.ok(e.nextHarmony >= 102);
-});
-
-test('ordinary melodies explore the full scale with mostly stepwise motion, without compulsory resolutions', () => {
-  for (const tone of [110, 121, 200]) {
-    const e = make(42, tone); e.chord = 0; e.nextHarmony = e.nextBass = Infinity;
-    join(e, 'a', 81); join(e, 'b', 217);
-    const events = advance(e, 0, 900).events;
-    const normal = events.filter(n => n.motion === 'free');
-    const nonChord = normal.filter(n => ![0, 4, 7].includes((Math.round(12 * Math.log2(n.notes[0].freq / tone)) % 12 + 12) % 12));
-    assert.ok(nonChord.length > events.length * 0.25, 'non-chord scale tones should be ordinary melody notes');
-    const motions = ['a', 'b'].flatMap(id => {
-      const notes = events.filter(n => n.performer === id).map(n => n.notes[0].freq);
-      return notes.slice(1).map((freq, i) => Math.abs(12 * Math.log2(freq / notes[i])));
-    });
-    assert.ok(motions.filter(n => n > 0.01 && n < 2.01).length > motions.length * 0.6);
-    assert.ok(events.every(n => n.notes[0].freq >= 110 && n.notes[0].freq <= 415.30));
-  }
-});
-
 test('melodic proposals use their own randomness and turn away from register edges', () => {
   for (const lastSemi of [0, 20]) {
     const a = { step: 2, lastSemi, melodyRng: random(8) };
@@ -465,19 +454,7 @@ test('selective overlap ignores faded tails and permits own steps, without expos
   assert.equal(overlapWeight(12, [{ ...old, semi: 11 }], 1, m, null, [0, 4, 7], scale), 0);
 });
 
-test('a viable scale-step proposal is preserved even if a peer suggests different voice leading', () => {
-  const e = make(); e.chord = 0; e.nextHarmony = e.nextBass = Infinity;
-  join(e, 'a', 81); join(e, 'b', 217);
-  const m = e.members.get('a');
-  Object.assign(m, { step: 2, lastSemi: 4, lastKey: 0, lastHarmony: 0, lastChord: [0, 4, 7],
-    melodyProposal: { semi: 5, key: 0 }, rng: () => 0.99 });
-  const event = e.makeEvent(m, 10);
-  assert.equal(Math.round(12 * Math.log2(event.notes[0].freq / e.tone)), 5);
-  assert.equal(m.resolution, null);
-  assert.equal(event.motion, 'free');
-});
-
-test('an inversion cannot put the bass above a promised melodic resolution', () => {
+test('an inversion cannot put the bass above a held melody note', () => {
   const e = make(); e.lastBassSemi = 4;
   for (let i = 0; i < 30; i++) {
     const bass = e.chooseBass([0, 4, 7, 11], [{ semi: 0 }]);
