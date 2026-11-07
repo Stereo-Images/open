@@ -56,6 +56,7 @@
   // Save separately so it cannot overwrite the main player's length preference.
   const STATE_KEY = "open_short_studies_settings";
   const STUDY_DURATION = "short";
+  const ENDING_TARGET_SECONDS = 60;
   // Bump when musical planning or synthesis changes. UI-only releases keep this
   // version; unknown versions must never silently play with a different engine.
   // Engine 2 is reserved for the separate tempo experiment. Musical engine
@@ -74,7 +75,7 @@
     if (!Number.isInteger(tone) || tone < 110 || tone > 200)
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (record.duration !== STUDY_DURATION)
-      throw new Error("This player supports Short studies only. Use the main Open player for Long or Infinite performances.");
+      throw new Error("This player supports Short studies only.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
@@ -98,7 +99,7 @@
     }
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
-    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
+    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-([a-z]+)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
     if (file) return validateReplay({ seed: file[1], engine: file[2], tone: file[3],
       duration: file[4].toLowerCase(), sampleRate: file[5] });
     const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
@@ -773,7 +774,7 @@
 
   // The live musical rules have one owner. Planning draws all musical and
   // spatial choices before rendering; neither renderer consumes these streams.
-  function createPerformanceGenerator(seed, baseFreq, duration, engine = ENGINE_VERSION) {
+  function createPerformanceGenerator(seed, baseFreq, engine = ENGINE_VERSION) {
     const rand = mulberry32(seed);
     const chance = p => rand() < p;
     const spatialRandom = mulberry32((seed ^ 0x57E2E0) >>> 0);
@@ -784,7 +785,7 @@
     let phraseStep = 0, phraseCount = 0, arcLen = 6, arcPos = -1, arcClimaxAt = 4;
     let tension = 0, lastCadenceType = "none", currentCadenceType = "none";
     let lastDroneStart = -9999, lastDroneDur = 0, finished = false;
-    const allowOpenEnding = engine === ENGINE_VERSION && duration !== Infinity;
+    const allowOpenEnding = engine === ENGINE_VERSION;
     const endingHistory = [];
     let endingDrones = [];
     function startNewArc() {
@@ -879,7 +880,6 @@
 
     return {
       density: runDensity, arcLen: initialArcLen, arcClimaxAt: initialClimax,
-      get nextTime() { return nextTimeA; },
       next() {
         if (finished) return null;
         const group = { time: nextTimeA, notes: [], ending: false };
@@ -887,7 +887,7 @@
         let pressure = Math.min(1.0, notesSinceModulation / 48.0);
         updateHarmonyState();
 
-        if (duration !== Infinity && nextTimeA >= duration + LOOKAHEAD) {
+        if (nextTimeA >= ENDING_TARGET_SECONDS + LOOKAHEAD) {
           if (patternIdxA % 7 === 0) {
             let fEnd = getScaleNote(baseFreq, patternIdxA, circlePosition, isMinor);
             while (fEnd > MELODY_CEILING_HZ && patternIdxA > -14) {
@@ -1047,8 +1047,8 @@
             if (endingHistory.length > 5) endingHistory.shift();
             // Consider the strike straddling the target, at most six seconds
             // early, and later strikes until the existing tonic fallback wins.
-            const earliest = duration - Math.min(6, 1 / runDensity);
-            if (group.time >= earliest && nextTimeA >= duration) {
+            const earliest = ENDING_TARGET_SECONDS - Math.min(6, 1 / runDensity);
+            if (group.time >= earliest && nextTimeA >= ENDING_TARGET_SECONDS) {
               const kind = qualifiedEnding(endingHistory, degNow, isMinor,
                 arcPos === arcClimaxAt, endingDrones, group.time);
               if (kind) {
@@ -1067,24 +1067,12 @@
     };
   }
 
-  function resolveDuration(seed, durationInput) {
-    if (durationInput === "short") return 60;
-    if (durationInput === "long") {
-      // Keep duration selection independent of the musical and spatial streams.
-      const durationRandom = mulberry32((seed ^ 0x4C454E47) >>> 0);
-      return 600 + Math.floor(durationRandom() * 1201);
-    }
-    if (durationInput === "infinite") return Infinity;
-    throw new Error("Invalid duration");
-  }
-
-  function createPerformance(seed, tone, durationInput, engine = ENGINE_VERSION) {
+  function createPerformance(seed, tone, engine = ENGINE_VERSION) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
-    const duration = resolveDuration(seed, durationInput);
-    const generator = createPerformanceGenerator(seed, tone, duration, engine);
+    const generator = createPerformanceGenerator(seed, tone, engine);
     const groups = [];
     let lastVoiceEnd = 0;
-    while (duration !== Infinity || generator.nextTime < 1800) {
+    while (true) {
       const group = generator.next();
       if (!group) break;
       for (const note of group.notes) {
@@ -1100,13 +1088,12 @@
       if (groups.length > 10000) throw new Error("Performance exceeded planning limit");
     }
     return Object.freeze({
-      seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
+      seed, tone, duration: STUDY_DURATION, targetDuration: ENDING_TARGET_SECONDS, density: generator.density,
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
-      exportDuration: Math.max(duration === Infinity ? 1800 : duration, lastVoiceEnd)
-        + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25,
-      continuation: duration === Infinity ? generator : null
+      exportDuration: Math.max(ENDING_TARGET_SECONDS, lastVoiceEnd)
+        + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25
     });
   }
 
@@ -1244,7 +1231,7 @@
 
   function nextLiveGroup() {
     if (liveCursor < sessionSnapshot.groups.length) return sessionSnapshot.groups[liveCursor++];
-    return sessionSnapshot.continuation?.next() || null;
+    return null;
   }
 
   function scheduler() {
@@ -1293,6 +1280,10 @@
 
   async function startPerformance(replay = null) {
     if (disposed) return;
+    if (replay && replay.duration !== STUDY_DURATION) {
+      replayStatus("This player supports Short studies only.");
+      return;
+    }
     let request = ++startRequest;
     try {
       ensureAudioContext();
@@ -1309,9 +1300,8 @@
       let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
       if (!Number.isFinite(tone)) tone = 110;
       tone = Math.round(Math.max(110, Math.min(200, tone)));
-      const duration = replay ? replay.duration : STUDY_DURATION;
       const engine = replay?.engine ?? ENGINE_VERSION;
-      const performance = createPerformance(seed, tone, duration, engine);
+      const performance = createPerformance(seed, tone, engine);
       buildMixBus(seed);
       setSeed(seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
@@ -1418,7 +1408,7 @@
     try {
       await renderWavSession({ ...sessionSnapshot });
     } catch (error) {
-      exportStatus("WAV export failed. Retry or start a shorter run", true);
+      exportStatus("WAV export failed. Try again", true);
       console.error("WAV export failed", error);
     } finally {
       isExporting = false;

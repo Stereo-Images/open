@@ -138,10 +138,6 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     // Lazy wrappers also allow loading the original source, which predates planning.
     planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
     createPerformance: (...args) => createPerformance(...args),
-    // Exercise the unchanged shared engine's long-running lifecycle internally.
-    // These modes have no entry point in the Short studies interface.
-    startEnginePerformance: (duration, seed = 12345) => startPerformance({
-      seed, tone: Number($("tone")?.value ?? 110), duration, engine: ENGINE_VERSION }),
     qualifiedEnding: (...args) => qualifiedEnding(...args),
     replayFromUI: () => replayFromUI(), copyReplayLink: () => copyReplayLink(),
     replayLastPerformance: () => replayLastPerformance(),
@@ -246,22 +242,7 @@ test('one-click Replay restores the latest score and controls during playback, a
   assert.equal(h.api.state().snapshot, null);
 });
 
-test('shared engine can rebuild an advanced Infinite continuation independently of the UI', async () => {
-  const h = dialHarness('121');
-  await h.api.startEnginePerformance('infinite');
-  const original = h.api.state().snapshot;
-  const score = JSON.stringify(original.groups);
-  const continuationTime = original.continuation.nextTime;
-  h.advance(1900);
-  assert.ok(original.continuation.nextTime > continuationTime);
-  await h.api.replayLastPerformance();
-  const replay = h.api.state().snapshot;
-  assert.equal(replay.seed, original.seed);
-  assert.equal(JSON.stringify(replay.groups), score);
-  assert.notEqual(replay.continuation, original.continuation);
-  assert.equal(replay.continuation.nextTime, continuationTime);
-  h.sandbox.__OPEN_PLAYER_KILL__();
-});
+
 
 test('Stop cancels a pending one-click Replay without losing the saved performance', async () => {
   const h = dialHarness('121');
@@ -279,26 +260,24 @@ test('Stop cancels a pending one-click Replay without losing the saved performan
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('shared planner retains frozen Short and Long scores; Short remains replayable', async () => {
-  // Frozen from the September engine before adding replay.
+test('Short replays retain frozen engine-1 and current preferred-study scores', async () => {
+  // Engine 1: September baseline. Engine 3: main at 897911b, before this branch.
   const fixtures = [
-    ['d5f9fea7', '110', 'short', 404.615480396285, '572bdecd635a3c3f6506cfe721b3b91e52a70a3b752a73cedcd14f44ebe3087f'],
-    ['d1a0b62b', '121', 'long', 947.6810024881768, '63e6d2960f072c300c8a3d672844d4dc6e2ea47702b2fca0b4c1444a11aa34a4']
+    ['d5f9fea7', '110', '1', 404.615480396285, '572bdecd635a3c3f6506cfe721b3b91e52a70a3b752a73cedcd14f44ebe3087f'],
+    ['002dbf93', '200', '3', 85.77732434088033, 'f0434f14095ce6171f73111dff0b0d744cf6f1461b145c6a8c93e014066bff0d'],
+    ['0393ded7', '200', '3', 85.56632370385142, '90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9']
   ];
   const { createHash } = require('node:crypto');
-  for (const [seed, tone, mode, duration, hash] of fixtures) {
+  for (const [seed, tone, engine, duration, hash] of fixtures) {
     const h = dialHarness(tone);
-    const snapshot = h.api.createPerformance(parseInt(seed, 16), Number(tone), mode, '1');
-    if (mode === 'short') {
-      h.elements.get('replayInput').value = `open-run-${seed}-fixture-g1-${tone}hz-${mode}-44100sr-1.wav`;
-      await h.api.replayFromUI();
-      assert.equal(JSON.stringify(h.api.state().snapshot.groups), JSON.stringify(snapshot.groups));
-    }
+    const snapshot = h.api.createPerformance(parseInt(seed, 16), Number(tone), engine);
+    h.elements.get('replayInput').value = `open-run-${seed}-fixture-g${engine}-${tone}hz-short-44100sr-1.wav`;
+    await h.api.replayFromUI();
+    assert.equal(JSON.stringify(h.api.state().snapshot.groups), JSON.stringify(snapshot.groups));
     assert.equal(snapshot.seed, parseInt(seed, 16));
+    assert.equal(snapshot.targetDuration, 60);
     assert.equal(snapshot.exportDuration, duration);
-    // Math.pow can differ in the final floating-point bits between V8 releases.
-    // Eight decimal places preserve far more than audio/time resolution while
-    // keeping this fixture portable across Node/browser engine versions.
+    // Normalize last-bit Math.pow differences across JavaScript engines.
     const normalized = JSON.stringify(snapshot.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
     assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
     h.sandbox.__OPEN_PLAYER_KILL__();
@@ -344,8 +323,8 @@ test('qualified endings preserve the recovered eleven-note melody and every plan
   const h = harness();
   for (const seed of [0x03b38656, 0x0b1617ff, 0x0bd8aae6, 0x16dd0502,
     0x284b74f5, 0x2e612fc6, 0x3ea456e2, 0x47a7b7d4, 0x5acb23bd]) {
-    const original = h.api.createPerformance(seed, 200, 'short', '1');
-    const current = h.api.createPerformance(seed, 200, 'short', '3');
+    const original = h.api.createPerformance(seed, 200, '1');
+    const current = h.api.createPerformance(seed, 200, '3');
     const notes = current.groups.flatMap(g => g.notes);
     const bells = notes.filter(n => n.kind === 'bell');
     assert.deepEqual(Array.from(bells, n => Math.round(12 * Math.log2(n.freq / 200))),
@@ -381,15 +360,17 @@ test('open endings reject unsettled harmony, unprepared sixths, leaps, and confl
   assert.equal(check(sixth, 5, false, false, [drone(-12), drone(-5)]), 'sixth');
 });
 
-test('varied seeds retain the engine-1 approach and tonic fallback without changing Infinite', () => {
+test('varied Short seeds retain the engine-1 approach and tonic fallback', () => {
   const h = harness(), kinds = new Set();
   for (let i = 0; i < 400; i++) {
     const seed = Math.imul(i + 1, 0x9e3779b9) >>> 0;
-    const mode = i < 40 ? 'long' : 'short', tone = [110, 155, 200][i % 3];
-    const before = h.api.createPerformance(seed, tone, mode, '1');
-    const after = h.api.createPerformance(seed, tone, mode, '3');
+    const tone = [110, 155, 200][i % 3];
+    const before = h.api.createPerformance(seed, tone, '1');
+    const after = h.api.createPerformance(seed, tone, '3');
     const last = after.groups.at(-1);
     kinds.add(last.endingKind);
+    assert.equal(after.duration, 'short');
+    assert.equal(after.targetDuration, 60);
     assert.equal(last.ending, true);
     assert.ok(last.time >= after.targetDuration - Math.min(6, 1 / after.density));
     assert.equal(after.groups.filter(g => g.ending).length, 1);
@@ -398,13 +379,6 @@ test('varied seeds retain the engine-1 approach and tonic fallback without chang
     assert.ok(after.exportDuration <= before.exportDuration);
   }
   assert.deepEqual([...kinds].sort(), ['fifth', 'sixth', 'tonic']);
-  for (const seed of [0, 0x0bd8aae6, 0xffffffff]) {
-    const a = h.api.createPerformance(seed, 200, 'infinite', '1');
-    const b = h.api.createPerformance(seed, 200, 'infinite', '3');
-    assert.equal(JSON.stringify(a.groups), JSON.stringify(b.groups));
-    for (let i = 0; i < 20; i++)
-      assert.equal(JSON.stringify(a.continuation.next()), JSON.stringify(b.continuation.next()));
-  }
 });
 
 test('legacy filenames and boundary seeds use explicit current controls', async () => {
@@ -536,7 +510,7 @@ test('saved lengths are ignored and Short settings never overwrite main preferen
     await h.api.startFromUI();
     assert.equal(h.api.state().snapshot.duration, 'short');
     assert.equal(h.api.state().snapshot.targetDuration, 60);
-    assert.equal(h.api.state().snapshot.continuation, null);
+    assert.equal('continuation' in h.api.state().snapshot, false);
     h.api.stopAllManual(true);
     h.elements.get('tone').value = '170';
     h.elements.get('tone').dispatch('input');
@@ -834,16 +808,27 @@ test('an older rejected resume cannot stop a newer successful Play', async () =>
   assert.equal(h.api.state().bus, current); assert.equal(h.api.state().isPlaying, true);
 });
 
-test('two simulated hours keep voice references bounded and preserve the shared reverb', async () => {
-  const h = harness(); await h.api.startEnginePerformance('infinite'); const bus = h.api.state().bus;
+test('repeated Short performances keep voice references bounded and release every room', async () => {
+  const h = harness();
   let peak = 0;
-  for (let minute = 0; minute < 120; minute++) {
-    h.advance(60); peak = Math.max(peak, h.api.state().nodes);
-    assert.ok(h.api.state().nodes < 150);
+  for (let run = 0; run < 12; run++) {
+    h.sandbox.crypto.getRandomValues = a => { a[0] = Math.imul(run + 1, 0x9e3779b9) >>> 0; return a; };
+    await h.api.startFromUI();
+    const { bus, snapshot, audioContext: ctx } = h.api.state();
+    for (let second = 0; second < snapshot.exportDuration + 1; second++) {
+      h.advance(1); peak = Math.max(peak, h.api.state().nodes);
+      assert.ok(h.api.state().nodes < 150);
+    }
+    assert.equal(h.api.state().bus, null);
+    assert.equal(h.api.state().nodes, 0);
+    assert.equal(bus.reverbNode.disconnected, true);
+    assert.equal(bus.streamDest.stream.getTracks()[0].stopped, true);
+    const oscillators = ctx.nodes.filter(n => n.kind === 'oscillator');
+    assert.ok(oscillators.length > 0);
+    assert.ok(oscillators.every(n => n.disconnected));
   }
-  assert.ok(peak > 0); assert.equal(bus.reverbNode.disconnected, false);
-  assert.ok(h.contexts[0].nodes.filter(n => n.kind === 'oscillator' && n.disconnected).length > 1000);
-  h.api.stopAllManual(true); assert.equal(h.api.state().nodes, 0);
+  assert.ok(peak > 0);
+  h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
 test('natural cleanup waits for the longest voice, reverb, and audio clock; recording finishes', () => {
@@ -919,15 +904,16 @@ test('export leaves live notes unchanged, rejects concurrent exports, and recove
   a.contexts[2].reject(Error('render')); await retry;
 });
 
-test('live voice parameters and timing match the original source for ten minutes', async (t) => {
+test('live voice parameters and timing match the original source before the ending', async (t) => {
   const original = process.env.OPEN_BASELINE;
   if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'), { originalUI: true });
-  await a.api.startEnginePerformance('infinite'); await b.api.startFromUI();
+  b.sandbox.document.getElementById('songDuration').value = '60';
+  await a.api.startFromUI(); await b.api.startFromUI();
   const origin = a.api.state().bus.origin;
-  a.advance(602); b.advance(602);
-  // Compare the first ten musical minutes, excluding the scheduler lookahead.
-  const normalize = (items, offset) => items.filter(n => n[2] - offset < 600).map(n => n.map((v, i) =>
+  a.advance(52); b.advance(52);
+  // Compare the approach before either engine's Short-ending threshold.
+  const normalize = (items, offset) => items.filter(n => n[2] - offset < 50).map(n => n.map((v, i) =>
     i >= 2 ? Math.round((v - offset) * 1e8) / 1e8 : v));
   assert.deepEqual(normalize(notes(a.contexts[0]), origin), normalize(notes(b.contexts[0]), 0));
 });
@@ -954,14 +940,12 @@ function voiceControls(ctx, origin = 0) {
 }
 
 test('timed exports match live voices, modulation, envelopes, and natural endings', async () => {
-  for (const [seed, duration] of [[0, 'short'], [12345, 'short'], [0x0bd8aae6, 'short'], [2, 'long'], [1, 'long']]) {
+  for (const seed of [0, 12345, 0x0bd8aae6, 0x002dbf93, 0x0393ded7]) {
     const h = harness();
     h.sandbox.crypto.getRandomValues = a => { a[0] = seed; return a; };
-    if (duration === 'short') await h.api.startFromUI();
-    else await h.api.startEnginePerformance(duration, seed);
+    await h.api.startFromUI();
     const snapshot = h.api.state().snapshot, origin = h.api.state().bus.origin;
-    if (duration === 'short') assert.equal(snapshot.targetDuration, 60);
-    else assert.ok(snapshot.targetDuration >= 600 && snapshot.targetDuration <= 1800);
+    assert.equal(snapshot.targetDuration, 60);
     assert.ok(snapshot.groups.at(-1).ending);
     const pending = h.api.renderWavExport();
     const offline = h.contexts[1];
@@ -1002,17 +986,17 @@ test('export preserves the last run after Stop, changed controls, and a replacem
   h.contexts[2].reject(Error('test')); await second;
 });
 
-test('shared engine retains bounded Infinite export behavior internally', async () => {
-  const h = harness(); await h.api.startEnginePerformance('infinite');
+test('a completed Short study stays exportable after an extended idle period', async () => {
+  const h = harness(); await h.api.startFromUI();
   const snapshot = h.api.state().snapshot;
-  const groupCount = snapshot.groups.length;
-  assert.ok(groupCount < 500);
-  assert.ok(snapshot.groups.every(g => g.time < 1800 && !g.ending));
+  const score = JSON.stringify(snapshot.groups);
   const first = h.api.renderWavExport(); const expected = voiceControls(h.contexts[1]);
-  h.advance(7200);
-  assert.equal(h.api.state().isPlaying, true);
-  assert.ok(h.api.state().nodes < 150);
-  assert.equal(snapshot.groups.length, groupCount);
+  h.advance(snapshot.exportDuration + 1);
+  h.advance(7200, false);
+  assert.equal(h.api.state().isPlaying, false);
+  assert.equal(h.api.state().nodes, 0);
+  assert.equal(h.api.state().bus, null);
+  assert.equal(JSON.stringify(snapshot.groups), score);
   h.contexts[1].reject(Error('test')); await first;
   const second = h.api.renderWavExport();
   assert.deepEqual(voiceControls(h.contexts[2]), expected);

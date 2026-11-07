@@ -1,21 +1,14 @@
 # Engineering checks
 
-## Short studies branch
+## Short performances
 
-The player exposes only the existing Short form. There is no length selector;
-Play and bare-seed input always use Short. Full Long and Infinite filenames and
-links are rejected before starting or interrupting audio. The root tone can be
-inherited from `open_player_settings`, while this edition saves only tone and
-update time under `open_short_studies_settings`. Main-player preferences are
-never overwritten.
-
-The musical planner and renderer are unchanged from main. Long and Infinite
-remain private engine capabilities so the existing baseline, multi-hour cleanup,
-and bounded-continuation tests can still exercise the shared implementation.
-Those tests invoke the engine directly through test-only access; they do not
-expose either mode in the player. UI tests require the length control to be absent
-and verify that persisted settings, links, and filenames cannot select those modes.
-
+The player has one duration: the existing Short form, with a 60-second ending
+target and full natural decay. There is no duration selector, duration resolver,
+or continuing generator after the ending. Play and bare-seed input always use
+Short. Records specifying any other length are rejected before starting or
+interrupting audio. Short filenames and links retain `short` as replay metadata.
+The root tone can be inherited from `open_player_settings`, while this player
+saves only tone and update time under `open_short_studies_settings`.
 
 Run the dependency-free regression suite with Node:
 
@@ -30,7 +23,7 @@ git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > /tmp/open-baseline
 OPEN_BASELINE=/tmp/open-baseline.js node --test tests/player.test.cjs
 ```
 
-The tests use a simulated audio clock, Web Audio nodes, and delayed recorder callbacks. They cover rapid playback changes, pending resume cancellation, mobile background stops, two-hour voice-reference bounds, natural tail cleanup, overlapping recording callbacks, export isolation, export failure recovery, and valid zero seeds. The original-source baseline checks live musical oscillator frequency, detuning, and start/stop times. Matching-export tests compare the current live and offline voice controls, envelopes, stereo trajectories, room impulse, resonator phase origin, and natural endings.
+The tests use a simulated audio clock, Web Audio nodes, and delayed recorder callbacks. They cover rapid playback changes, pending resume cancellation, mobile background stops, voice-reference bounds across repeated Short performances, natural tail cleanup, overlapping recording callbacks, export isolation, export failure recovery, and valid zero seeds. The original-source baseline checks live musical oscillator frequency, detuning, and start/stop times before the ending threshold. Matching-export tests compare the current live and offline voice controls, envelopes, stereo trajectories, room impulse, resonator phase origin, and natural endings.
 
 Additional regressions cover stalled scheduler callbacks, pauses in the audio clock, finite-session completion after stalls, WAV headers and original PCM quantization, stereo ordering, bounded transferable chunks, and worker failure recovery. No application dependencies are needed for these tests.
 
@@ -40,13 +33,13 @@ without autoplay, fresh seeds on Play, clipboard fallback, and pending-resume
 cancellation. The main Replay button restarts the latest session independently
 of edited controls or Revisit input, including after Stop or a natural ending.
 Checks cover its initial disabled state, saved tone/dial/export-rate
-restoration, cancellation, and native button wiring. Infinite continuation reset
-remains an internal shared-engine regression.
+restoration, cancellation, and native button wiring.
 Reloading clears the latest session; Revisit's Load & play restores saved links
-and filenames. Frozen engine-1 planner hashes guard a Short fixture
-(`d5f9fea7`, 110 Hz) and a Long fixture (`d1a0b62b`, 121 Hz).
-These fixtures were generated with commit
-`400bde65e914e3419f84d783f54a2dc2d3cf54e8`. Hashes normalize numbers to eight
+and filenames. A frozen engine-1 planner hash guards the Short fixture
+`d5f9fea7` at 110 Hz, generated with commit
+`400bde65e914e3419f84d783f54a2dc2d3cf54e8`. Engine-3 Short fixtures
+`002dbf93` and `0393ded7`, both at 200 Hz, were frozen from main at
+`897911b16b51ceb2270c44dc87d1b85e04bea792` before the duration cleanup. Hashes normalize numbers to eight
 decimal places to allow last-bit math differences across JavaScript engines.
 They verify planned musical data;
 native rendering is covered separately by the browser suite, including a page
@@ -114,17 +107,17 @@ The export renders stereo audio at the session's native sample rate with 32-bit 
 
 For an actual rendered duration `T` seconds and sample rate `R`, render bytes = `ceil(T * R) * 2 * 4`; WAV bytes = `ceil(T * R) * 2 * 2 + 44`. For three minutes of rendered audio, this means 63.504 MB of sample data at 44.1 kHz or 69.12 MB at 48 kHz, plus a 31.752 MB or 34.56 MB WAV (and the 44-byte header). Three minutes is an example, not a hard duration cap; longer natural endings scale proportionally. These are decimal MB payload sizes, not measured RAM peaks.
 
-The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and temporary copies add overhead. The README notes that longer natural endings and higher sample rates increase export memory use.
+The render buffer remains available during encoding while WAV Blob parts accumulate. One stereo input chunk contains up to 524,288 bytes and its encoded PCM contains up to 262,144 bytes. Chunking bounds these transfers, not the total export footprint. Offline synthesis nodes, reverb buffers, live playback, browser internals, and temporary copies add overhead. Actual memory use scales with the complete natural ending and sample rate.
 
 ## Shared performance and export
 
-Play captures seed, tone, length, its deterministic ending threshold, and the native sample rate. The player always uses Short with its existing 1-minute target. The shared planner retains the main player’s duration logic for internal regression coverage. Engine 1 seeks its tonic after the target; engine 3 can also accept a qualified fifth or sixth around that target. A pure planner retains plain note data for the complete Short performance. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
+Play captures seed, tone, length, its deterministic ending threshold, and the native sample rate. The player always uses Short with its existing 1-minute target. Engine 1 seeks its tonic after the target; engine 3 can also accept a qualified fifth or sixth around that target. A pure planner retains plain note data for the complete Short performance. Musical choices use the existing live random draw order; stereo choices use a separate stream. Live and offline rendering use the same planned voice parameters and rendering functions. New Play replaces the retained performance; an in-flight export keeps its own reference. Stop and natural cleanup release live audio nodes while retaining the score for export. Disposal clears the score.
 
-In internal shared-engine tests, Infinite continues with an incremental generator after the retained 30-minute prefix. It does not append later events to the score, so retained history remains bounded. Export never advances that generator. Scheduler-stall offsets belong only to live playback and never mutate the score.
+The planner stops at the natural ending and retains no continuation. Scheduler-stall offsets belong only to live playback and never mutate the score.
 
 A 50 ms scheduling lead-in gives live nodes a common future origin, avoiding late starts for an opening drone. Export starts at that origin. A common session origin controls master fade, the reverb-send envelope, and resonator LFO phase. The room uses a fixed deterministic impulse seed and the same native sample rate for both renderers. The opening reverb target is scheduled once; repeatedly targeting the same level with the same time constant is unnecessary. Tonic-end eligibility uses the planned event time and the existing lookahead allowance, so it does not depend on callback jitter at the duration threshold. Qualified endings also use planned event times.
 
-Regressions check multiple seeds and durations, full voice modulation/envelopes and panning, room samples and LFO start times, zero seeds, repeat exports after Stop/control changes, exporting during replacement Play, stalls, and bounded Infinite history. Native browser tests compare repeat WAV headers and PCM samples and inspect tail silence. Native DSP summation can round differently: the repeat comparison permits at most two 16-bit PCM steps and requires RMS difference below 0.01% of the signal; it does not require identical file bytes. These establish shared scheduling and repeatable rendering in the tested browser; they do not claim a byte-identical recording of physical device output.
+Regressions check multiple Short seeds, full voice modulation/envelopes and panning, room samples and LFO start times, zero seeds, repeat exports after Stop/control changes, exporting during replacement Play, stalls, repeated-session cleanup, and export after an extended idle period. Native browser tests compare repeat WAV headers and PCM samples and inspect tail silence. Native DSP summation can round differently: the repeat comparison permits at most two 16-bit PCM steps and requires RMS difference below 0.01% of the signal; it does not require identical file bytes. These establish shared scheduling and repeatable rendering in the tested browser; they do not claim a byte-identical recording of physical device output.
 
 
 ## Moving resonators
@@ -152,8 +145,8 @@ recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
 
 ## Qualified endings (engine 3)
 
-Engine 1 retains its exact score and export behavior, including the frozen Short
-and Long fixtures. Engine 3 adds conditional fifth and major-sixth endings to
+Engine 1 retains its exact Short score and export behavior, including the frozen
+Short fixture. Engine 3 adds conditional fifth and major-sixth endings to
 finite performances. Engine 2 is reserved for the separate tempo experiment;
 the app's release line stays v1.0. Bare seeds and fresh Play use engine 3;
 versioned links/filenames preserve their engine, and unversioned legacy filenames
@@ -174,8 +167,8 @@ model of every FM partial or a promise of a pleasing ending.
 The gate consumes no random draws, adds no notes, and changes no voice or timing
 before the chosen ending. Both renderers consume that same completed score.
 Tests cover the recovered eleven-note sixth-ending contour across nine seeds,
-rejection cases, 400 dispersed seeds at three tones across Short and Long,
-unchanged Infinite continuation, and live/export controls and tail completion.
+rejection cases, 400 dispersed Short seeds at three tones,
+and live/export controls and tail completion.
 Native WAV round trips cover both engines, including reload and restoration
 from a full filename. Engine-3 files select the qualified-ending behavior;
 engine-1 files preserve the original tonic endings.
