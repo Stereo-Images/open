@@ -22,7 +22,7 @@
   <meta name="twitter:image" content="https://stereo-images.github.io/open/social-preview.png" />
   <meta name="twitter:image:alt" content="Open — Bell Music for Desktop Listening. By Aaron Koppel." />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css?v=1.0&amp;rev=qualified-endings" />
+  <link rel="stylesheet" href="style.css?v=1.0&amp;rev=short-studies" />
 </head>
 <body class="player">
   <main class="shell" aria-label="Audio Instrument">
@@ -30,15 +30,6 @@
 
     <section id="controls" aria-label="Controls">
       <form id="songForm" onsubmit="return false;">
-        <div class="form-group">
-          <label for="songDuration">Length</label>
-          <select id="songDuration" name="songDuration">
-            <option value="short" selected>Short</option>
-            <option value="long">Long</option>
-            <option value="infinite">Infinite</option>
-          </select>
-        </div>
-
         <div class="form-group tone-group">
           <label id="toneLabel" for="tone">Root Tone<span class="sr-only"> in hertz</span></label>
           <div class="tone-control">
@@ -79,7 +70,7 @@
           <label for="replayInput">Seed, filename or replay link</label>
           <input id="replayInput" type="text" autocomplete="off" autocapitalize="off"
             spellcheck="false" aria-describedby="replayHelp" placeholder="e.g. d1a0b62b" />
-          <p id="replayHelp" class="revisit-help">Filenames work with or without .wav. For a seed or older filename, set the original root tone and length above. Play always creates a new performance.</p>
+          <p id="replayHelp" class="revisit-help">Short studies only. Filenames work with or without .wav. For a seed or older filename, set the original root tone above. Play always creates a new performance.</p>
           <button type="button" id="replayRun" class="btn">Load &amp; play</button>
           <div class="revisit-actions">
             <button type="button" id="copyReplay" class="btn" disabled>Copy replay link</button>
@@ -103,7 +94,7 @@
     </footer>
   </main>
 
-  <script src="player.js?v=1.0&amp;rev=qualified-endings"></script>
+  <script src="player.js?v=1.0&amp;rev=short-studies"></script>
 </body>
 </html>
 

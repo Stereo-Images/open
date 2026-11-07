@@ -74,6 +74,56 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
+test('the Short-only player ignores saved lengths and preserves main settings', async ({ page }) => {
+  await page.addInitScript(() => {
+    if (!localStorage.getItem('open_player_settings'))
+      localStorage.setItem('open_player_settings', JSON.stringify({ tone: '155', songDuration: 'infinite' }));
+    Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: async text => { window.copiedReplay = text; } } });
+  });
+  await page.goto('/player.html');
+  await expect(page.getByRole('combobox')).toHaveCount(0);
+  await expect(page.locator('#songDuration')).toHaveCount(0);
+  await expect(page.locator('#tone')).toHaveValue('155');
+  await page.locator('#playNow').click();
+  await page.locator('#revisit summary').click();
+  await page.locator('#copyReplay').click();
+  const replay = new URL(await page.evaluate(() => window.copiedReplay));
+  expect(replay.searchParams.get('length')).toBe('short');
+  expect(replay.searchParams.get('engine')).toBe('3');
+  await page.locator('#stop').click();
+  await page.locator('#tone').focus();
+  await page.keyboard.press('ArrowUp');
+  const settings = await page.evaluate(() => ({
+    main: JSON.parse(localStorage.getItem('open_player_settings')),
+    short: JSON.parse(localStorage.getItem('open_short_studies_settings'))
+  }));
+  expect(settings.main).toEqual({ tone: '155', songDuration: 'infinite' });
+  expect(settings.short.tone).toBe('156');
+  expect(settings.short).not.toHaveProperty('songDuration');
+  await page.reload();
+  await expect(page.locator('#tone')).toHaveValue('156');
+});
+
+for (const length of ['long', 'infinite']) test(`${length} links and filenames cannot start or replace a Short study`, async ({ page }) => {
+  await page.goto('/player.html?' + replayQuery.replace('length=short', `length=${length}`));
+  await expect(page.locator('#replayStatus')).toContainText('Short studies only');
+  await page.locator('#replayRun').click();
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  await expect(page.locator('#tone')).toHaveValue('110');
+  await page.locator('#playNow').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  for (const suffix of ['', '.wav']) {
+    await page.locator('#replayInput').fill(`open-run-03b38656-abc-g3-200hz-${length}-44100sr-1${suffix}`);
+    await page.locator('#replayRun').click();
+    await expect(page.locator('#replayStatus')).toContainText('Short studies only');
+    await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#tone')).toHaveValue('110');
+  }
+  await page.locator('#replayLast').click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 00003039');
+});
+
 test('replay links survive the launcher and wait for explicit Load & play', async ({ page }) => {
   await page.addInitScript(() => { window.open = () => null; });
   await page.goto('/index.html?' + replayQuery);
@@ -81,7 +131,7 @@ test('replay links survive the launcher and wait for explicit Load & play', asyn
   await expect(page).toHaveURL('/player.html?' + replayQuery);
   await expect(page.locator('#revisit')).toHaveAttribute('open', '');
   await expect(page.locator('#tone')).toHaveValue('200');
-  await expect(page.locator('#songDuration')).toHaveValue('short');
+  await expect(page.locator('#songDuration')).toHaveCount(0);
   expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
   await expect(page.locator('#exportWav')).toBeDisabled();
   await expect(page.locator('#replayLast')).toBeDisabled();
@@ -104,7 +154,6 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await page.locator('#stop').click();
   await page.locator('#tone').focus();
   await page.keyboard.press('End');
-  await page.locator('#songDuration').selectOption('long');
   await page.locator('#replayInput').fill('invalid input should not affect Replay');
   await page.locator('#revisit summary').click();
   // Use keyboard navigation: programmatic focus after a pointer click does
@@ -118,7 +167,7 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await expect(page.locator('#tone')).toHaveValue('121');
   await expect(page.locator('#hzReadout')).toHaveText('121');
   await expect(page.locator('#toneDial')).toHaveCSS('--tone-angle', '-102deg');
-  await expect(page.locator('#songDuration')).toHaveValue('short');
+  await expect(page.locator('#songDuration')).toHaveCount(0);
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await replay.click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
@@ -159,7 +208,6 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
-  await page.locator('#songDuration').selectOption('long');
   await page.locator('#copyReplay').click();
   await expect(page.locator('#replayLink')).toBeVisible();
   const value = await page.locator('#replayLink').inputValue();
@@ -198,7 +246,6 @@ for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the s
 
 test('the tone dial has visible keyboard focus and native keyboard adjustment', async ({ page }) => {
   await page.goto('/player.html');
-  await page.locator('#songDuration').focus();
   await page.keyboard.press('Tab');
   await expect(page.locator('#tone')).toBeFocused();
   await expect(page.locator('.tone-dial-face')).toHaveCSS('outline-style', 'solid');
@@ -246,15 +293,9 @@ test('dial touch target and lower divider fit a narrow mobile viewport', async (
   await expect(page.locator('#credits')).toHaveCSS('border-top-width', '1px');
   await page.locator('#playNow').click();
   await expect(page.locator('#tone')).toBeDisabled();
-  await expect(page.locator('#songDuration')).toBeDisabled();
-  await expect(page.locator('#songDuration')).toHaveCSS('opacity', '0.45');
   await expect(page.locator('#tone')).toHaveCSS('touch-action', 'auto');
   await page.locator('#stop').click();
   await expect(page.locator('#tone')).toBeEnabled();
-  await expect(page.locator('#songDuration')).toBeEnabled();
-  await expect(page.locator('#songDuration')).toHaveCSS('opacity', '1');
-  await page.locator('#songDuration').selectOption('long');
-  await expect(page.locator('#songDuration')).toHaveValue('long');
 });
 
 test('native audio and recording survive immediate Stop → Play', async ({ page }) => {
@@ -435,7 +476,6 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   const first = await fs.readFile(await (await downloading).path());
   await expect(page.locator('#playerStatus')).toHaveText('WAV downloaded');
   await page.locator('#stop').click();
-  await page.locator('#songDuration').selectOption('long');
   await page.evaluate(() => {
     const tone = document.getElementById('tone'); tone.value = '200';
     tone.dispatchEvent(new Event('input', { bubbles: true }));

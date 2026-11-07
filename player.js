@@ -52,7 +52,10 @@
   }
   window.__OPEN_PLAYER_KILL__ = dispose;
 
-  const STATE_KEY = "open_player_settings"; // schema-stable key: don't tie this to the script version
+  // Inherit the main player's root tone when this edition has no saved settings.
+  // Save separately so it cannot overwrite the main player's length preference.
+  const STATE_KEY = "open_short_studies_settings";
+  const STUDY_DURATION = "short";
   // Bump when musical planning or synthesis changes. UI-only releases keep this
   // version; unknown versions must never silently play with a different engine.
   // Engine 2 is reserved for the separate tempo experiment. Musical engine
@@ -70,8 +73,8 @@
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
     if (!Number.isInteger(tone) || tone < 110 || tone > 200)
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
-    if (!["short", "long", "infinite"].includes(record.duration))
-      throw new Error("The replay length must be short, long, or infinite.");
+    if (record.duration !== STUDY_DURATION)
+      throw new Error("This player supports Short studies only. Use the main Open player for Long or Infinite performances.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
@@ -105,7 +108,7 @@
     // Older open-run names use engine 1 by convention. Bare seeds explore the
     // current engine; complete filenames and links always retain their version.
     return { ...validateReplay({ seed, engine: legacy ? "1" : ENGINE_VERSION,
-      tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
+      tone: $("tone")?.value ?? "110", duration: STUDY_DURATION }),
       partial: true, legacy: !!legacy };
   }
 
@@ -143,8 +146,8 @@
   async function replayLastPerformance() {
     if (disposed || !sessionSnapshot) return;
     const { seed, tone, duration, sampleRate, engine } = sessionSnapshot;
-    // Start from the saved settings, rebuilding even an advanced Infinite run
-    // from its seed. Edited controls and the Revisit field belong to other runs.
+    // Start from the saved seed and settings. Edited controls and the Revisit
+    // field belong to other runs.
     return startPerformance({ seed, tone, duration, sampleRate, engine });
   }
 
@@ -175,7 +178,7 @@
     $("replayInput").value = window.location.href;
     try {
       const record = parseReplayQuery(params);
-      applyControls({ tone: record.tone, songDuration: record.duration });
+      applyControls({ tone: record.tone });
       replayStatus(`Seed ${seedHex(record.seed)} ready. Press Load & play to listen, or Play for a new performance.`);
     } catch (error) { replayStatus(error.message); }
   }
@@ -239,27 +242,22 @@
   // =========================
   // STATE & CONTROLS
   // =========================
-  function loadState() { try { return JSON.parse(localStorage.getItem(STATE_KEY)); } catch { return null; } }
+  function loadState() {
+    try {
+      return JSON.parse(localStorage.getItem(STATE_KEY) ?? localStorage.getItem("open_player_settings"));
+    } catch { return null; }
+  }
   function saveState(state) { try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch {} }
 
   function readControls() {
     return {
-      songDuration: $("songDuration")?.value ?? "short",
       tone: $("tone")?.value ?? "110",
       updatedAt: Date.now()
     };
   }
 
   function applyControls(state) {
-    const sd = $("songDuration");
     const tone = $("tone");
-
-    if (sd) {
-      const saved = state?.songDuration != null ? String(state.songDuration) : "short";
-      const migrated = ({ "60": "short", "300": "short", "600": "long", "1800": "long" })[saved];
-      const v = migrated || saved;
-      sd.value = new Set(["short", "long", "infinite"]).has(v) ? v : "short";
-    }
 
     let toneVal = 110;
     if (state?.tone != null) {
@@ -324,7 +322,6 @@
     const playBtn = $("playNow");
     const stopBtn = $("stop");
     const toneInput = $("tone");
-    const durationInput = $("songDuration");
     const playing = (state === "playing");
 
     if (playBtn) {
@@ -337,7 +334,6 @@
     }
     if (playing) cancelToneDrag();
     if (toneInput) toneInput.disabled = playing;
-    if (durationInput) durationInput.disabled = playing;
 
     announce(playing ? "Playing" : "Stopped");
   }
@@ -1313,7 +1309,7 @@
       let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
       if (!Number.isFinite(tone)) tone = 110;
       tone = Math.round(Math.max(110, Math.min(200, tone)));
-      const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
+      const duration = replay ? replay.duration : STUDY_DURATION;
       const engine = replay?.engine ?? ENGINE_VERSION;
       const performance = createPerformance(seed, tone, duration, engine);
       buildMixBus(seed);
@@ -1323,7 +1319,7 @@
       sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
         runId, engine });
       if (replay) {
-        applyControls({ tone, songDuration: duration });
+        applyControls({ tone });
         saveState(readControls());
       }
       if ($("replayLinkFallback")) $("replayLinkFallback").hidden = true;
@@ -1338,7 +1334,7 @@
 
       setButtonState("playing");
       replayStatus(replay?.partial
-        ? `Playing seed ${seedHex(seed)} with the selected root tone and length (engine ${engine}). ${replay.legacy ? "An older filename assumes engine 1 but cannot verify the original settings or engine." : "A seed alone does not include the original settings; keep a replay link or full filename to preserve this version."}`
+        ? `Playing seed ${seedHex(seed)} as a Short study with the selected root tone (engine ${engine}). ${replay.legacy ? "An older filename assumes engine 1 but cannot verify the original settings or engine." : "A seed alone does not include the original settings; keep a replay link or full filename to preserve this version."}`
         : `${replay ? "Replaying" : "Playing"} seed ${seedHex(seed)}. You can copy its replay link or export it below.`);
 
       if (timerInterval) clearInterval(timerInterval);
@@ -1585,7 +1581,6 @@
     initializeToneDial();
 
     listen($("tone"), "input", toneChanged);
-    listen($("songDuration"), "change", () => saveState(readControls()));
 
     // Keep the desktop shortcuts alongside the optional Revisit controls.
     // Live recording remains keyboard-only.
