@@ -141,6 +141,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     qualifiedEnding: (...args) => qualifiedEnding(...args),
     replayFromUI: () => replayFromUI(), copyReplayLink: () => copyReplayLink(),
     replayLastPerformance: () => replayLastPerformance(),
+    playVariationFromUI: (...args) => playVariationFromUI(...args),
     replayLink: (...args) => replayLink(...args), parseReplayInput: (...args) => parseReplayInput(...args),
     state: () => ({ audioContext, bus, isPlaying, isEndingNaturally, isRecording,
       nodes: activeNodes.size, snapshot: sessionSnapshot }),
@@ -282,6 +283,160 @@ test('Short replays retain frozen engine-1 and current preferred-study scores', 
     assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
     h.sandbox.__OPEN_PLAYER_KILL__();
   }
+});
+
+test('a bell variation changes only one modulation scale after the original score is complete', () => {
+  const h = harness();
+  for (const engine of ['1', '3']) for (const seed of [0, 0x03b38656, 0x54325756]) {
+    const original = h.api.createPerformance(seed, 121, engine);
+    const input = { version: 1, strike: 5, modulation: 50 };
+    const varied = h.api.createPerformance(seed, 121, engine, input);
+    input.modulation = 25;
+    assert.equal(varied.variation.modulation, 50);
+    assert.ok(Object.isFrozen(varied.variation));
+    assert.equal(varied.exportDuration, original.exportDuration);
+    assert.equal(varied.density, original.density);
+    let bell = 0, changed = 0;
+    for (let g = 0; g < original.groups.length; g++) {
+      const before = original.groups[g], after = varied.groups[g];
+      assert.equal(after.time, before.time);
+      assert.equal(after.ending, before.ending);
+      assert.equal(after.endingKind, before.endingKind);
+      assert.equal(after.notes.length, before.notes.length);
+      for (let n = 0; n < before.notes.length; n++) {
+        const a = before.notes[n], b = after.notes[n];
+        if (a.kind === 'bell') bell++;
+        if (a.kind === 'bell' && bell === 5) {
+          const { modulationScale, ...unchanged } = b;
+          assert.equal(modulationScale, .5);
+          assert.equal(JSON.stringify(unchanged), JSON.stringify(a));
+          assert.ok(Object.isFrozen(b));
+          changed++;
+        } else assert.equal(JSON.stringify(b), JSON.stringify(a));
+      }
+    }
+    assert.equal(changed, 1);
+    assert.equal(JSON.stringify(h.api.createPerformance(seed, 121, engine,
+      { version: 1, strike: 5, modulation: 100 })), JSON.stringify(original));
+    assert.equal(original.variation, undefined);
+  }
+});
+
+test('variation records round-trip through filenames and links for both base engines', async () => {
+  for (const engine of ['1', '3']) {
+    const h = dialHarness('121');
+    h.elements.get('replayInput').value = `open-run-54325756-test-g${engine}v1-121hz-short-48000sr-b5m50-1.wav`;
+    await h.api.replayFromUI();
+    const saved = h.api.state().snapshot;
+    assert.equal(saved.engine, engine);
+    assert.equal(saved.variation.strike, 5);
+    assert.equal(saved.variation.modulation, 50);
+    assert.equal(h.elements.get('variationStrike').value, '5');
+    assert.equal(h.elements.get('variationStrength').value, '50');
+    const link = h.api.replayLink(saved), params = new URL(link).searchParams;
+    assert.equal(params.get('engine'), `${engine}v1`);
+    assert.equal(params.get('variation'), 'b5m50');
+    const pending = h.api.renderWavExport();
+    h.contexts[1].resolve(audioBuffer([new Float32Array(4)], 48000));
+    await pending;
+    assert.match(h.downloads[0], new RegExp(`-g${engine}v1-121hz-short-48000sr-b5m50-\\d+\\.wav$`));
+    for (const record of [link, h.downloads[0], h.downloads[0].replace('.wav', ''),
+      h.downloads[0].replace('.wav', ' (2).wav')]) {
+      const restored = dialHarness('200');
+      restored.elements.get('replayInput').value = record;
+      await restored.api.replayFromUI();
+      const next = restored.api.state().snapshot;
+      assert.equal(next.engine, engine);
+      assert.equal(next.tone, 121);
+      assert.equal(next.sampleRate, 48000);
+      assert.equal(JSON.stringify(next.groups), JSON.stringify(saved.groups));
+      assert.equal(JSON.stringify(next.variation), JSON.stringify(saved.variation));
+      restored.sandbox.__OPEN_PLAYER_KILL__();
+    }
+    h.sandbox.__OPEN_PLAYER_KILL__();
+  }
+});
+
+test('invalid variations never interrupt or replace a playing performance', async () => {
+  const h = dialHarness('121');
+  h.elements.get('replayInput').value = '54325756';
+  await h.api.replayFromUI();
+  const snapshot = h.api.state().snapshot, bus = h.api.state().bus;
+  const base = h.api.replayLink(snapshot).replace('engine=3', 'engine=3v1');
+  for (const record of [base, base + '&variation=b9m50', base + '&variation=b9m100', base + '&variation=b5m9',
+    base + '&variation=b0m50', base + '&variation=b5m101', base + '&variation=b5m50&variation=b6m50',
+    base.replace('3v1', '3v2') + '&variation=b5m50',
+    base.replace('3v1', '3') + '&variation=b5m50', base + '&variation=b5m50-extra']) {
+    h.elements.get('replayInput').value = record;
+    await h.api.replayFromUI();
+    assert.equal(h.api.state().snapshot, snapshot, record);
+    assert.equal(h.api.state().bus, bus, record);
+    assert.equal(h.api.state().isPlaying, true, record);
+  }
+  for (const [strike, strength] of [['9', '50'], ['9', '100'], ['1.5', '50'], ['5', '0'], ['', '50'], ['5', '50.5']]) {
+    h.elements.get('variationStrike').value = strike;
+    h.elements.get('variationStrength').value = strength;
+    await h.api.playVariationFromUI();
+    assert.equal(h.api.state().snapshot, snapshot);
+    assert.equal(h.api.state().bus, bus);
+  }
+  for (const variation of [{ version: 2, strike: 5, modulation: 50 },
+    { version: 1, strike: 10001, modulation: 50 }, { version: 1, strike: 5, modulation: NaN }])
+    assert.throws(() => h.api.createPerformance(0x54325756, 121, '3', variation));
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('Replay preserves the saved variation, adjustments replace it, and Original and Play clear it', async () => {
+  const h = dialHarness('121');
+  assert.equal(h.elements.get('variationControls').disabled, true);
+  h.elements.get('replayInput').value = '54325756';
+  await h.api.replayFromUI();
+  const original = JSON.stringify(h.api.state().snapshot.groups);
+  await h.api.playVariationFromUI();
+  const varied = JSON.stringify(h.api.state().snapshot.groups);
+  assert.equal(h.elements.get('playOriginal').disabled, false);
+  h.api.stopAllManual(true);
+  h.elements.get('tone').value = '200';
+  h.elements.get('variationStrike').value = '2';
+  h.elements.get('variationStrength').value = '25';
+  await h.api.replayLastPerformance();
+  assert.equal(h.elements.get('tone').value, '121');
+  assert.equal(h.elements.get('variationStrike').value, '5');
+  assert.equal(h.elements.get('variationStrength').value, '50');
+  assert.equal(JSON.stringify(h.api.state().snapshot.groups), varied);
+  h.elements.get('variationStrike').value = '2';
+  h.elements.get('variationStrength').value = '25';
+  await h.api.playVariationFromUI();
+  const bells = h.api.state().snapshot.groups.flatMap(g => g.notes).filter(n => n.kind === 'bell');
+  assert.equal(bells[1].modulationScale, .25);
+  assert.equal(bells[4].modulationScale, undefined);
+  await h.api.playVariationFromUI(true);
+  assert.equal(JSON.stringify(h.api.state().snapshot.groups), original);
+  assert.equal(h.api.state().snapshot.variation, undefined);
+  assert.equal(h.elements.get('playOriginal').disabled, true);
+  await h.api.playVariationFromUI();
+  h.elements.get('variationStrength').value = '100';
+  await h.api.playVariationFromUI();
+  assert.equal(JSON.stringify(h.api.state().snapshot.groups), original);
+  assert.equal(new URL(h.api.replayLink(h.api.state().snapshot)).searchParams.get('variation'), null);
+  h.elements.get('variationStrength').value = '50';
+  await h.api.playVariationFromUI();
+  await h.api.startFromUI();
+  assert.equal(h.api.state().snapshot.seed, 12345);
+  assert.equal(h.api.state().snapshot.variation, undefined);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('a variation URL prepares its controls without starting audio', () => {
+  const h = harness();
+  h.sandbox.location = new URL('https://stereo-images.github.io/open/player.html?seed=54325756&tone=121&length=short&engine=3v1&rate=44100&variation=b5m45');
+  h.sandbox.document.dispatch('DOMContentLoaded');
+  assert.equal(h.contexts.length, 0);
+  assert.equal(h.elements.get('variationTools').open, true);
+  assert.equal(h.elements.get('variationStrike').value, '5');
+  assert.equal(h.elements.get('variationStrength').value, '45');
+  assert.equal(h.elements.get('variationControls').disabled, true);
+  assert.equal(h.elements.get('variationAmount').textContent, '45%');
 });
 
 test('new filenames with or without .wav and links restore the score, dial, and export rate', async () => {
@@ -961,6 +1116,50 @@ test('timed exports match live voices, modulation, envelopes, and natural ending
     assert.ok(snapshot.exportDuration >= longest + 10.465 - 1e-8);
     offline.reject(Error('test')); await pending;
   }
+});
+
+test('only the selected FM-depth automation changes in live and offline variation rendering', async () => {
+  const original = dialHarness('121'), varied = dialHarness('121');
+  for (const h of [original, varied]) {
+    h.elements.get('replayInput').value = h === original ? '54325756'
+      : 'open-run-54325756-test-g3v1-121hz-short-44100sr-b5m50-1.wav';
+    await h.api.replayFromUI();
+  }
+  const first = original.api.renderWavExport(), second = varied.api.renderWavExport();
+  const expected = voiceControls(original.contexts[1]), actual = voiceControls(varied.contexts[1]);
+  const fifth = original.api.state().snapshot.groups.flatMap(g => g.notes).filter(n => n.kind === 'bell')[4];
+  let changed = 0;
+  assert.equal(actual.length, expected.length);
+  const normalized = structuredClone(actual);
+  for (let i = 0; i < actual.length; i++) {
+    const a = expected[i], b = actual[i];
+    if (Math.abs(a.start - fifth.time) < 1e-8 &&
+      fifth.voices.some(v => a.frequency === fifth.freq * v.modRatio)) {
+      const originalEvents = a.output[0].params.gain[1], variedEvents = b.output[0].params.gain[1];
+      assert.equal(variedEvents.length, 2);
+      for (let j = 0; j < 2; j++) {
+        assert.equal(variedEvents[j][0], originalEvents[j][0]);
+        assert.equal(variedEvents[j][2], originalEvents[j][2]);
+        assert.ok(Math.abs(variedEvents[j][1] - originalEvents[j][1] * .5) < 2e-9);
+        normalized[i].output[0].params.gain[1][j][1] = originalEvents[j][1];
+      }
+      changed++;
+    }
+  }
+  assert.equal(changed, fifth.voices.length);
+  assert.deepEqual(normalized, expected);
+  const origin = varied.api.state().bus.origin;
+  varied.advance(varied.api.state().snapshot.exportDuration + 1);
+  assert.deepEqual(voiceControls(varied.contexts[0], origin), actual);
+  // A fresh Play while encoding cannot change this export's saved variation.
+  await varied.api.startFromUI();
+  assert.deepEqual(voiceControls(varied.contexts[1]), actual);
+  original.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
+  varied.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
+  await Promise.all([first, second]);
+  assert.match(varied.downloads[0], /-g3v1-121hz-short-44100sr-b5m50-/);
+  original.sandbox.__OPEN_PLAYER_KILL__();
+  varied.sandbox.__OPEN_PLAYER_KILL__();
 });
 
 test('export preserves the last run after Stop, changed controls, and a replacement Play', async () => {

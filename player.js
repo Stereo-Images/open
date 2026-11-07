@@ -63,12 +63,46 @@
   // identifiers are independent of the public v1.0 release number.
   const ENGINE_VERSION = "3";
   const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION]);
+  // A separately versioned overlay preserves the base engine and random draws.
+  // Serialized engines such as 3v1 are rejected by players without variations.
+  const VARIATION_VERSION = 1;
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
+  function validateVariation(variation) {
+    if (variation == null) return null;
+    if (variation.version !== VARIATION_VERSION)
+      throw new Error("This player supports variation version 1 only.");
+    if (!Number.isInteger(variation.strike) || variation.strike < 1 || variation.strike > 10000)
+      throw new Error("Choose a bell strike from 1 to 10000.");
+    if (!Number.isInteger(variation.modulation) || variation.modulation < 10 || variation.modulation > 100)
+      throw new Error("FM strength must be a whole percentage from 10 to 100.");
+    return Object.freeze({ version: VARIATION_VERSION, strike: variation.strike, modulation: variation.modulation });
+  }
+
+  function variationToken(variation) {
+    return `b${variation.strike}m${variation.modulation}`;
+  }
+
+  function replayEngine(snapshot) {
+    return `${snapshot.engine}${snapshot.variation ? `v${snapshot.variation.version}` : ""}`;
+  }
+
   function validateReplay(record) {
-    if (!SUPPORTED_ENGINES.has(record.engine))
+    const tag = String(record.engine || "").match(/^([0-9]+)(?:v([0-9]+))?$/i);
+    const engine = tag?.[1];
+    if (!SUPPORTED_ENGINES.has(engine))
       throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1 and ${ENGINE_VERSION}.`);
+    let variation = null;
+    if (tag[2] !== undefined) {
+      if (tag[2] !== String(VARIATION_VERSION))
+        throw new Error("This player supports variation version 1 only.");
+      const token = typeof record.variation === "string" && record.variation.match(/^b([1-9][0-9]{0,4})m([1-9][0-9]{0,2})$/i);
+      if (!token) throw new Error("The variation needs a bell strike and FM strength, for example b5m50.");
+      variation = validateVariation({ version: VARIATION_VERSION, strike: Number(token[1]), modulation: Number(token[2]) });
+    } else if (record.variation != null) {
+      throw new Error("Variation settings need a versioned engine tag, such as 3v1.");
+    }
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -79,15 +113,19 @@
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
-      engine: record.engine, sampleRate: record.sampleRate == null ? null : sampleRate };
+      engine, sampleRate: record.sampleRate == null ? null : sampleRate,
+      ...(variation ? { variation } : {}) };
   }
 
   function parseReplayQuery(params) {
     const keys = ["seed", "tone", "length", "engine", "rate"];
     if (keys.some(key => params.getAll(key).length !== 1))
       throw new Error("The replay link needs one seed, root tone, length, engine version, and sample rate.");
+    if (params.getAll("variation").length > 1)
+      throw new Error("The replay link must contain at most one variation.");
     return validateReplay({ seed: params.get("seed"), tone: params.get("tone"),
-      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate") });
+      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate"),
+      variation: params.get("variation") });
   }
 
   function parseReplayInput(value) {
@@ -99,9 +137,9 @@
     }
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
-    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-([a-z]+)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
+    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+(?:v[0-9]+)?)-([0-9]+)hz-([a-z]+)-([0-9]+)sr(?:-(b[0-9]+m[0-9]+))?-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
     if (file) return validateReplay({ seed: file[1], engine: file[2], tone: file[3],
-      duration: file[4].toLowerCase(), sampleRate: file[5] });
+      duration: file[4].toLowerCase(), sampleRate: file[5], variation: file[6] });
     const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.wav)?$/i);
     const seed = legacy ? legacy[1] : input;
     if (!/^[0-9a-f]{8}$/i.test(seed))
@@ -116,12 +154,14 @@
   function replayLink(snapshot) {
     const url = new URL("player.html", window.location.href);
     url.search = new URLSearchParams({ seed: seedHex(snapshot.seed), tone: String(snapshot.tone),
-      length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate) }).toString();
+      length: snapshot.duration, engine: replayEngine(snapshot), rate: String(snapshot.sampleRate) }).toString();
+    if (snapshot.variation) url.searchParams.set("variation", variationToken(snapshot.variation));
     return url.href;
   }
 
   function exportFilename(snapshot, timestamp) {
-    return `open-run-${snapshot.runId}-g${snapshot.engine}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr-${timestamp}.wav`;
+    const variation = snapshot.variation ? `-${variationToken(snapshot.variation)}` : "";
+    return `open-run-${snapshot.runId}-g${replayEngine(snapshot)}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr${variation}-${timestamp}.wav`;
   }
 
   function replayStatus(message) {
@@ -135,6 +175,45 @@
     if ($("replayLast")) $("replayLast").disabled = !sessionSnapshot;
     if ($("copyReplay")) $("copyReplay").disabled = !sessionSnapshot;
     if ($("exportWav")) $("exportWav").disabled = !sessionSnapshot || isExporting;
+    if ($("variationControls")) $("variationControls").disabled = !sessionSnapshot;
+    if ($("playOriginal")) $("playOriginal").disabled = !sessionSnapshot?.variation;
+  }
+
+  function updateVariationReadout() {
+    const strength = $("variationStrength");
+    if (!strength) return;
+    if ($("variationAmount")) $("variationAmount").textContent = `${strength.value}%`;
+    strength.setAttribute("aria-valuetext", `${strength.value} percent of original FM strength`);
+  }
+
+  function showVariationSettings(variation) {
+    if (!variation) return;
+    if ($("variationStrike")) $("variationStrike").value = String(variation.strike);
+    if ($("variationStrength")) $("variationStrength").value = String(variation.modulation);
+    if ($("variationTools")) $("variationTools").open = true;
+    updateVariationReadout();
+  }
+
+  function syncVariationControls(previous) {
+    const count = sessionSnapshot.groups.reduce((sum, group) => sum + group.notes.filter(n => n.kind === "bell").length, 0);
+    if ($("variationStrike")) $("variationStrike").max = String(count);
+    if (sessionSnapshot.variation) showVariationSettings(sessionSnapshot.variation);
+    else if (!previous || previous.seed !== sessionSnapshot.seed || previous.tone !== sessionSnapshot.tone || previous.engine !== sessionSnapshot.engine) {
+      if ($("variationStrike")) $("variationStrike").value = String(Math.min(5, count));
+      if ($("variationStrength")) $("variationStrength").value = "50";
+      updateVariationReadout();
+    }
+    if ($("variationStatus")) $("variationStatus").textContent = sessionSnapshot.variation
+      ? `Variation: bell ${sessionSnapshot.variation.strike}, ${sessionSnapshot.variation.modulation}% FM strength. ${count} bell strikes.`
+      : `Original performance. ${count} bell strikes.`;
+  }
+
+  async function playVariationFromUI(original = false) {
+    if (disposed || !sessionSnapshot) return;
+    const { seed, tone, duration, sampleRate, engine } = sessionSnapshot;
+    const variation = original ? null : { version: VARIATION_VERSION,
+      strike: Number($("variationStrike")?.value), modulation: Number($("variationStrength")?.value) };
+    return startPerformance({ seed, tone, duration, sampleRate, engine, variation });
   }
 
   async function replayFromUI() {
@@ -146,10 +225,10 @@
 
   async function replayLastPerformance() {
     if (disposed || !sessionSnapshot) return;
-    const { seed, tone, duration, sampleRate, engine } = sessionSnapshot;
+    const { seed, tone, duration, sampleRate, engine, variation } = sessionSnapshot;
     // Start from the saved seed and settings. Edited controls and the Revisit
     // field belong to other runs.
-    return startPerformance({ seed, tone, duration, sampleRate, engine });
+    return startPerformance({ seed, tone, duration, sampleRate, engine, variation });
   }
 
   async function copyReplayLink() {
@@ -174,12 +253,13 @@
 
   function loadReplayLink() {
     const params = new URLSearchParams(window.location.search);
-    if (!["seed", "tone", "length", "engine", "rate"].some(key => params.has(key))) return;
+    if (!["seed", "tone", "length", "engine", "rate", "variation"].some(key => params.has(key))) return;
     $("revisit").open = true;
     $("replayInput").value = window.location.href;
     try {
       const record = parseReplayQuery(params);
       applyControls({ tone: record.tone });
+      showVariationSettings(record.variation);
       replayStatus(`Seed ${seedHex(record.seed)} ready. Press Load & play to listen, or Play for a new performance.`);
     } catch (error) { replayStatus(error.message); }
   }
@@ -1067,8 +1147,9 @@
     };
   }
 
-  function createPerformance(seed, tone, engine = ENGINE_VERSION) {
+  function createPerformance(seed, tone, engine = ENGINE_VERSION, variation = null) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
+    const selectedVariation = validateVariation(variation);
     const generator = createPerformanceGenerator(seed, tone, engine);
     const groups = [];
     let lastVoiceEnd = 0;
@@ -1087,7 +1168,7 @@
       groups.push(Object.freeze(group));
       if (groups.length > 10000) throw new Error("Performance exceeded planning limit");
     }
-    return Object.freeze({
+    const performance = Object.freeze({
       seed, tone, duration: STUDY_DURATION, targetDuration: ENDING_TARGET_SECONDS, density: generator.density,
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
       groups: Object.freeze(groups),
@@ -1095,6 +1176,24 @@
       exportDuration: Math.max(ENDING_TARGET_SECONDS, lastVoiceEnd)
         + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25
     });
+    if (!selectedVariation) return performance;
+    // Resolve the entire original score first. The overlay consumes no random
+    // draws and cannot influence harmony, endings, timing, or other voices.
+    let bell = 0, found = false;
+    const variedGroups = groups.map(group => {
+      let changed = false;
+      const notes = group.notes.map(note => {
+        if (note.kind !== "bell" || ++bell !== selectedVariation.strike) return note;
+        found = true;
+        if (selectedVariation.modulation === 100) return note;
+        changed = true;
+        return Object.freeze({ ...note, modulationScale: selectedVariation.modulation / 100 });
+      });
+      return changed ? Object.freeze({ ...group, notes: Object.freeze(notes) }) : group;
+    });
+    if (!found) throw new Error(`This performance has ${bell} bell strikes; choose a strike from 1 to ${bell}.`);
+    if (selectedVariation.modulation === 100) return performance;
+    return Object.freeze({ ...performance, groups: Object.freeze(variedGroups), variation: selectedVariation });
   }
 
   // Only plain note data is retained. Audio nodes are created near playback time.
@@ -1146,6 +1245,7 @@
     const note = planned || planBell(freq, time, duration, volume, instability, tensionAmt, rand, spatialStates.get(ctx).random);
     freq = note.freq;
     const { voices, totalAmp } = note;
+    const modulationScale = note.modulationScale ?? 1;
 
     const spatialInput = createNoteDrift(ctx, destination, wetSend, time, duration, note.pan);
     voices.forEach(voice => {
@@ -1162,8 +1262,8 @@
       carrier.frequency.value = voice.frequency;
       modulator.frequency.value = freq * voice.modRatio;
 
-      modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
+      modGain.gain.setValueAtTime(freq * voice.modIndex * modulationScale, time);
+      modGain.gain.exponentialRampToValueAtTime(freq * 0.01 * modulationScale, time + (duration * 0.3));
 
       ampGain.gain.setValueAtTime(0.0001, time);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
@@ -1284,6 +1384,16 @@
       replayStatus("This player supports Short studies only.");
       return;
     }
+    const seed = replay ? replay.seed : (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
+    let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
+    if (!Number.isFinite(tone)) tone = 110;
+    tone = Math.round(Math.max(110, Math.min(200, tone)));
+    const engine = replay?.engine ?? ENGINE_VERSION;
+    let performance;
+    try {
+      // Validate the strike against the finished score before interrupting audio.
+      performance = createPerformance(seed, tone, engine, replay?.variation);
+    } catch (error) { replayStatus(error.message); return; }
     let request = ++startRequest;
     try {
       ensureAudioContext();
@@ -1296,16 +1406,11 @@
       request = startRequest;
 
       isEndingNaturally = false;
-      const seed = replay ? replay.seed : (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
-      let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
-      if (!Number.isFinite(tone)) tone = 110;
-      tone = Math.round(Math.max(110, Math.min(200, tone)));
-      const engine = replay?.engine ?? ENGINE_VERSION;
-      const performance = createPerformance(seed, tone, engine);
       buildMixBus(seed);
       setSeed(seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
       const runId = `${seedHex(seed)}-${Date.now().toString(36)}`;
+      const previous = sessionSnapshot;
       sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
         runId, engine });
       if (replay) {
@@ -1313,6 +1418,7 @@
         saveState(readControls());
       }
       if ($("replayLinkFallback")) $("replayLinkFallback").hidden = true;
+      syncVariationControls(previous);
       updateReplayControls();
       liveCursor = 0;
       liveTimeShift = 0;
@@ -1325,7 +1431,7 @@
       setButtonState("playing");
       replayStatus(replay?.partial
         ? `Playing seed ${seedHex(seed)} as a Short study with the selected root tone (engine ${engine}). ${replay.legacy ? "An older filename assumes engine 1 but cannot verify the original settings or engine." : "A seed alone does not include the original settings; keep a replay link or full filename to preserve this version."}`
-        : `${replay ? "Replaying" : "Playing"} seed ${seedHex(seed)}. You can copy its replay link or export it below.`);
+        : `${replay ? "Replaying" : "Playing"} seed ${seedHex(seed)}.${performance.variation ? ` Variation: bell ${performance.variation.strike}, ${performance.variation.modulation}% FM strength.` : ""} You can copy its replay link or export it below.`);
 
       if (timerInterval) clearInterval(timerInterval);
       timerInterval = setInterval(scheduler, SCHEDULER_INTERVAL_MS);
@@ -1561,6 +1667,9 @@
     listen($("replayRun"), "click", replayFromUI);
     listen($("copyReplay"), "click", copyReplayLink);
     listen($("exportWav"), "click", renderWavExport);
+    listen($("playVariation"), "click", () => playVariationFromUI());
+    listen($("playOriginal"), "click", () => playVariationFromUI(true));
+    listen($("variationStrength"), "input", updateVariationReadout);
     listen($("replayInput"), "keydown", (event) => {
       if (event.key !== "Enter" || event.isComposing || event.repeat) return;
       event.preventDefault();

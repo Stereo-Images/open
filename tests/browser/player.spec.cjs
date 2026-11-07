@@ -86,7 +86,7 @@ test('the Short-only player ignores saved lengths and preserves main settings', 
   await expect(page.locator('#songDuration')).toHaveCount(0);
   await expect(page.locator('#tone')).toHaveValue('155');
   await page.locator('#playNow').click();
-  await page.locator('#revisit summary').click();
+  await page.locator('#revisit > summary').click();
   await page.locator('#copyReplay').click();
   const replay = new URL(await page.evaluate(() => window.copiedReplay));
   expect(replay.searchParams.get('length')).toBe('short');
@@ -155,7 +155,7 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await page.locator('#tone').focus();
   await page.keyboard.press('End');
   await page.locator('#replayInput').fill('invalid input should not affect Replay');
-  await page.locator('#revisit summary').click();
+  await page.locator('#revisit > summary').click();
   // Use keyboard navigation: programmatic focus after a pointer click does
   // not consistently activate :focus-visible across browser versions.
   await page.keyboard.press('Shift+Tab');
@@ -231,7 +231,7 @@ for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the s
   expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}-200hz-short-44100sr-\\d+\\.wav$`));
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
-  await page.locator('#revisit summary').click();
+  await page.locator('#revisit > summary').click();
   await page.locator('#replayInput').fill(filename);
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
@@ -242,6 +242,104 @@ for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the s
   const recreated = await fs.readFile(await second.path());
   expect(second.suggestedFilename()).not.toBe(filename);
   expectMatchingWavs(original, recreated, 'Replay WAV comparison');
+});
+
+test('bell variation controls fit on mobile and preserve the saved replay independently of edits', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', { configurable: true,
+      value: { writeText: async text => { window.copiedReplay = text; } } });
+  });
+  await page.goto('/player.html?seed=54325756&tone=121&length=short&engine=3v1&rate=44100&variation=b5m50');
+  await expect(page.locator('#variationTools')).toHaveAttribute('open', '');
+  await expect(page.locator('#variationStrike')).toHaveValue('5');
+  await expect(page.locator('#variationStrength')).toHaveValue('50');
+  await expect(page.locator('#playVariation')).toBeDisabled();
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  await page.locator('#replayRun').click();
+  await expect(page.locator('#variationStatus')).toHaveText('Variation: bell 5, 50% FM strength. 8 bell strikes.');
+  await expect(page.locator('#variationStrike')).toHaveAttribute('max', '8');
+  await expect(page.locator('#playOriginal')).toBeEnabled();
+  await page.locator('#variationStrike').fill('9');
+  await page.locator('#playVariation').click();
+  await expect(page.locator('#replayStatus')).toContainText('This performance has 8 bell strikes');
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#copyReplay').click();
+  let saved = new URL(await page.evaluate(() => window.copiedReplay));
+  expect(saved.searchParams.get('variation')).toBe('b5m50');
+  await page.locator('#stop').click();
+  await page.locator('#tone').focus();
+  await page.keyboard.press('End');
+  await page.locator('#variationStrike').fill('2');
+  await page.locator('#variationStrength').focus();
+  await page.keyboard.press('Home');
+  await expect(page.locator('#variationAmount')).toHaveText('10%');
+  await page.locator('#replayLast').click();
+  await expect(page.locator('#tone')).toHaveValue('121');
+  await expect(page.locator('#variationStrike')).toHaveValue('5');
+  await expect(page.locator('#variationStrength')).toHaveValue('50');
+  await page.locator('#playOriginal').click();
+  await expect(page.locator('#variationStatus')).toHaveText('Original performance. 8 bell strikes.');
+  await expect(page.locator('#playOriginal')).toBeDisabled();
+  await page.locator('#copyReplay').click();
+  saved = new URL(await page.evaluate(() => window.copiedReplay));
+  expect(saved.searchParams.get('engine')).toBe('3');
+  expect(saved.searchParams.has('variation')).toBe(false);
+  // The last chosen settings remain available for an original/variation comparison.
+  await expect(page.locator('#variationStrength')).toHaveValue('50');
+  await page.locator('#playVariation').click();
+  await expect(page.locator('#playOriginal')).toBeEnabled();
+  await page.locator('#variationStrength').focus();
+  await page.keyboard.press('End');
+  await page.locator('#playVariation').click();
+  await expect(page.locator('#variationStatus')).toHaveText('Original performance. 8 bell strikes.');
+  await page.locator('#playNow').click();
+  await page.locator('#copyReplay').click();
+  saved = new URL(await page.evaluate(() => window.copiedReplay));
+  expect(saved.searchParams.get('seed')).toBe('00003039');
+  expect(saved.searchParams.get('engine')).toBe('3');
+  expect(saved.searchParams.has('variation')).toBe(false);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  const sizes = await page.locator('#variationTools input, #variationTools button').evaluateAll(elements =>
+    elements.map(element => ({ width: element.getBoundingClientRect().width, height: element.getBoundingClientRect().height })));
+  expect(sizes.every(size => size.width >= 44 && size.height >= 44)).toBe(true);
+});
+
+test('a fifth-bell variation preserves the opening audio and reproduces from its full WAV filename', async ({ page }) => {
+  test.setTimeout(180000);
+  await page.goto('/player.html?seed=54325756&tone=121&length=short&engine=3&rate=44100');
+  await page.locator('#replayRun').click();
+  await page.locator('#stop').click();
+  async function exportWav() {
+    const pending = page.waitForEvent('download', { timeout: 60000 });
+    await page.locator('#exportWav').click();
+    const download = await pending;
+    return { filename: download.suggestedFilename(), bytes: await fs.readFile(await download.path()) };
+  }
+  const original = await exportWav();
+  await page.locator('#variationTools > summary').click();
+  await page.locator('#playVariation').click();
+  await page.locator('#stop').click();
+  const varied = await exportWav();
+  expect(varied.filename).toMatch(/^open-run-54325756-[a-z0-9]+-g3v1-121hz-short-44100sr-b5m50-\d+\.wav$/);
+  expect(varied.bytes.length).toBe(original.bytes.length);
+  const fifthStrikeOffset = 44 + Math.floor(37.82588341549526 * 44100) * 4;
+  expectMatchingWavs(original.bytes.subarray(0, fifthStrikeOffset),
+    varied.bytes.subarray(0, fifthStrikeOffset), 'Unchanged audio before fifth bell');
+  let maximumChange = 0;
+  for (let offset = fifthStrikeOffset; offset < varied.bytes.length; offset += 2)
+    maximumChange = Math.max(maximumChange, Math.abs(original.bytes.readInt16LE(offset) - varied.bytes.readInt16LE(offset)));
+  expect(maximumChange).toBeGreaterThan(100);
+  await page.goto('/player.html');
+  await page.locator('#revisit > summary').click();
+  await page.locator('#replayInput').fill(varied.filename.replace(/\.wav$/, ''));
+  await page.locator('#replayRun').click();
+  await expect(page.locator('#variationStrike')).toHaveValue('5');
+  await expect(page.locator('#variationStrength')).toHaveValue('50');
+  await expect(page.locator('#tone')).toHaveValue('121');
+  await page.locator('#stop').click();
+  const recreated = await exportWav();
+  expectMatchingWavs(varied.bytes, recreated.bytes, 'Recreated variation WAV');
 });
 
 test('the tone dial has visible keyboard focus and native keyboard adjustment', async ({ page }) => {

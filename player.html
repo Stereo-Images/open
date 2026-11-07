@@ -22,7 +22,7 @@
   <meta name="twitter:image" content="https://stereo-images.github.io/open/social-preview.png" />
   <meta name="twitter:image:alt" content="Open — Bell Music for Desktop Listening. By Aaron Koppel." />
   <link rel="icon" type="image/svg+xml" href="favicon.svg" />
-  <link rel="stylesheet" href="style.css?v=1.0&amp;rev=short-only" />
+  <link rel="stylesheet" href="style.css?v=1.0&amp;rev=strike-variation" />
 </head>
 <body class="player">
   <main class="shell" aria-label="Audio Instrument">
@@ -72,6 +72,30 @@
             spellcheck="false" aria-describedby="replayHelp" placeholder="e.g. d1a0b62b" />
           <p id="replayHelp" class="revisit-help">Filenames work with or without .wav. For a seed or older filename, set the original root tone above. Play always creates a new performance.</p>
           <button type="button" id="replayRun" class="btn">Load &amp; play</button>
+          <details id="variationTools" class="variation-tools">
+            <summary>Vary one strike</summary>
+            <fieldset id="variationControls" disabled>
+              <legend class="sr-only">Bell variation</legend>
+              <div class="variation-fields">
+                <div>
+                  <label for="variationStrike">Bell strike</label>
+                  <input id="variationStrike" type="number" min="1" max="10000" step="1" value="5"
+                    inputmode="numeric" aria-describedby="variationHelp variationStatus" />
+                </div>
+                <div>
+                  <label for="variationStrength">FM strength <span id="variationAmount" aria-hidden="true">50%</span></label>
+                  <input id="variationStrength" type="range" min="10" max="100" step="1" value="50"
+                    aria-valuetext="50 percent of original FM strength" aria-describedby="variationHelp" />
+                </div>
+              </div>
+              <p id="variationHelp" class="revisit-help">Change the tone of one bell while keeping the notes and timing. Lower settings reduce FM modulation; 100% restores the original. Each variation starts from the original score.</p>
+              <div class="revisit-actions">
+                <button type="button" id="playVariation" class="btn">Play variation</button>
+                <button type="button" id="playOriginal" class="btn" disabled>Play original</button>
+              </div>
+            </fieldset>
+            <p id="variationStatus" class="revisit-help">Play or load a performance first.</p>
+          </details>
           <div class="revisit-actions">
             <button type="button" id="copyReplay" class="btn" disabled>Copy replay link</button>
             <button type="button" id="exportWav" class="btn" disabled>Export WAV</button>
@@ -94,7 +118,7 @@
     </footer>
   </main>
 
-  <script src="player.js?v=1.0&amp;rev=short-only"></script>
+  <script src="player.js?v=1.0&amp;rev=strike-variation"></script>
 </body>
 </html>
 

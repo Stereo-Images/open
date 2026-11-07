@@ -172,3 +172,28 @@ and live/export controls and tail completion.
 Native WAV round trips cover both engines, including reload and restoration
 from a full filename. Engine-3 files select the qualified-ending behavior;
 engine-1 files preserve the original tonic endings.
+
+## Bell variations (version 1)
+
+The optional overlay runs after the complete engine-1 or engine-3 score has been
+planned. It adds a modulation scale to exactly one numbered bell, excluding
+drone notes from the count. The renderer applies the scale to both endpoints
+of each FM-depth envelope in that bell. No random draws, oscillator frequencies,
+voice weights, amplitude envelopes, panning, note times, drones, or ending rules
+change. Strength is an integer from 10 to 100 percent; 100 percent canonicalizes
+to the original, untagged performance. Adjustments replace rather than compound.
+
+Versioned replay engines `1v1` and `3v1` require a token such as `b5m50`, in the
+`variation` query parameter or between the sample rate and export timestamp in
+the filename. Original links and filenames retain their existing format.
+The version in the engine field ensures older players reject varied records.
+Malformed, duplicate, missing, unsupported, and out-of-score variation settings
+must fail without interrupting playback. Controls are separate from the saved
+performance: Replay, Copy replay link, and export use the saved variation.
+
+Regression checks compare every planned field against the original score, verify
+that only the chosen FM-depth automation changes in both renderers, exercise
+original restoration and export isolation, and round-trip variation metadata.
+Native browser checks cover the narrow controls, original/variation switching,
+and WAV reproduction after reloading a versioned filename. They also compare
+audio before the selected strike against an original export.
