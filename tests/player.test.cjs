@@ -418,6 +418,68 @@ test('restored FM studies preserve the score and borrow every original strike re
   assert.ok(changingRatios > 64);
 });
 
+test('Long study drones share the melody tuning and remain compatible through complete tails', () => {
+  const h = harness();
+  // Use the actual selected frequency, not a rounded concert-pitch note name.
+  // Include every dial value, especially the 174/175 Hz bass-octave boundary.
+  const cases = [];
+  for (let tone = 110; tone <= 200; tone++)
+    for (const seed of [0xe5561004, 0x4daae09d]) cases.push({ seed, tone });
+  for (let i = 0; i < 64; i++) cases.push({
+    seed: i === 0 ? 0 : i === 1 ? 0xffffffff : Math.imul(i, 0x9e3779b9) >>> 0,
+    tone: [110, 121, 175, 200][i % 4]
+  });
+  const semitones = (a, b) => 12 * Math.log2(a / b);
+  const forbidden = new Set([1, 6, 11]);
+  const tail = 0.1 + 0.1 + 10 + 0.015 + 0.25;
+  let droneEntries = 0, melodyPairs = 0, tailOnlyPairs = 0;
+  for (const { seed, tone } of cases) for (const engine of ['4', '5']) {
+    const p = h.api.createPerformance(seed, tone, 'long', engine);
+    const label = `engine ${engine}, seed ${seed.toString(16)}, ${tone} Hz`;
+    for (const group of p.groups) {
+      const drones = group.notes.filter(n => n.kind === 'bass');
+      if (!drones.length) continue;
+      droneEntries++;
+      // An open fifth avoids imposing a major third against the melody's fourth.
+      assert.equal(drones.length, 2, `unexpected drone chord: ${label}`);
+      const [root, fifth] = drones;
+      const octaves = Math.log2(root.freq / tone);
+      assert.ok(Math.abs(octaves - Math.round(octaves)) < 1e-10,
+        `drone root is not an octave of the selected tone: ${label}`);
+      assert.ok(root.freq >= 87.31 && root.freq <= tone,
+        `drone root leaves the bass range: ${label}`);
+      assert.ok(Math.abs(semitones(fifth.freq, root.freq) - 7) < 1e-9,
+        `drone is not a tuned perfect fifth: ${label}`);
+      assert.equal(root.time, fifth.time);
+      assert.equal(root.duration, fifth.duration);
+    }
+    // Sweep the full sounding score, not just notes sharing an onset. Check
+    // new drones against old bells as well as new bells against old drones.
+    let sounding = [];
+    const notes = p.groups.flatMap(g => g.notes).sort((a, b) => a.time - b.time);
+    for (const note of notes) {
+      sounding = sounding.filter(n => n.time + n.duration + tail > note.time);
+      for (const previous of sounding) {
+        if (note.kind !== 'bass' && previous.kind !== 'bass') continue;
+        const interval = Math.abs(semitones(note.freq, previous.freq));
+        assert.ok(Math.abs(interval - Math.round(interval)) < 1e-8,
+          `melody and drone use different nominal tuning: ${label}`);
+        const pitchClassInterval = Math.round(interval) % 12;
+        assert.ok(!forbidden.has(pitchClassInterval),
+          `drone clash (${pitchClassInterval} semitones) at ${note.time}: ${label}`);
+        if (note.kind !== previous.kind) {
+          melodyPairs++;
+          if (previous.time + previous.duration <= note.time) tailOnlyPairs++;
+        }
+      }
+      sounding.push(note);
+    }
+  }
+  assert.ok(droneEntries > cases.length * 2);
+  assert.ok(melodyPairs > droneEntries);
+  assert.ok(tailOnlyPairs > droneEntries);
+});
+
 test('fixed Long studies retain one collection, recurring phrases, and gradual FM across seeds', () => {
   const h = harness();
   const scale = new Set([0, 2, 4, 5, 7, 9]);
