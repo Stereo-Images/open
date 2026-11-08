@@ -170,7 +170,7 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','long'], ['6','short'], ['6','long']]) test(`engine ${engine} ${mode} filename recreates the same native WAV after reloading`, async ({ page }) => {
+for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','long'], ['6','short'], ['6','long'], ['7','long']]) test(`engine ${engine} ${mode} filename recreates the same native WAV after reloading`, async ({ page }) => {
   const longStudy = mode === 'long';
   test.setTimeout(longStudy ? 240000 : 120000);
   const length = longStudy ? 'long' : 'short';
@@ -194,7 +194,7 @@ for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
   // Protect the retained Short Study's original full filename, including
-  // restoration from a Long selection that would otherwise use engine 6.
+  // restoration from a Long selection that would otherwise use the newest default engine.
   await page.locator('#songDuration').selectOption('long');
   await page.locator('#revisit summary').click();
   const replayFilename = engine === '3'
@@ -212,6 +212,34 @@ for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','
   const recreated = await fs.readFile(await second.path());
   expect(second.suggestedFilename()).not.toBe(filename);
   expectMatchingWavs(original, recreated, 'Replay WAV comparison');
+});
+
+test('the newest default renders the protected Short Study like its original g3 filename', async ({ page }) => {
+  await page.addInitScript(() => {
+    const BaseContext = window.AudioContext;
+    window.AudioContext = new Proxy(BaseContext, { construct(Target, args) {
+      return new Target({ ...args[0], sampleRate: 44100 });
+    } });
+    crypto.getRandomValues = array => { array[0] = 0x0393ded7; return array; };
+  });
+  const render = async () => {
+    await page.locator('#stop').click();
+    const downloaded = page.waitForEvent('download');
+    await page.locator('#exportWav').click();
+    return fs.readFile(await (await downloaded).path());
+  };
+  await page.goto('/player.html');
+  await page.locator('#songDuration').selectOption('short');
+  await page.locator('#tone').focus();
+  await page.keyboard.press('End');
+  await page.locator('#playNow').click();
+  const current = await render();
+  await page.goto('/player.html');
+  await page.locator('#revisit summary').click();
+  await page.locator('#replayInput').fill('open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406');
+  await page.locator('#replayRun').click();
+  const legacy = await render();
+  expectMatchingWavs(legacy, current, 'Newest default versus protected g3 Short Study');
 });
 
 test('the tone dial has visible keyboard focus and native keyboard adjustment', async ({ page }) => {

@@ -60,19 +60,20 @@
   const ENGINE_VERSION = "3";
   const LONG_STUDY_ENGINE = "5";
   const FIXED_COLLECTION_ENGINE = "6";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE]);
+  const DOMINANT_PEDAL_ENGINE = "7";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
   function defaultEngine() {
-    return FIXED_COLLECTION_ENGINE;
+    return DOMINANT_PEDAL_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5 and 6.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6 and 7.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -1277,6 +1278,43 @@
     };
   }
 
+  // Keep every engine-6 Long bell, replacing its chordal drones with a single
+  // quiet dominant. Six groups of lookahead define an exact five-strike span
+  // without changing the source's timing or random draws. Short and Infinite
+  // keep the fixed walk; in particular the retained Short Study stays exact.
+  function createDominantPedalGenerator(seed, baseFreq, duration) {
+    const composition = createStruckStudyGenerator(seed, baseFreq, duration);
+    const freq = clampFreqMin(baseFreq * Math.pow(2, -5 / 12), DRONE_FLOOR_HZ);
+    const pending = [];
+    let exhausted = false, strike = 0, nextPedalStrike = 0;
+    return {
+      density: composition.density, arcLen: composition.arcLen,
+      arcClimaxAt: composition.arcClimaxAt,
+      study: Object.freeze({ ...composition.study, form: "dominant-pedal",
+        pedalAfter: 120, pedalStrikes: 5 }),
+      get nextTime() { return pending.length ? pending[0].time : composition.nextTime; },
+      next() {
+        while (pending.length < 6 && !exhausted) {
+          const group = composition.next();
+          if (group) pending.push(group); else exhausted = true;
+        }
+        const group = pending.shift();
+        if (!group) return null;
+        group.notes = group.notes.filter(note => note.kind === "bell");
+        if (group.time >= 120 && strike >= nextPedalStrike && pending.length === 5 &&
+            !group.ending && !pending.some(next => next.ending)) {
+          group.notes.push({ kind: "pedal", freq, time: group.time,
+            duration: pending[4].time - group.time, volume: 0.035,
+            attack: 6, release: 8, modRatio: 2, modIndex: 0.16, pan: 0 });
+          // Two eleven-note phrases between entries leave a substantial gap.
+          nextPedalStrike = strike + 22;
+        }
+        strike++;
+        return group;
+      }
+    };
+  }
+
   function resolveDuration(seed, durationInput) {
     if (durationInput === "short") return 60;
     if (durationInput === "long") {
@@ -1293,7 +1331,10 @@
     if (["4", LONG_STUDY_ENGINE].includes(engine) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
-    const generator = engine === FIXED_COLLECTION_ENGINE
+    const generator = engine === DOMINANT_PEDAL_ENGINE
+      ? (durationInput === "long" ? createDominantPedalGenerator(seed, tone, duration)
+        : createFixedWalkGenerator(seed, tone, duration))
+      : engine === FIXED_COLLECTION_ENGINE
       ? (durationInput === "long" ? createStruckStudyGenerator(seed, tone, duration)
         : createFixedWalkGenerator(seed, tone, duration))
       : engine === LONG_STUDY_ENGINE
@@ -1447,6 +1488,71 @@
     registerVoice(ctx, [carrier, modulator, modGain, ampGain, lp], time + duration);
   }
 
+  // A soft sustained voice for engine 7 only. Exact 2:1 modulation and a low
+  // index keep the pedal dark; a light flanger feeds a wide stereo chorus.
+  function schedulePedalVoice(ctx, destination, wetSend, note, time) {
+    const carrier = trackNode(ctx, ctx.createOscillator());
+    const modulator = trackNode(ctx, ctx.createOscillator());
+    const modGain = trackNode(ctx, ctx.createGain());
+    const ampGain = trackNode(ctx, ctx.createGain());
+    const lp = trackNode(ctx, ctx.createBiquadFilter());
+    carrier.type = modulator.type = "sine";
+    carrier.frequency.value = note.freq;
+    modulator.frequency.value = note.freq * note.modRatio;
+    modGain.gain.setValueAtTime(0, time);
+    modGain.gain.linearRampToValueAtTime(note.freq * note.modIndex, time + note.duration / 2);
+    modGain.gain.linearRampToValueAtTime(0, time + note.duration);
+    const attack = Math.min(note.attack, note.duration / 3);
+    const release = Math.min(note.release, note.duration / 3);
+    ampGain.gain.setValueAtTime(0, time);
+    ampGain.gain.linearRampToValueAtTime(note.volume, time + attack);
+    ampGain.gain.setValueAtTime(note.volume, time + note.duration - release);
+    ampGain.gain.linearRampToValueAtTime(0, time + note.duration);
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(450, time);
+    lp.Q.value = 0.6;
+    modulator.connect(modGain); modGain.connect(carrier.frequency);
+    carrier.connect(ampGain); ampGain.connect(lp);
+    lp.connect(createPedalEffects(ctx, destination, wetSend, time, note.duration));
+    modulator.start(time); carrier.start(time);
+    modulator.stop(time + note.duration); carrier.stop(time + note.duration);
+    registerVoice(ctx, [carrier, modulator, modGain, ampGain, lp], time + note.duration);
+  }
+
+  function createPedalEffects(ctx, destination, wetSend, time, duration) {
+    const nodes = [];
+    const own = node => { nodes.push(trackNode(ctx, node)); return node; };
+    const gain = value => { const node = own(ctx.createGain()); node.gain.value = value; return node; };
+    const modulatedDelay = (seconds, depth, rate) => {
+      const delay = own(ctx.createDelay(0.05));
+      delay.delayTime.setValueAtTime(seconds, time);
+      const lfo = own(ctx.createOscillator()), amount = gain(depth);
+      lfo.type = "sine"; lfo.frequency.value = rate;
+      lfo.connect(amount); amount.connect(delay.delayTime);
+      lfo.start(time); lfo.stop(time + duration);
+      return delay;
+    };
+    const input = gain(1), flanged = gain(1);
+    const flangeDry = gain(0.9), flangeWet = gain(0.1);
+    const flange = modulatedDelay(0.0015, 0.0009, 0.07);
+    input.connect(flangeDry); flangeDry.connect(flanged);
+    input.connect(flange); flange.connect(flangeWet); flangeWet.connect(flanged);
+    const output = createNoteDrift(ctx, destination, wetSend, time, duration, 0);
+    const center = gain(0.4);
+    flanged.connect(center); center.connect(output);
+    for (const [pan, delay, rate] of [[-1, 0.012, 0.11], [1, 0.018, 0.137]]) {
+      const chorus = modulatedDelay(delay, 0.003, rate);
+      const level = gain(0.3), panner = own(ctx.createStereoPanner());
+      panner.pan.setValueAtTime(pan, time);
+      flanged.connect(chorus); chorus.connect(level);
+      level.connect(panner); panner.connect(output);
+    }
+    // The maximum combined delay is below 24 ms, within the existing 100 ms
+    // voice-settling allowance. No feedback path can outlive the planned tail.
+    registerVoice(ctx, nodes, time + duration);
+    return input;
+  }
+
   // =========================
   // SCHEDULER
   // =========================
@@ -1455,6 +1561,8 @@
       const time = origin + note.time;
       if (note.kind === "bell") {
         scheduleNote(ctx, master, wetSend, note.freq, time, note.duration, note.volume, 0, 0, note);
+      } else if (note.kind === "pedal") {
+        schedulePedalVoice(ctx, master, wetSend, note, time);
       } else {
         scheduleBassVoice(ctx, master, wetSend, note.freq, time, note.duration, note.volume, rand, note);
       }

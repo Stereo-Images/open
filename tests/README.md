@@ -198,3 +198,12 @@ Engine 6 is the default for new Play and bare seeds in Short, Long and Infinite.
 Tests cover 120 seed/tone combinations in all three durations, verify the six-note collection and every nominal pitch-class pair, check drone compatibility, and advance every Infinite continuation by another 240 groups. Default and explicit engine-6 playback must agree. Long scores must match engine 5 exactly. A normal Play test forces the random draw to `0393ded7` at 200 Hz and verifies exact equality with the retained engine-3 Short Study, including the complete export duration. New filenames and links restore engine 6 in every duration. Eight frozen engine-5 scores now protect previous Long recordings alongside the engine-1/3/4 fixtures.
 
 Native browser WAV round trips cover engine 6 in Short at 44.1 kHz and a complete Long study at 8 kHz, alongside the retained older engines. The historical-source audio comparison explicitly selects engine 3 so it tests legacy compatibility rather than the new default behavior.
+
+
+### Delayed dominant pedal and protected Short Study
+
+Engine 7 Long is checked across 120 seed/root combinations, covering every integer root from 110 to 200 Hz. Every bell and the ending must equal engine 6. Each accompaniment is a single tuned dominant, starts no earlier than 120 seconds, covers exactly five strikes, leaves room for its tail before the next entry, and avoids the ending. All pitch-class pairings remain free of tritones. Short and Infinite, including continuation, must equal engine 6.
+
+The protected `0393ded7` / 200 Hz / Short / 44.1 kHz recording is a permanent compatibility requirement for the **implicit newest default**. The test forces that normal random Play draw and compares the score to the independently frozen hash from main, plus the 85.56632370385142-second export length. A separate test compares all scheduled synthesis controls against g3. Native Chromium, Firefox and WebKit tests compare the newest default's WAV directly to the original g3 filename at the same sample rate. Keep these tests when changing the default engine; do not substitute legacy-only replay for this guarantee. Native round trips also cover a complete engine-7 Long performance.
+
+The new pedal effects are also checked for distinct left/right chorus paths, valid positive delay modulation, a low flanger blend without feedback, matching live/export controls, and node cleanup after their tails. Legacy bass voices never enter this effects graph.
