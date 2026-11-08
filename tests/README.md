@@ -216,4 +216,9 @@ Across 120 Long seed/root cases, engine 8 must equal engine 7 after dividing eac
 
 ### Engine 9 bells alone
 
-The newest default removes the added Long pedal and all bass accompaniment. Across 120 seed/root cases, every remaining bell must exactly match engine 8, including FM parameters, time, envelope, panning and ending. Short and Infinite keep the established fixed walk; the newest-default protected Short Study tests continue unchanged. Pedal-effect checks explicitly select the retained engine 8. Native replay includes engine 9 Long.
+Retained engine 9 removes the added Long pedal and all bass accompaniment. Across 120 seed/root cases, every remaining bell must exactly match engine 8, including FM parameters, time, envelope, panning and ending. Short and Infinite keep the established fixed walk; the newest-default protected Short Study tests continue unchanged. Pedal-effect checks explicitly select the retained engine 8. Native replay includes engine 9 Long.
+
+
+### Engine 10 restored drone voices
+
+The newest default restores engine 6's sparse root/fifth Long drones at their original levels. Across 120 seed/root cases, the entire score and duration must equal engine 6, and filtering out the drone voices must reproduce engine 9 exactly. No dominant pedal is planned. Engines 9 and 10 Short and Infinite, including continuation, must still equal engine 6. The protected Short Study tests keep using the implicit newest default. Native replay includes engine 10 Long alongside the retained earlier versions.

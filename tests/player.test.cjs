@@ -351,7 +351,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
   h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
   await pending;
   assert.equal(h.elements.get('exportWav').disabled, false);
-  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g9-200hz-short-48000sr-\d+\.wav$/);
+  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g10-200hz-short-48000sr-\d+\.wav$/);
   for (const value of [h.downloads[0], h.downloads[0].replace('.wav', ' (1).wav'),
     h.downloads[0].replace('.wav', ''), h.downloads[0].replace('.wav', ' (1)'), h.api.replayLink(original)]) {
     const restored = dialHarness();
@@ -361,7 +361,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
     assert.equal(snapshot.tone, 200);
     assert.equal(snapshot.duration, 'short');
     assert.equal(snapshot.sampleRate, 48000);
-    assert.equal(snapshot.engine, '9');
+    assert.equal(snapshot.engine, '10');
     assert.equal(JSON.stringify(snapshot.groups), JSON.stringify(original.groups));
     assert.equal(restored.elements.get('tone').value, '200');
     assert.equal(restored.elements.get('hzReadout').textContent, '200');
@@ -478,20 +478,20 @@ test('the newest default engine must always reproduce the frozen Short Study thr
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('engine 9 filenames, links and normal Play select the new rules for every duration', async () => {
+test('engine 10 filenames, links and normal Play select the new rules for every duration', async () => {
   for (const duration of ['short', 'long', 'infinite']) {
     const h = dialHarness('121');
     h.elements.get('songDuration').value = duration;
     await h.api.startFromUI();
-    assert.equal(h.api.state().snapshot.engine, '9');
-    const filename = `open-run-0b086950-fixture-g9-121hz-${duration}-44100sr-1.wav`;
+    assert.equal(h.api.state().snapshot.engine, '10');
+    const filename = `open-run-0b086950-fixture-g10-121hz-${duration}-44100sr-1.wav`;
     h.elements.get('replayInput').value = filename;
     await h.api.replayFromUI();
     const p = h.api.state().snapshot;
     const link = h.api.replayLink(p);
     h.elements.get('replayInput').value = link;
     await h.api.replayFromUI();
-    assert.equal(h.api.state().snapshot.engine, '9');
+    assert.equal(h.api.state().snapshot.engine, '10');
     assert.equal(JSON.stringify(h.api.state().snapshot.groups), JSON.stringify(p.groups));
     h.sandbox.__OPEN_PLAYER_KILL__();
   }
@@ -561,7 +561,7 @@ test('engine 9 Long contains only the original bells with identical timing, FM, 
   for (let i = 0; i < 120; i++) {
     const seed = [0xb07b3c2b, 0x0393ded7, 0x0b086950][i] ?? Math.imul(i, 0x9e3779b9) >>> 0;
     const tone = 110 + i % 91;
-    const current = h.api.createPerformance(seed, tone, 'long');
+    const current = h.api.createPerformance(seed, tone, 'long', '9');
     const previous = h.api.createPerformance(seed, tone, 'long', '8');
     const expected = previous.groups.map(g => ({ ...g, notes: g.notes.filter(n => n.kind === 'bell') }));
     assert.equal(JSON.stringify(current.groups), JSON.stringify(expected));
@@ -571,17 +571,41 @@ test('engine 9 Long contains only the original bells with identical timing, FM, 
   }
 });
 
-test('engine 9 retains engine 6 Short and Infinite including continuation', () => {
+test('engines 9 and 10 retain engine 6 Short and Infinite including continuation', () => {
   const h = harness();
-  for (let i = 0; i < 32; i++) for (const duration of ['short', 'infinite']) {
+  for (const engine of ['9', '10']) for (let i = 0; i < 32; i++) for (const duration of ['short', 'infinite']) {
     const seed = i ? Math.imul(i, 0x9e3779b9) >>> 0 : 0x0393ded7;
     const tone = i ? 110 + i % 91 : 200;
-    const p = h.api.createPerformance(seed, tone, duration);
+    const p = h.api.createPerformance(seed, tone, duration, engine);
     const old = h.api.createPerformance(seed, tone, duration, '6');
     assert.equal(JSON.stringify(p.groups), JSON.stringify(old.groups));
     assert.equal(p.exportDuration, old.exportDuration);
     if (duration === 'infinite') for (let n = 0; n < 80; n++)
       assert.equal(JSON.stringify(p.continuation.next()), JSON.stringify(old.continuation.next()));
+  }
+});
+
+test('engine 10 restores the original Long drones without altering bells or adding pedals', () => {
+  const h = harness();
+  for (let i = 0; i < 120; i++) {
+    const seed = [0xb07b3c2b, 0x0393ded7, 0x0b086950][i] ?? Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = 110 + i % 91;
+    const current = h.api.createPerformance(seed, tone, 'long');
+    const original = h.api.createPerformance(seed, tone, 'long', '6');
+    const solo = h.api.createPerformance(seed, tone, 'long', '9');
+    assert.equal(JSON.stringify(current.groups), JSON.stringify(original.groups));
+    assert.equal(current.exportDuration, original.exportDuration);
+    assert.equal(JSON.stringify(current.groups.map(g => ({ ...g,
+      notes: g.notes.filter(n => n.kind === 'bell') }))), JSON.stringify(solo.groups));
+    assert.equal(current.exportDuration, solo.exportDuration);
+    const drones = current.groups.flatMap(g => g.notes).filter(n => n.kind === 'bass');
+    assert.ok(drones.length > 0);
+    assert.ok(current.groups.every(g => g.notes.every(n => n.kind !== 'pedal')));
+    for (const drone of drones) {
+      const pc = ((Math.round(12 * Math.log2(drone.freq / tone)) % 12) + 12) % 12;
+      assert.ok([0, 7].includes(pc));
+      assert.equal(drone.duration, 22);
+    }
   }
 });
 
@@ -867,7 +891,7 @@ test('legacy filenames and boundary seeds use explicit current controls', async 
     assert.equal(snapshot.seed, seed);
     assert.equal(snapshot.tone, 121);
     assert.equal(snapshot.duration, 'long');
-    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '9');
+    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '10');
     assert.match(h.elements.get('replayStatus').textContent, /selected root tone and length/);
   }
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -878,7 +902,7 @@ test('invalid replay data never interrupts or replaces a playing performance', a
   const original = h.api.state().snapshot, bus = h.api.state().bus;
   const link = h.api.replayLink(original);
   const invalid = ['', '123', '0x12345678', '123456789', 'zzzzzzzz',
-    link.replace('engine=9', 'engine=2'), link.replace('tone=155', 'tone=201'),
+    link.replace(/engine=\d+/, 'engine=2'), link.replace('tone=155', 'tone=201'),
     link.replace('tone=155', 'tone=109'), link.replace('tone=155', 'tone=121.5'),
     link.replace('length=short', 'length=300'), link.replace('rate=44100', 'rate=NaN'),
     link.replace('rate=44100', 'rate=0'), link.replace('&rate=44100', ''),

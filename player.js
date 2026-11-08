@@ -63,19 +63,20 @@
   const DOMINANT_PEDAL_ENGINE = "7";
   const LOW_PEDAL_ENGINE = "8";
   const BELLS_ONLY_ENGINE = "9";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE]);
+  const RESTORED_DRONE_ENGINE = "10";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
   function defaultEngine() {
-    return BELLS_ONLY_ENGINE;
+    return RESTORED_DRONE_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7, 8 and 9.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7, 8, 9 and 10.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -1359,7 +1360,9 @@
       : [DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE].includes(engine)
       ? (durationInput === "long" ? createDominantPedalGenerator(seed, tone, duration, engine === LOW_PEDAL_ENGINE)
         : createFixedWalkGenerator(seed, tone, duration))
-      : engine === FIXED_COLLECTION_ENGINE
+      // Restore the original sparse root/fifth drones without changing any
+      // bell, timing, gain or ending. Engine 9 remains bells-only on replay.
+      : [FIXED_COLLECTION_ENGINE, RESTORED_DRONE_ENGINE].includes(engine)
       ? (durationInput === "long" ? createStruckStudyGenerator(seed, tone, duration)
         : createFixedWalkGenerator(seed, tone, duration))
       : engine === LONG_STUDY_ENGINE
