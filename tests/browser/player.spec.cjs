@@ -223,7 +223,10 @@ test('the newest default renders the protected Short Study like its original g3 
     crypto.getRandomValues = array => { array[0] = 0x0393ded7; return array; };
   });
   const render = async () => {
+    await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
     await page.locator('#stop').click();
+    if (await page.locator('#revisit').getAttribute('open') === null)
+      await page.locator('#revisit summary').click();
     const downloaded = page.waitForEvent('download');
     await page.locator('#exportWav').click();
     return fs.readFile(await (await downloaded).path());
