@@ -211,4 +211,4 @@ The new pedal effects are also checked for distinct left/right chorus paths, val
 
 ### Engine 8 lower-octave pedal
 
-Across 120 Long seed/root cases, engine 8 must equal engine 7 after dividing only each pedal's frequency by two. Bell notes, FM recipes, timing, bass gain, envelopes, effects and endings stay identical. The protected newest-default Short Study checks remain implicit and therefore now exercise engine 8. Native replay covers full engine-7 and engine-8 Long studies. Browser jobs run independently so the growing set of retained-engine audio comparisons can finish in parallel.
+Across 120 Long seed/root cases, engine 8 must equal engine 7 after dividing each pedal's frequency by two and trimming its gain from 0.035 to 0.025. Bell notes, FM recipes, timing, envelopes, effects and endings stay identical. The protected newest-default Short Study checks remain implicit and therefore now exercise engine 8. Native replay covers full engine-7 and engine-8 Long studies. Browser jobs run independently so the growing set of retained-engine audio comparisons can finish in parallel.

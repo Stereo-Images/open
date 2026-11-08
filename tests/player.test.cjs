@@ -537,7 +537,7 @@ test('engine 7 Long preserves every bell and adds only five-strike dominant peda
   }
 });
 
-test('engine 8 lowers only the Long pedal by exactly one octave and retains its quiet gain', () => {
+test('engine 8 lowers the Long pedal by exactly one octave with restrained gain', () => {
   const h = harness();
   for (let i = 0; i < 120; i++) {
     const seed = [0xb07b3c2b, 0x0393ded7, 0x0b086950][i] ?? Math.imul(i, 0x9e3779b9) >>> 0;
@@ -545,7 +545,7 @@ test('engine 8 lowers only the Long pedal by exactly one octave and retains its 
     const current = h.api.createPerformance(seed, tone, 'long');
     const previous = h.api.createPerformance(seed, tone, 'long', '7');
     const expected = previous.groups.map(g => ({ ...g, notes: g.notes.map(n =>
-      n.kind === 'pedal' ? { ...n, freq: n.freq / 2 } : n) }));
+      n.kind === 'pedal' ? { ...n, freq: n.freq / 2, volume: 0.025 } : n) }));
     assert.equal(JSON.stringify(current.groups), JSON.stringify(expected));
     assert.equal(current.exportDuration, previous.exportDuration);
     assert.equal(current.study.pedalOctave, -1);

@@ -1308,7 +1308,7 @@
         if (group.time >= 120 && strike >= nextPedalStrike && pending.length === 5 &&
             !group.ending && !pending.some(next => next.ending)) {
           group.notes.push({ kind: "pedal", freq, time: group.time,
-            duration: pending[4].time - group.time, volume: 0.035,
+            duration: pending[4].time - group.time, volume: lowerOctave ? 0.025 : 0.035,
             attack: 6, release: 8, modRatio: 2, modIndex: 0.16, pan: 0 });
           // Two eleven-note phrases between entries leave a substantial gap.
           nextPedalStrike = strike + 22;
