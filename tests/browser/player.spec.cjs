@@ -309,8 +309,10 @@ test('a fifth-bell variation preserves the opening audio and reproduces from its
   test.setTimeout(180000);
   await page.goto('/player.html?seed=54325756&tone=121&length=short&engine=3&rate=44100');
   await page.locator('#replayRun').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
   async function exportWav() {
+    await expect(page.locator('#exportWav')).toBeEnabled();
     const pending = page.waitForEvent('download', { timeout: 60000 });
     await page.locator('#exportWav').click();
     const download = await pending;
@@ -319,6 +321,7 @@ test('a fifth-bell variation preserves the opening audio and reproduces from its
   const original = await exportWav();
   await page.locator('#variationTools > summary').click();
   await page.locator('#playVariation').click();
+  await expect(page.locator('#variationStatus')).toContainText('Variation: bell 5, 50% FM strength.');
   await page.locator('#stop').click();
   const varied = await exportWav();
   expect(varied.filename).toMatch(/^open-run-54325756-[a-z0-9]+-g3v1-121hz-short-44100sr-b5m50-\d+\.wav$/);
@@ -334,6 +337,7 @@ test('a fifth-bell variation preserves the opening audio and reproduces from its
   await page.locator('#revisit > summary').click();
   await page.locator('#replayInput').fill(varied.filename.replace(/\.wav$/, ''));
   await page.locator('#replayRun').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#variationStrike')).toHaveValue('5');
   await expect(page.locator('#variationStrength')).toHaveValue('50');
   await expect(page.locator('#tone')).toHaveValue('121');
