@@ -170,9 +170,14 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
+for (const engine of ['1', '3', '4']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
   test.setTimeout(120000);
-  await page.goto('/player.html?' + replayQuery.replace('engine=1', `engine=${engine}`));
+  const length = engine === '4' ? 'long' : 'short';
+  // Exercise the complete Long score at a modest rate to bound CI memory.
+  const rate = engine === '4' ? 8000 : 44100;
+  const query = replayQuery.replace('engine=1', `engine=${engine}`)
+    .replace('length=short', `length=${length}`).replace('rate=44100', `rate=${rate}`);
+  await page.goto('/player.html?' + query);
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
@@ -180,7 +185,7 @@ for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the s
   await page.locator('#exportWav').click();
   const first = await firstDownload;
   const filename = first.suggestedFilename();
-  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}-200hz-short-44100sr-\\d+\\.wav$`));
+  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}-200hz-${length}-${rate}sr-\\d+\\.wav$`));
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
   await page.locator('#revisit summary').click();
@@ -446,3 +451,4 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   const second = await fs.readFile(await (await downloading).path());
   expectMatchingWavs(first, second, 'Repeat WAV comparison');
 });
+

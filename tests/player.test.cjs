@@ -377,6 +377,88 @@ test('open endings reject unsettled harmony, unprepared sixths, leaps, and confl
   assert.equal(check(sixth, 5, false, false, [drone(-12), drone(-5)]), 'sixth');
 });
 
+test('fixed Long studies retain one collection, recurring phrases, and gradual FM across seeds', () => {
+  const h = harness();
+  const scale = new Set([0, 2, 4, 5, 7, 9]);
+  let changedPhrases = 0;
+  for (let i = 0; i < 180; i++) {
+    const seed = i === 0 ? 0x0393ded7 : Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = [200, 110, 121, 155][i % 4];
+    const p = h.api.createPerformance(seed, tone, 'long', '4');
+    const theme = Array.from(p.study.theme);
+    const bells = p.groups.map(g => g.notes.find(n => n.kind === 'bell'));
+    const pc = freq => ((Math.round(12 * Math.log2(freq / tone)) % 12) + 12) % 12;
+    assert.equal(theme.length, 11);
+    if (i === 0) assert.deepEqual(theme.map(f => Math.round(12 * Math.log2(f / tone))),
+      [2, 0, 2, 4, 5, 7, 9, 7, 5, 7, 9]);
+    assert.deepEqual(Array.from(bells.slice(0, 11), n => n.freq), theme);
+    assert.deepEqual(Array.from(bells.slice(11, 22), n => n.freq), theme);
+    for (let start = 22; start + 11 < bells.length; start += 11) {
+      const cycle = start / 11;
+      const changes = bells.slice(start, start + 11).filter((n, j) => n.freq !== theme[j]).length;
+      assert.ok(changes <= 1);
+      if (cycle % 2 === 1) assert.equal(changes, 0);
+      else changedPhrases += changes;
+    }
+    const usedPitches = new Set(p.groups.flatMap(g => g.notes.map(n => pc(n.freq))));
+    for (const a of usedPitches) for (const b of usedPitches)
+      assert.notEqual(((a - b) % 12 + 12) % 12, 6, `tritone pair for seed ${seed}`);
+    for (const g of p.groups) for (const n of g.notes) {
+      assert.ok(scale.has(pc(n.freq)), `out-of-collection note for seed ${seed}`);
+      assert.ok(Number.isFinite(n.freq) && n.duration > 0);
+      if (n.kind === 'bell') assert.ok(n.freq >= 110 && n.freq <= 415.3);
+    }
+    for (let j = 1; j < bells.length; j++) {
+      const a = bells[j - 1], b = bells[j];
+      assert.ok(b.time > a.time);
+      assert.ok(b.time - a.time <= 1.077 / p.density);
+      assert.equal(a.voices.length, b.voices.length);
+      for (let v = 0; v < b.voices.length; v++) {
+        assert.ok(Math.abs(a.voices[v].modRatio - b.voices[v].modRatio) <= 0.012);
+        assert.ok(Math.abs(a.voices[v].modIndex - b.voices[v].modIndex) <= 0.02);
+        const deltaA = a.voices[v].frequency - a.freq;
+        const deltaB = b.voices[v].frequency - b.freq;
+        assert.ok(Math.abs(deltaB) <= 1.100001);
+        assert.ok(Math.abs(deltaA - deltaB) <= 0.02);
+      }
+    }
+    assert.equal(p.groups.filter(g => g.ending).length, 1);
+    assert.ok(p.groups.at(-1).ending);
+    assert.ok(p.groups.at(-1).time >= p.targetDuration);
+    assert.ok(p.groups.at(-1).time < p.targetDuration + 12 / p.density);
+    const voiceEnd = Math.max(...p.groups.flatMap(g => g.notes.map(n => n.time + n.duration)));
+    assert.ok(p.exportDuration >= voiceEnd + 10.465 - 1e-8);
+    const again = h.api.createPerformance(seed, tone, 'long', '4');
+    assert.equal(JSON.stringify(p), JSON.stringify(again));
+  }
+  assert.ok(changedPhrases > 180);
+});
+
+test('engine 4 replay filenames and links restore Long and reject other lengths without stopping audio', async () => {
+  const h = dialHarness('200');
+  h.elements.get('songDuration').value = 'long';
+  h.elements.get('replayInput').value = '0393ded7';
+  await h.api.replayFromUI();
+  const first = h.api.state().snapshot;
+  assert.equal(first.engine, '4');
+  const link = h.api.replayLink(first);
+  for (const input of [link, 'open-run-0393ded7-fixture-g4-200hz-long-44100sr-1.wav']) {
+    h.elements.get('replayInput').value = input;
+    await h.api.replayFromUI();
+    assert.equal(JSON.stringify(h.api.state().snapshot.groups), JSON.stringify(first.groups));
+  }
+  const original = h.api.state().snapshot;
+  for (const mode of ['short', 'infinite']) {
+    h.elements.get('replayInput').value = link.replace('length=long', `length=${mode}`);
+    await h.api.replayFromUI();
+    assert.equal(h.api.state().snapshot, original);
+    assert.equal(h.api.state().isPlaying, true);
+    assert.match(h.elements.get('replayStatus').textContent, /length must be long/);
+    assert.throws(() => h.api.createPerformance(0, 110, mode, '4'), /requires Long/);
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
 test('varied seeds retain the engine-1 approach and tonic fallback without changing Infinite', () => {
   const h = harness(), kinds = new Set();
   for (let i = 0; i < 400; i++) {
@@ -419,7 +501,7 @@ test('legacy filenames and boundary seeds use explicit current controls', async 
     assert.equal(snapshot.seed, seed);
     assert.equal(snapshot.tone, 121);
     assert.equal(snapshot.duration, 'long');
-    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '3');
+    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '4');
     assert.match(h.elements.get('replayStatus').textContent, /selected root tone and length/);
   }
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -1282,4 +1364,83 @@ test('failed offline resonator setup stops partial oscillators and leaves export
   h.contexts[2].reject(Error('finish test render'));
   await retry;
   h.api.stopAllManual(true);
+});
+
+
+
+test('engine 3 keeps its frozen Short, Long and Infinite scores during the Long experiment', () => {
+  const h = harness();
+  const { createHash } = require('node:crypto');
+  // Captured from main 897911b before this experiment.
+  const fixtures = [
+  [
+    0,
+    "short",
+    "7d9d75dba713570d3ab99190375f7722b5cb249e8c2bab49b92083e7f289443e"
+  ],
+  [
+    0,
+    "long",
+    "780a9fe95361f5ad1ea9adbd75c53d42a2485709986ce3e2d92591b7b5cee938"
+  ],
+  [
+    0,
+    "infinite",
+    "a64ccdf37793fac41a68e6e936cf8408b304e43217c032e0bc7a706786fd0824"
+  ],
+  [
+    60022487,
+    "short",
+    "90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9"
+  ],
+  [
+    60022487,
+    "long",
+    "d050b8f93aa9785dfca3392bb5fa9202bfb1766351f78ef95dcc9b559f1e38f0"
+  ],
+  [
+    60022487,
+    "infinite",
+    "cc25061e2d4d5863459afc57a589b0c0b2c36e8bca58146921bf5b71e1879cfc"
+  ],
+  [
+    145758558,
+    "short",
+    "975ba6e3d7bfd8de36ce7d4f57558d90213cc96bbb2e1bd4547946bfda940076"
+  ],
+  [
+    145758558,
+    "long",
+    "da83151cd8c7d45b08ee37b4b379eb2eb696f5a1d8d174103bde381070c9c506"
+  ],
+  [
+    145758558,
+    "infinite",
+    "e52f3d67ef26a0568caf42c03873c897cf54db026baccf35e58ac1379372076d"
+  ],
+  [
+    4294967295,
+    "short",
+    "b311e52505cc2b847e5b5211cf0fbdc81a9425761b65ea744fac4c0f7ea5618d"
+  ],
+  [
+    4294967295,
+    "long",
+    "46b266ae79f3b92c1386fb738dc5d9b4669ed6e84c01b7713d31541ef1713a59"
+  ],
+  [
+    4294967295,
+    "infinite",
+    "7d784a556c58c1e9837fdce470408d7329b45019303b591f2f57eb82107aa2e0"
+  ]
+];
+  for (const [seed, mode, hash] of fixtures) {
+    const p = h.api.createPerformance(seed, 200, mode, '3');
+    const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
+    if (mode !== 'long') {
+      const current = h.api.createPerformance(seed, 200, mode);
+      assert.equal(JSON.stringify(current.groups), JSON.stringify(p.groups));
+    }
+  }
 });

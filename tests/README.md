@@ -137,7 +137,7 @@ recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
 Engine 1 retains its exact score and export behavior, including the frozen Short
 and Long fixtures. Engine 3 adds conditional fifth and major-sixth endings to
 finite performances. Engine 2 is reserved for the separate tempo experiment;
-the app's release line stays v1.0. Bare seeds and fresh Play use engine 3;
+the app's release line stays v1.0. In this experimental branch, bare seeds and fresh Play use engine 4 for Long and engine 3 otherwise;
 versioned links/filenames preserve their engine, and unversioned legacy filenames
 assume engine 1 with a warning about missing settings.
 
@@ -161,3 +161,15 @@ unchanged Infinite continuation, and live/export controls and tail completion.
 Native WAV round trips cover both engines, including reload and restoration
 from a full filename. Engine-3 files select the qualified-ending behavior;
 engine-1 files preserve the original tonic endings.
+
+
+
+## Fixed collection Long studies (engine 4)
+
+Engine 4 is a separate, Long-only experiment. It retains the first eleven pitches of the original walk with harmony held at the original major center, resolving any leading tone upward to the tonic. The allowed nominal pitch classes are 0, 2, 4, 5, 7 and 9 relative to the selected root. No pair forms a tritone, including across overlapping notes and drones. FM sidebands are not restricted to this collection.
+
+Two exact theme statements precede alternating one-note variants and exact returns. Pacing retains the theme's irregularity with a 2.5% slow variation. Root/fifth drones enter after the first statement and every three phrases thereafter. FM ratio, index and carrier offsets move between bounded targets every 24 strikes; voice count and amplitude weights remain fixed. The root fallback at the next theme boundary bounds ending search.
+
+Composition regressions sample 180 dispersed seeds at four root tones, check every nominal pitch class and all pitch-class pairs, exact theme returns, single-note variations, timing bounds, FM continuity across segment boundaries, deterministic replay, ending bounds and complete tails. Twelve frozen engine-3 scores from main 897911b cover Short, Long and Infinite; existing engine-1 fixtures remain active. Engine-4 filenames and links round-trip the complete score, and invalid length/engine combinations leave active playback intact. Existing live/offline scheduling tests now exercise engine 4 for fresh Long performances.
+
+The native browser round-trip test also covers a complete engine-4 Long score at 8 kHz to bound CI memory, alongside 44.1 kHz engine-1 and engine-3 tests. A low-rate render is a replay check, not a fidelity audition.
