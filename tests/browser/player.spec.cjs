@@ -170,11 +170,11 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const engine of ['1', '3', '4', '5']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
-  const longStudy = ['4', '5'].includes(engine);
+for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','long'], ['6','short'], ['6','long']]) test(`engine ${engine} ${mode} filename recreates the same native WAV after reloading`, async ({ page }) => {
+  const longStudy = mode === 'long';
   test.setTimeout(longStudy ? 240000 : 120000);
   const length = longStudy ? 'long' : 'short';
-  const seed = longStudy ? 'a94105f2' : engine === '3' ? '0393ded7' : '03b38656';
+  const seed = longStudy ? 'a94105f2' : ['3', '6'].includes(engine) ? '0393ded7' : '03b38656';
   const tone = longStudy ? 121 : 200;
   // Exercise a complete 12-minute Long study at a modest rate to bound CI
   // memory and render time; all seeds' duration bounds are checked in Node.
@@ -194,7 +194,7 @@ for (const engine of ['1', '3', '4', '5']) test(`engine ${engine} filename recre
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
   // Protect the retained Short Study's original full filename, including
-  // restoration from a Long selection that would otherwise use engine 5.
+  // restoration from a Long selection that would otherwise use engine 6.
   await page.locator('#songDuration').selectOption('long');
   await page.locator('#revisit summary').click();
   const replayFilename = engine === '3'

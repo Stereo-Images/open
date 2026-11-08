@@ -25,7 +25,7 @@ jobs:
             browsers: webkit
             projects: --project=webkit
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -56,3 +56,4 @@ jobs:
         run: defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
       - name: Run native browser checks
         run: npm run test:browser -- ${{ matrix.projects }}
+

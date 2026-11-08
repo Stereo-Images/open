@@ -59,19 +59,20 @@
   // identifiers are independent of the public v1.0 release number.
   const ENGINE_VERSION = "3";
   const LONG_STUDY_ENGINE = "5";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE]);
+  const FIXED_COLLECTION_ENGINE = "6";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE]);
 
-  // This branch auditions the new form only in Long. Versioned replays always
+  // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
-  function defaultEngine(duration) {
-    return duration === "long" ? LONG_STUDY_ENGINE : ENGINE_VERSION;
+  function defaultEngine() {
+    return FIXED_COLLECTION_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4 and 5.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5 and 6.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -1239,6 +1240,43 @@
     };
   }
 
+  // Short and Infinite retain the original evolving walk and strike recipes,
+  // with its harmonic state held at the starting major center. Consume the
+  // legacy random draws so an already-compatible score can remain unchanged.
+  // The omitted leading tone resolves upward; its FM carrier offsets follow
+  // the nominal pitch. Drone roots and fifths share that same fixed collection.
+  function createFixedWalkGenerator(seed, baseFreq, duration) {
+    const original = createPerformanceGenerator(seed, baseFreq, duration, ENGINE_VERSION, true);
+    const root = clampFreqMin(baseFreq / 2, DRONE_FLOOR_HZ);
+    return {
+      density: original.density, arcLen: original.arcLen, arcClimaxAt: original.arcClimaxAt,
+      study: Object.freeze({ form: "fixed-collection-walk", scale: Object.freeze([0, 2, 4, 5, 7, 9]) }),
+      get nextTime() { return original.nextTime; },
+      next() {
+        const group = original.next();
+        if (!group) return null;
+        let droneIndex = 0;
+        group.notes = group.notes.filter(note => {
+          if (note.kind === "bass") {
+            const index = droneIndex++;
+            if (index >= 2) return false;
+            note.freq = index === 0 ? root : root * Math.pow(2, 7 / 12);
+          } else {
+            const pc = ((Math.round(12 * Math.log2(note.freq / baseFreq)) % 12) + 12) % 12;
+            if (pc === 11) {
+              const before = note.freq;
+              note.freq *= Math.pow(2, 1 / 12);
+              if (note.freq > MELODY_CEILING_HZ) note.freq /= 2;
+              for (const voice of note.voices) voice.frequency = note.freq + (voice.frequency - before);
+            }
+          }
+          return true;
+        });
+        return group;
+      }
+    };
+  }
+
   function resolveDuration(seed, durationInput) {
     if (durationInput === "short") return 60;
     if (durationInput === "long") {
@@ -1255,7 +1293,10 @@
     if (["4", LONG_STUDY_ENGINE].includes(engine) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
-    const generator = engine === LONG_STUDY_ENGINE
+    const generator = engine === FIXED_COLLECTION_ENGINE
+      ? (durationInput === "long" ? createStruckStudyGenerator(seed, tone, duration)
+        : createFixedWalkGenerator(seed, tone, duration))
+      : engine === LONG_STUDY_ENGINE
       ? createStruckStudyGenerator(seed, tone, duration)
       : engine === "4" ? createFixedStudyGenerator(seed, tone, duration)
       : createPerformanceGenerator(seed, tone, duration, engine);
