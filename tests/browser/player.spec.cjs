@@ -170,14 +170,15 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const engine of ['1', '3', '4']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
-  test.setTimeout(engine === '4' ? 240000 : 120000);
-  const length = engine === '4' ? 'long' : 'short';
-  const seed = engine === '4' ? 'a94105f2' : '03b38656';
-  const tone = engine === '4' ? 121 : 200;
+for (const engine of ['1', '3', '4', '5']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
+  const longStudy = ['4', '5'].includes(engine);
+  test.setTimeout(longStudy ? 240000 : 120000);
+  const length = longStudy ? 'long' : 'short';
+  const seed = longStudy ? 'a94105f2' : '03b38656';
+  const tone = longStudy ? 121 : 200;
   // Exercise a complete 12-minute Long study at a modest rate to bound CI
   // memory and render time; all seeds' duration bounds are checked in Node.
-  const rate = engine === '4' ? 8000 : 44100;
+  const rate = longStudy ? 8000 : 44100;
   const query = replayQuery.replace('engine=1', `engine=${engine}`)
     .replace('seed=03b38656', `seed=${seed}`).replace('tone=200', `tone=${tone}`)
     .replace('length=short', `length=${length}`).replace('rate=44100', `rate=${rate}`);

@@ -58,8 +58,8 @@
   // Engine 2 is reserved for the separate tempo experiment. Musical engine
   // identifiers are independent of the public v1.0 release number.
   const ENGINE_VERSION = "3";
-  const LONG_STUDY_ENGINE = "4";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, LONG_STUDY_ENGINE]);
+  const LONG_STUDY_ENGINE = "5";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE]);
 
   // This branch auditions the new form only in Long. Versioned replays always
   // select their original engine, independently of the current length control.
@@ -71,7 +71,7 @@
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3 and 4.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4 and 5.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -79,8 +79,8 @@
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (!["short", "long", "infinite"].includes(record.duration))
       throw new Error("The replay length must be short, long, or infinite.");
-    if (record.engine === LONG_STUDY_ENGINE && record.duration !== "long")
-      throw new Error("Engine 4 is the Long study experiment; its replay length must be long.");
+    if (["4", LONG_STUDY_ENGINE].includes(record.engine) && record.duration !== "long")
+      throw new Error(`Engine ${record.engine} is a Long study experiment; its replay length must be long.`);
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
@@ -1210,6 +1210,35 @@
     };
   }
 
+  // Keep engine 4's composition and spatial plan, but borrow each successive
+  // bell's complete FM voice recipe from the original engine-3 stream. This
+  // restores its strike-specific voice count, weights, ratios, indices and
+  // detuning without letting those draws change the recurring melody.
+  function createStruckStudyGenerator(seed, baseFreq, duration) {
+    const composition = createFixedStudyGenerator(seed, baseFreq, duration);
+    const original = createPerformanceGenerator(seed, baseFreq, Infinity, "3");
+    return {
+      density: composition.density, arcLen: composition.arcLen,
+      arcClimaxAt: composition.arcClimaxAt, study: composition.study,
+      get nextTime() { return composition.nextTime; },
+      next() {
+        const group = composition.next();
+        if (!group) return null;
+        for (const note of group.notes) {
+          if (note.kind !== "bell") continue;
+          // Original drone-only passages contain no bell recipe. Skip those
+          // groups in the timbre source only; the new score's timing is fixed.
+          let recipe;
+          while (!recipe) recipe = original.next().notes.find(n => n.kind === "bell");
+          note.voices = recipe.voices.map(voice => ({ ...voice,
+            frequency: note.freq + (voice.frequency - recipe.freq) }));
+          note.totalAmp = recipe.totalAmp;
+        }
+        return group;
+      }
+    };
+  }
+
   function resolveDuration(seed, durationInput) {
     if (durationInput === "short") return 60;
     if (durationInput === "long") {
@@ -1223,11 +1252,12 @@
 
   function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput)) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
-    if (engine === LONG_STUDY_ENGINE && durationInput !== "long")
-      throw new Error("Engine 4 requires Long duration");
+    if (["4", LONG_STUDY_ENGINE].includes(engine) && durationInput !== "long")
+      throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
     const generator = engine === LONG_STUDY_ENGINE
-      ? createFixedStudyGenerator(seed, tone, duration)
+      ? createStruckStudyGenerator(seed, tone, duration)
+      : engine === "4" ? createFixedStudyGenerator(seed, tone, duration)
       : createPerformanceGenerator(seed, tone, duration, engine);
     const groups = [];
     let lastVoiceEnd = 0;

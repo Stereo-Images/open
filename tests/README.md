@@ -137,7 +137,7 @@ recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
 Engine 1 retains its exact score and export behavior, including the frozen Short
 and Long fixtures. Engine 3 adds conditional fifth and major-sixth endings to
 finite performances. Engine 2 is reserved for the separate tempo experiment;
-the app's release line stays v1.0. In this experimental branch, bare seeds and fresh Play use engine 4 for Long and engine 3 otherwise;
+the app's release line stays v1.0. In this experimental branch, bare seeds and fresh Play use engine 5 for Long and engine 3 otherwise;
 versioned links/filenames preserve their engine, and unversioned legacy filenames
 assume engine 1 with a warning about missing settings.
 
@@ -173,3 +173,10 @@ Two exact theme statements precede alternating one-note variants and exact retur
 Composition regressions sample 180 dispersed seeds at four root tones, check every nominal pitch class and all pitch-class pairs, exact theme returns, single-note variations, timing bounds, FM continuity across segment boundaries, deterministic replay, ending bounds and complete tails. Twelve frozen engine-3 scores from main 897911b cover Short, Long and Infinite; existing engine-1 fixtures remain active. Engine-4 filenames and links round-trip the complete score, and invalid length/engine combinations leave active playback intact. Existing live/offline scheduling tests now exercise engine 4 for fresh Long performances.
 
 The native browser round-trip test also covers a complete engine-4 Long score at 8 kHz to bound CI memory, alongside 44.1 kHz engine-1 and engine-3 tests. A low-rate render is a replay check, not a fidelity audition.
+
+
+## Original individual bell recipes (engine 5)
+
+Engine 5 wraps engine 4's composition without changing notes, onsets, durations, volume settings, drones, spatial movement, endings or export length. A separate original engine-3 generator supplies the next audible bell's FM recipe. Drone-only groups in that source are skipped without inserting gaps into the new score. Each voice retains its original amplitude weight, modulation ratio, modulation index and carrier offset relative to the current nominal pitch. The original attack/decay renderer remains unchanged.
+
+Tests compare complete engine-4 and engine-5 scores after excluding only bell voices and their normalization total, and verify every restored voice against the original generator across 64 seeds and four tones. Repeated generation must match exactly. Eight frozen engine-4 fixtures protect the already-delivered recordings; the engine-1 and engine-3 fixtures remain in place. Replay parsing accepts engine 5 only for Long, while fresh Short and Infinite remain engine 3. Native browser checks render and recreate the full 12-minute Long fixture for both engines 4 and 5.

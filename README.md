@@ -15,12 +15,14 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 
 ### Musical Structure & Harmony
-This branch auditions a new Long form. New Long performances use engine 4:
+This branch auditions a new Long form. New Long performances use engine 5, preserving engine 4's recurring melodic structure while restoring the original individual bell sounds:
 
 * **One collection:** Degrees 1–2–3–4–5–6 of the starting major scale, throughout. The seventh is omitted, so no pair of nominal melody or drone pitches forms a tritone. FM overtones remain inharmonic.
 * **A remembered phrase:** The first eleven pitches of Open's walk, held in the starting collection, become the theme. Any leading tone resolves upward to the tonic. Two exact statements establish the theme; subsequent single-note variants alternate with exact returns. Variants use a neighboring phrase note and retain the endpoints.
-* **Slow changes in color:** Note emphasis shifts over four phrases. FM ratio, index and carrier detuning interpolate smoothly between bounded targets every 24 strikes. Voice count and amplitude weights stay fixed for the run. This limits abrupt parameter changes; it does not guarantee perceptually consonant FM spectra.
+* **Individual bell sounds:** Each strike takes its complete FM voice recipe from the same seed's original engine-3 stream: voice count, amplitude weights, modulation ratios and indices, and carrier detuning can all change from note to note. Carrier offsets are moved onto the current melody pitch. Notes, timing, drones, volume settings, envelopes and stereo motion match engine 4 exactly. Note emphasis still shifts over four phrases.
 * **Continuous pacing:** The phrase's slightly irregular timing returns with a small, slow variation. There are no drone-only blocks or inserted empty beats. A root/fifth drone enters after the first phrase and returns every third phrase.
+
+Engine 4 remains available for comparison and saved replays. It uses the same composition with fixed voice counts and weights and gradually interpolated FM parameters. Neither version restricts the bell's inharmonic overtones to the nominal pitch collection.
 
 Short and Infinite still use engine 3. Saved engine-1 and engine-3 Long performances also retain their original behavior, including:
 
@@ -28,7 +30,7 @@ Short and Infinite still use engine 3. Saved engine-1 and engine-3 Long performa
 * **Contour Constraints:** A bounded random walk keeps the melody between A2 and G#4. Notes that exceed the range are octave-shifted downward.
 * **Tension Mapping:** Cadence choices and resets at the start of an arc update a tension value. Phrase position and tension influence the next cadence; tension also shapes FM brightness, the use of fractured ratios, and whether a drone includes a third.
 
-Finite performances seek a musical ending around their target duration. The tonic remains the fallback. A fifth can end a settled passage when the melody returns to a recent pitch by step or repetition. A major sixth needs a stepwise excursion back to a recent pitch in a major passage. Both require a stable harmonic center, low tension, and compatibility with any remaining drone. Engine 4 considers these endings from the Long target onward and falls back to the tonic at the next phrase boundary. All voices and reverb finish their full decay. Infinite continues developing its original musical structure until stopped.
+Finite performances seek a musical ending around their target duration. The tonic remains the fallback. A fifth can end a settled passage when the melody returns to a recent pitch by step or repetition. A major sixth needs a stepwise excursion back to a recent pitch in a major passage. Both require a stable harmonic center, low tension, and compatibility with any remaining drone. Engines 4 and 5 consider these endings from the Long target onward and fall back to the tonic at the next phrase boundary. All voices and reverb finish their full decay. Infinite continues developing its original musical structure until stopped.
 
 These ending rules allow a settled passage to remain harmonically open. They guide the choice of a final note without prescribing a particular melody or guaranteeing an equally convincing ending in every performance.
 
@@ -36,12 +38,12 @@ Engine 3's qualified endings change only ending eligibility relative to engine 1
 
 ### Technical Architecture
 
-Release line: **v1.0** (1.0.0). This experimental branch uses musical engine **4** for new Long studies and **3** for Short and Infinite. Engines **1** and **3** remain available for saved replays. Engine 4 accepts Long only. Engine identifiers describe musical behavior independently of the release number.
+Release line: **v1.0** (1.0.0). This experimental branch uses musical engine **5** for new Long studies and **3** for Short and Infinite. Engines **1**, **3** and **4** remain available for saved replays. Engines 4 and 5 accept Long only. Engine identifiers describe musical behavior independently of the release number.
 
 *Open* uses the standard Web Audio API with no runtime dependencies, using a custom procedural engine to synthesize the environment live.
 
-* **Drone Voicing:** Engines 1 and 3 analyze tension and melody, using open fifths during complex passages and allowing a third when harmony is stable. Engine 4 uses only the original root and fifth.
-* **Synthesis (FM Drift):** All engines use frequency modulation oscillator pairs and a decaying modulation index. Engines 1 and 3 draw new FM parameters per strike, with more fractured ratios under high tension. Engine 4 retains two or three voices and moves their ratio, index and detuning gradually; it does not enter the fractured-ratio regime. A gentle lowpass filter tames the high end as each note decays.
+* **Drone Voicing:** Engines 1 and 3 analyze tension and melody, using open fifths during complex passages and allowing a third when harmony is stable. Engines 4 and 5 use only the original root and fifth.
+* **Synthesis (FM Drift):** All engines use frequency modulation oscillator pairs and a decaying modulation index. Engines 1 and 3 draw new FM parameters per strike, with more fractured ratios under high tension. Engine 4 retains two or three voices and moves their ratio, index and detuning gradually. Engine 5 restores the original per-strike FM voice recipes, including their tension-dependent variation, while retaining engine 4's fixed nominal pitches. A gentle lowpass filter tames the high end as each note decays.
 * **Moving Resonators:** Three slowly moving bandpass filters add a quiet layer of changing overtones to the direct sound and reverb input. Their motion continues through notes and decays.
 * **Stereo Drift:** Each bell strike and bass note starts centered and has a 65% chance of drifting gently to its own stereo position over the note’s duration. Panning uses a separate random stream and feeds both the direct sound and reverb.
 * **Glacial Pacing:** The engine limits event density to preserve long spaces between strikes and allow the reverb tail to breathe. The scheduler will never exceed roughly 15 strikes per minute.
@@ -57,7 +59,7 @@ A desktop browser is recommended for listening, with keyboard shortcuts for reco
 
 Set the length and root tone before pressing Play.
 
-1. **Length:** Select Short, Long, or Infinite. Short is a song-like form with a 1-minute ending target and typically lasts about 1–3 minutes. Long is a more ambient form with an ending target chosen between 10 and 30 minutes for each performance. In engines 1 and 3, the music follows its existing ending rules; engine 3 can accept a qualified fifth or sixth at most six seconds before the target. Engine 4 begins looking for an ending at the Long target and resolves by the next theme boundary. These are ranges rather than fixed runtimes: resolving the phrase and allowing the sound to decay can carry a performance beyond them. Infinite continues until stopped.
+1. **Length:** Select Short, Long, or Infinite. Short is a song-like form with a 1-minute ending target and typically lasts about 1–3 minutes. Long is a more ambient form with an ending target chosen between 10 and 30 minutes for each performance. In engines 1 and 3, the music follows its existing ending rules; engine 3 can accept a qualified fifth or sixth at most six seconds before the target. Engines 4 and 5 begin looking for an ending at the Long target and resolve by the next theme boundary. These are ranges rather than fixed runtimes: resolving the phrase and allowing the sound to decay can carry a performance beyond them. Infinite continues until stopped.
 2. **Root Tone:** Drag the dial up to raise the root frequency or down to lower it, using a mouse or touch. The range is 110–200 Hz. With the dial focused, use the arrow keys for 1 Hz adjustments. The readout below the dial shows the selected frequency.
 3. **Play:** Create a new performance using the selected root tone and length.
 4. **Replay:** Restart the current or most recent performance from the beginning with its saved root tone, length, and WAV sample rate. Replay restores the dial and length even if you changed them after stopping. It is disabled until a performance has started, then remains available during playback, after Stop, and after a natural ending.
@@ -79,7 +81,7 @@ Open **Revisit** below the playback buttons to load an earlier performance, shar
 
 The generator is deterministic: matching seed, root tone, length, and engine version reproduce the planned notes, timing, FM voices, and stereo movement. The sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Repeating a seed deliberately revisits a performance; fresh random seeds are not a mathematical guarantee that a seed can never recur.
 
-Older filenames contain a seed and timestamps but omit the root tone, length, and engine version. Replay cannot infer those missing settings from the filename or verify which engine made it. Links and new filenames with an unsupported engine version are rejected with an explanation, rather than silently replayed with changed musical rules. This branch supports engines 1, 3 and 4. Engine-1 and engine-3 links and filenames preserve their original performances. New Long performances and bare seeds with Long selected use engine 4; Short and Infinite use engine 3. Full filenames and replay links retain the chosen version. Engine-4 replays require this experimental branch until it is released; the current public player does not support them. The player does not reconstruct a seed from an audio recording.
+Older filenames contain a seed and timestamps but omit the root tone, length, and engine version. Replay cannot infer those missing settings from the filename or verify which engine made it. Links and new filenames with an unsupported engine version are rejected with an explanation, rather than silently replayed with changed musical rules. This branch supports engines 1, 3, 4 and 5. Engine-1, engine-3 and engine-4 links and filenames preserve their original performances. New Long performances and bare seeds with Long selected use engine 5; Short and Infinite use engine 3. Full filenames and replay links retain the chosen version. Engine-4 and engine-5 replays require this experimental branch until it is released; the current public player does not support them. The player does not reconstruct a seed from an audio recording.
 
 ### Output & Saving
 Save the audio for listening and keep its original filename or replay link to preserve the settings. Live recording remains a desktop keyboard feature; WAV export is also available in Revisit.
