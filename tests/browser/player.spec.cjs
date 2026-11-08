@@ -170,7 +170,7 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','long'], ['6','short'], ['6','long'], ['7','long'], ['8','long']]) test(`engine ${engine} ${mode} filename recreates the same native WAV after reloading`, async ({ page }) => {
+for (const [engine, mode] of [['1','short'], ['3','short'], ['4','long'], ['5','long'], ['6','short'], ['6','long'], ['7','long'], ['8','long'], ['9','long']]) test(`engine ${engine} ${mode} filename recreates the same native WAV after reloading`, async ({ page }) => {
   const longStudy = mode === 'long';
   test.setTimeout(longStudy ? 240000 : 120000);
   const length = longStudy ? 'long' : 'short';

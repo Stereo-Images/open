@@ -62,19 +62,20 @@
   const FIXED_COLLECTION_ENGINE = "6";
   const DOMINANT_PEDAL_ENGINE = "7";
   const LOW_PEDAL_ENGINE = "8";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE]);
+  const BELLS_ONLY_ENGINE = "9";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
   function defaultEngine() {
-    return LOW_PEDAL_ENGINE;
+    return BELLS_ONLY_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7 and 8.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7, 8 and 9.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -1319,6 +1320,23 @@
     };
   }
 
+  // The newest Long study keeps the complete bell performance, with no
+  // accompaniment. Older versioned studies retain their original bass layers.
+  function createBellsOnlyGenerator(seed, baseFreq, duration) {
+    const composition = createStruckStudyGenerator(seed, baseFreq, duration);
+    return {
+      density: composition.density, arcLen: composition.arcLen,
+      arcClimaxAt: composition.arcClimaxAt,
+      study: Object.freeze({ ...composition.study, form: "bells-only" }),
+      get nextTime() { return composition.nextTime; },
+      next() {
+        const group = composition.next();
+        if (group) group.notes = group.notes.filter(note => note.kind === "bell");
+        return group;
+      }
+    };
+  }
+
   function resolveDuration(seed, durationInput) {
     if (durationInput === "short") return 60;
     if (durationInput === "long") {
@@ -1335,7 +1353,10 @@
     if (["4", LONG_STUDY_ENGINE].includes(engine) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
-    const generator = [DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE].includes(engine)
+    const generator = engine === BELLS_ONLY_ENGINE
+      ? (durationInput === "long" ? createBellsOnlyGenerator(seed, tone, duration)
+        : createFixedWalkGenerator(seed, tone, duration))
+      : [DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE].includes(engine)
       ? (durationInput === "long" ? createDominantPedalGenerator(seed, tone, duration, engine === LOW_PEDAL_ENGINE)
         : createFixedWalkGenerator(seed, tone, duration))
       : engine === FIXED_COLLECTION_ENGINE
