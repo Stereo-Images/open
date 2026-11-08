@@ -137,7 +137,7 @@ recovery: a browser process terminated by the OS cannot run JavaScript cleanup.
 Engine 1 retains its exact score and export behavior, including the frozen Short
 and Long fixtures. Engine 3 adds conditional fifth and major-sixth endings to
 finite performances. Engine 2 is reserved for the separate tempo experiment;
-the app's release line stays v1.0. Bare seeds and fresh Play use engine 3;
+the app's release line stays v1.0. In this experimental branch, bare seeds and fresh Play use engine 6 for every duration;
 versioned links/filenames preserve their engine, and unversioned legacy filenames
 assume engine 1 with a warning about missing settings.
 
@@ -161,3 +161,64 @@ unchanged Infinite continuation, and live/export controls and tail completion.
 Native WAV round trips cover both engines, including reload and restoration
 from a full filename. Engine-3 files select the qualified-ending behavior;
 engine-1 files preserve the original tonic endings.
+
+
+
+## Fixed collection Long studies (engine 4)
+
+Engine 4 is a separate, Long-only experiment. It retains the first eleven pitches of the original walk with harmony held at the original major center, resolving any leading tone upward to the tonic. The allowed nominal pitch classes are 0, 2, 4, 5, 7 and 9 relative to the selected root. No pair forms a tritone, including across overlapping notes and drones. FM sidebands are not restricted to this collection.
+
+Two exact theme statements precede alternating one-note variants and exact returns. Pacing retains the theme's irregularity with a 2.5% slow variation. Root/fifth drones enter after the first statement and every three phrases thereafter. FM ratio, index and carrier offsets move between bounded targets every 24 strikes; voice count and amplitude weights remain fixed. The root fallback at the next theme boundary bounds ending search.
+
+Composition regressions sample 180 dispersed seeds at four root tones, check every nominal pitch class and all pitch-class pairs, exact theme returns, single-note variations, timing bounds, FM continuity across segment boundaries, deterministic replay, ending bounds and complete tails. Twelve frozen engine-3 scores from main 897911b cover Short, Long and Infinite; existing engine-1 fixtures remain active. Engine-4 filenames and links round-trip the complete score, and invalid length/engine combinations leave active playback intact. Existing live/offline scheduling tests exercise engine 6 for fresh Long performances; explicit engine-4 replay remains covered.
+
+The native browser round-trip test also covers a complete engine-4 Long score at 8 kHz to bound CI memory, alongside 44.1 kHz engine-1 and engine-3 tests. A low-rate render is a replay check, not a fidelity audition.
+
+
+## Original individual bell recipes (engine 5)
+
+Engine 5 wraps engine 4's composition without changing notes, onsets, durations, volume settings, drones, spatial movement, endings or export length. A separate original engine-3 generator supplies the next audible bell's FM recipe. Drone-only groups in that source are skipped without inserting gaps into the new score. Each voice retains its original amplitude weight, modulation ratio, modulation index and carrier offset relative to the current nominal pitch. The original attack/decay renderer remains unchanged.
+
+Tests compare complete engine-4 and engine-5 scores after excluding only bell voices and their normalization total, and verify every restored voice against the original generator across 64 seeds and four tones. Repeated generation must match exactly. Eight frozen engine-4 fixtures protect the already-delivered recordings; the engine-1 and engine-3 fixtures remain in place. Replay parsing accepts engine 5 only for Long; new playback now uses engine 6 in every duration. Native browser checks render and recreate the full 12-minute Long fixture for both engines 4 and 5.
+
+### Drone and melody compatibility
+
+A sounding-note sweep checks engines 4 and 5 over 246 seed/tone combinations each: both listening seeds at every integer dial setting from 110 through 200 Hz, plus 64 dispersed seeds across four tones. It verifies that drone roots are exact octaves of the selected frequency, that each drone is an open perfect fifth, and that the bass floor preserves the tuning across its 174/175 Hz octave boundary. The melody and drones share nominal equal-tempered tuning relative to that selected frequency; the dial is not independently snapped to A440 pitch names.
+
+Every overlapping pair involving a drone is checked for semitone, major-seventh and tritone intervals, with 10.465 seconds of settling and room tail after each voice. The sweep checks incoming drones against ringing melody notes and incoming melody notes against ringing drones, including overlap occurring only in tails. This is a score-level safeguard for the current fixed collection, not a claim that every inharmonic FM partial is consonant. Relative-major/minor movement remains a proposed separate variant.
+
+### Retained Short Study replay
+
+The exact filename `open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406` is tested with and without `.wav`, and through its replay link. A frozen score hash from main `897911b` protects every note, drone, FM voice, onset, duration, volume and pan value. The test also preserves its sixth-degree ending and 85.5663237-second complete export duration. It starts with Long selected and a simulated 48 kHz device, then verifies restoration of engine 3, 200 Hz, Short and 44.1 kHz export settings. Native browser round trips render this seed and recreate the WAV from that original filename after reloading; comparison allows the existing tiny browser DSP rounding tolerance, rather than claiming byte-identical files across browsers or recovery of later mastering.
+
+## Fixed harmony in every duration (engine 6)
+
+Engine 6 is the default for new Play and bare seeds in Short, Long and Infinite. Long reuses engine 5's complete score. Short and Infinite wrap the existing walk with harmony held at the initial major center, resolve the omitted leading tone upward without losing carrier offsets, and retain only a root/fifth drone pair in the selected tuning. Legacy random draws are consumed in their original order. The older versioned planners remain unchanged.
+
+Tests cover 120 seed/tone combinations in all three durations, verify the six-note collection and every nominal pitch-class pair, check drone compatibility, and advance every Infinite continuation by another 240 groups. Default and explicit engine-6 playback must agree. Long scores must match engine 5 exactly. A normal Play test forces the random draw to `0393ded7` at 200 Hz and verifies exact equality with the retained engine-3 Short Study, including the complete export duration. New filenames and links restore engine 6 in every duration. Eight frozen engine-5 scores now protect previous Long recordings alongside the engine-1/3/4 fixtures.
+
+Native browser WAV round trips cover engine 6 in Short at 44.1 kHz and a complete Long study at 8 kHz, alongside the retained older engines. The historical-source audio comparison explicitly selects engine 3 so it tests legacy compatibility rather than the new default behavior.
+
+
+### Delayed dominant pedal and protected Short Study
+
+Engine 7 Long is checked across 120 seed/root combinations, covering every integer root from 110 to 200 Hz. Every bell and the ending must equal engine 6. Each accompaniment is a single tuned dominant, starts no earlier than 120 seconds, covers exactly five strikes, leaves room for its tail before the next entry, and avoids the ending. All pitch-class pairings remain free of tritones. Short and Infinite, including continuation, must equal engine 6.
+
+The protected `0393ded7` / 200 Hz / Short / 44.1 kHz recording is a permanent compatibility requirement for the **implicit newest default**. The test forces that normal random Play draw and compares the score to the independently frozen hash from main, plus the 85.56632370385142-second export length. A separate test compares all scheduled synthesis controls against g3. Native Chromium, Firefox and WebKit tests compare the newest default's WAV directly to the original g3 filename at the same sample rate. Keep these tests when changing the default engine; do not substitute legacy-only replay for this guarantee. Native round trips also cover a complete engine-7 Long performance.
+
+The new pedal effects are also checked for distinct left/right chorus paths, valid positive delay modulation, a low flanger blend without feedback, matching live/export controls, and node cleanup after their tails. Legacy bass voices never enter this effects graph.
+
+
+### Engine 8 lower-octave pedal
+
+Across 120 Long seed/root cases, engine 8 must equal engine 7 after dividing each pedal's frequency by two and trimming its gain from 0.035 to 0.025. Bell notes, FM recipes, timing, envelopes, effects and endings stay identical. The protected newest-default Short Study checks remain implicit and therefore now exercise engine 8. Native replay covers full engine-7 and engine-8 Long studies. Browser jobs run independently so the growing set of retained-engine audio comparisons can finish in parallel.
+
+
+### Engine 9 bells alone
+
+Retained engine 9 removes the added Long pedal and all bass accompaniment. Across 120 seed/root cases, every remaining bell must exactly match engine 8, including FM parameters, time, envelope, panning and ending. Short and Infinite keep the established fixed walk; the newest-default protected Short Study tests continue unchanged. Pedal-effect checks explicitly select the retained engine 8. Native replay includes engine 9 Long.
+
+
+### Engine 10 restored drone voices
+
+The newest default restores engine 6's sparse root/fifth Long drones at their original levels. Across 120 seed/root cases, the entire score and duration must equal engine 6, and filtering out the drone voices must reproduce engine 9 exactly. No dominant pedal is planned. Engines 9 and 10 Short and Infinite, including continuation, must still equal engine 6. The protected Short Study tests keep using the implicit newest default. Native replay includes engine 10 Long alongside the retained earlier versions.

@@ -137,6 +137,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     // Lazy wrappers also allow loading the original source, which predates planning.
     planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
     createPerformance: (...args) => createPerformance(...args),
+    createPerformanceGenerator: (...args) => createPerformanceGenerator(...args),
     qualifiedEnding: (...args) => qualifiedEnding(...args),
     replayFromUI: () => replayFromUI(), copyReplayLink: () => copyReplayLink(),
     replayLastPerformance: () => replayLastPerformance(),
@@ -301,6 +302,44 @@ test('replay restores frozen Short and Long scores without changing musical choi
   }
 });
 
+test('the retained Short Study filename keeps its engine-3 score and 44.1 kHz export settings', async () => {
+  const h = dialHarness('110');
+  const { createHash } = require('node:crypto');
+  const filename = 'open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406';
+  // Frozen from main 897911b, independently of the Long-study experiment.
+  const expectedHash = '90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9';
+  const verify = () => {
+    const p = h.api.state().snapshot;
+    assert.equal(p.seed, 0x0393ded7);
+    assert.equal(p.engine, '3');
+    assert.equal(p.tone, 200);
+    assert.equal(p.duration, 'short');
+    assert.equal(p.sampleRate, 44100);
+    assert.equal(p.study, undefined);
+    assert.equal(p.groups.at(-1).endingKind, 'sixth');
+    assert.ok(Math.abs(p.exportDuration - 85.56632370385142) < 1e-7);
+    const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), expectedHash);
+    assert.equal(h.elements.get('tone').value, '200');
+    assert.equal(h.elements.get('songDuration').value, 'short');
+  };
+  // A Long selection and a different hardware rate must not reinterpret a
+  // versioned recording as the new Long engine or alter its export rate.
+  h.api.setup(); h.contexts[0].sampleRate = 48000;
+  for (const input of [filename, filename + '.wav']) {
+    h.elements.get('tone').value = '110';
+    h.elements.get('songDuration').value = 'long';
+    h.elements.get('replayInput').value = input;
+    await h.api.replayFromUI();
+    verify();
+    h.api.stopAllManual(true);
+  }
+  h.elements.get('replayInput').value = h.api.replayLink(h.api.state().snapshot);
+  await h.api.replayFromUI();
+  verify();
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
 test('new filenames with or without .wav and links restore the score, dial, and export rate', async () => {
   const h = dialHarness('200');
   h.elements.get('replayInput').value = '03b38656';
@@ -312,7 +351,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
   h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
   await pending;
   assert.equal(h.elements.get('exportWav').disabled, false);
-  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g3-200hz-short-48000sr-\d+\.wav$/);
+  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g10-200hz-short-48000sr-\d+\.wav$/);
   for (const value of [h.downloads[0], h.downloads[0].replace('.wav', ' (1).wav'),
     h.downloads[0].replace('.wav', ''), h.downloads[0].replace('.wav', ' (1)'), h.api.replayLink(original)]) {
     const restored = dialHarness();
@@ -322,7 +361,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
     assert.equal(snapshot.tone, 200);
     assert.equal(snapshot.duration, 'short');
     assert.equal(snapshot.sampleRate, 48000);
-    assert.equal(snapshot.engine, '3');
+    assert.equal(snapshot.engine, '10');
     assert.equal(JSON.stringify(snapshot.groups), JSON.stringify(original.groups));
     assert.equal(restored.elements.get('tone').value, '200');
     assert.equal(restored.elements.get('hzReadout').textContent, '200');
@@ -377,6 +416,439 @@ test('open endings reject unsettled harmony, unprepared sixths, leaps, and confl
   assert.equal(check(sixth, 5, false, false, [drone(-12), drone(-5)]), 'sixth');
 });
 
+test('engine 6 holds one tritone-free collection in every duration and Infinite continuation', () => {
+  const h = harness();
+  const allowed = new Set([0, 2, 4, 5, 7, 9]);
+  for (let i = 0; i < 120; i++) {
+    const seed = [0, 0xffffffff, 0x0393ded7, 0x0b086950, 0xe5561004][i]
+      ?? Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = [110, 121, 174, 175, 200][i % 5];
+    for (const duration of ['short', 'long', 'infinite']) {
+      const p = h.api.createPerformance(seed, tone, duration, '6');
+      const explicit = h.api.createPerformance(seed, tone, duration, '6');
+      assert.equal(JSON.stringify(p.groups), JSON.stringify(explicit.groups));
+      const groups = Array.from(p.groups);
+      if (duration === 'infinite') {
+        const time = p.continuation.nextTime;
+        for (let n = 0; n < 240; n++) groups.push(p.continuation.next());
+        assert.ok(groups.at(-1).time > time + 900);
+      }
+      const pc = freq => ((Math.round(12 * Math.log2(freq / tone)) % 12) + 12) % 12;
+      const notes = groups.flatMap(g => g.notes);
+      const pcs = new Set(notes.map(n => pc(n.freq)));
+      for (const a of pcs) {
+        assert.ok(allowed.has(a), `foreign pitch ${a}: ${seed}, ${duration}`);
+        for (const b of pcs) assert.notEqual((a - b + 12) % 12, 6);
+      }
+      for (const group of groups) {
+        const drones = group.notes.filter(n => n.kind === 'bass');
+        if (!drones.length) continue;
+        assert.equal(drones.length, 2);
+        assert.deepEqual(Array.from(drones, n => pc(n.freq)), [0, 7]);
+        assert.ok(Math.abs(12 * Math.log2(drones[1].freq / drones[0].freq) - 7) < 1e-9);
+        for (const drone of drones) for (const other of pcs)
+          assert.ok(![1, 6, 11].includes((pc(drone.freq) - other + 12) % 12));
+      }
+      if (duration === 'long') {
+        const previous = h.api.createPerformance(seed, tone, duration, '5');
+        assert.equal(JSON.stringify(p.groups), JSON.stringify(previous.groups));
+        assert.equal(p.exportDuration, previous.exportDuration);
+      }
+    }
+  }
+});
+
+test('the newest default engine must always reproduce the frozen Short Study through normal Play', async () => {
+  const h = dialHarness('200');
+  h.elements.get('songDuration').value = 'short';
+  h.sandbox.crypto.getRandomValues = a => { a[0] = 0x0393ded7; return a; };
+  await h.api.startFromUI();
+  const p = h.api.state().snapshot;
+  const legacy = h.api.createPerformance(0x0393ded7, 200, 'short', '3');
+  const { createHash } = require('node:crypto');
+  const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+  // This fixture is independent of both the current and retained engine code.
+  // Keep the default implicit so every future default must pass this contract.
+  assert.equal(createHash('sha256').update(normalized).digest('hex'),
+    '90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9');
+  assert.equal(p.sampleRate, 44100);
+  assert.ok(Math.abs(p.exportDuration - 85.56632370385142) < 1e-7);
+  assert.equal(JSON.stringify(p.groups), JSON.stringify(legacy.groups));
+  assert.equal(p.exportDuration, legacy.exportDuration);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('engine 10 filenames, links and normal Play select the new rules for every duration', async () => {
+  for (const duration of ['short', 'long', 'infinite']) {
+    const h = dialHarness('121');
+    h.elements.get('songDuration').value = duration;
+    await h.api.startFromUI();
+    assert.equal(h.api.state().snapshot.engine, '10');
+    const filename = `open-run-0b086950-fixture-g10-121hz-${duration}-44100sr-1.wav`;
+    h.elements.get('replayInput').value = filename;
+    await h.api.replayFromUI();
+    const p = h.api.state().snapshot;
+    const link = h.api.replayLink(p);
+    h.elements.get('replayInput').value = link;
+    await h.api.replayFromUI();
+    assert.equal(h.api.state().snapshot.engine, '10');
+    assert.equal(JSON.stringify(h.api.state().snapshot.groups), JSON.stringify(p.groups));
+    h.sandbox.__OPEN_PLAYER_KILL__();
+  }
+});
+
+test('engine 7 Long preserves every bell and adds only five-strike dominant pedals after two minutes', () => {
+  const h = harness();
+  for (let i = 0; i < 120; i++) {
+    const seed = [0x0b086950, 0xb07b3c2b, 0x0393ded7, 0, 0xffffffff][i]
+      ?? Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = 110 + i % 91;
+    const p = h.api.createPerformance(seed, tone, 'long', '7');
+    const previous = h.api.createPerformance(seed, tone, 'long', '6');
+    const bellsOnly = score => JSON.stringify(score.groups.map(g => ({ ...g,
+      notes: g.notes.filter(n => n.kind === 'bell') })));
+    assert.equal(bellsOnly(p), bellsOnly(previous));
+    assert.equal(p.exportDuration, previous.exportDuration);
+    assert.equal(p.groups.length, previous.groups.length);
+    const pedals = [];
+    const pc = freq => ((Math.round(12 * Math.log2(freq / tone)) % 12) + 12) % 12;
+    for (const [index, group] of p.groups.entries()) {
+      assert.equal(group.notes.filter(n => n.kind === 'bass').length, 0);
+      const pedal = group.notes.find(n => n.kind === 'pedal');
+      if (!pedal) continue;
+      assert.ok(pedal.time >= 120);
+      assert.equal(pedal.time, group.time);
+      assert.equal(pc(pedal.freq), 7);
+      assert.ok(pedal.freq >= 87.31 && pedal.freq < 175);
+      assert.ok(Math.abs(pedal.time + pedal.duration - p.groups[index + 5].time) < 1e-8);
+      assert.ok(pedal.volume < 0.04);
+      for (const g of p.groups) for (const n of g.notes)
+        assert.notEqual((pc(n.freq) - 7 + 12) % 12, 6);
+      if (pedals.length) {
+        assert.equal(index - pedals.at(-1).index, 22);
+        assert.ok(pedal.time > pedals.at(-1).note.time + pedals.at(-1).note.duration + 10.465);
+      }
+      pedals.push({ index, note: pedal });
+    }
+    assert.ok(pedals.length > 0);
+    assert.equal(pedals[0].index, p.groups.findIndex(g => g.time >= 120));
+    const last = pedals.at(-1).note;
+    assert.ok(last.time + last.duration < p.groups.at(-1).time);
+  }
+});
+
+test('engine 8 lowers the Long pedal by exactly one octave with restrained gain', () => {
+  const h = harness();
+  for (let i = 0; i < 120; i++) {
+    const seed = [0xb07b3c2b, 0x0393ded7, 0x0b086950][i] ?? Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = 110 + i % 91;
+    const current = h.api.createPerformance(seed, tone, 'long', '8');
+    const previous = h.api.createPerformance(seed, tone, 'long', '7');
+    const expected = previous.groups.map(g => ({ ...g, notes: g.notes.map(n =>
+      n.kind === 'pedal' ? { ...n, freq: n.freq / 2, volume: 0.025 } : n) }));
+    assert.equal(JSON.stringify(current.groups), JSON.stringify(expected));
+    assert.equal(current.exportDuration, previous.exportDuration);
+    assert.equal(current.study.pedalOctave, -1);
+    for (const n of current.groups.flatMap(g => g.notes).filter(n => n.kind === 'pedal')) {
+      assert.ok(n.freq >= 43.655 && n.freq < 87.31);
+      assert.ok(n.volume < 0.04);
+    }
+  }
+});
+
+test('engine 9 Long contains only the original bells with identical timing, FM, and ending', () => {
+  const h = harness();
+  for (let i = 0; i < 120; i++) {
+    const seed = [0xb07b3c2b, 0x0393ded7, 0x0b086950][i] ?? Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = 110 + i % 91;
+    const current = h.api.createPerformance(seed, tone, 'long', '9');
+    const previous = h.api.createPerformance(seed, tone, 'long', '8');
+    const expected = previous.groups.map(g => ({ ...g, notes: g.notes.filter(n => n.kind === 'bell') }));
+    assert.equal(JSON.stringify(current.groups), JSON.stringify(expected));
+    assert.equal(current.exportDuration, previous.exportDuration);
+    assert.equal(current.study.form, 'bells-only');
+    assert.ok(current.groups.every(g => g.notes.length === 1 && g.notes[0].kind === 'bell'));
+  }
+});
+
+test('engines 9 and 10 retain engine 6 Short and Infinite including continuation', () => {
+  const h = harness();
+  for (const engine of ['9', '10']) for (let i = 0; i < 32; i++) for (const duration of ['short', 'infinite']) {
+    const seed = i ? Math.imul(i, 0x9e3779b9) >>> 0 : 0x0393ded7;
+    const tone = i ? 110 + i % 91 : 200;
+    const p = h.api.createPerformance(seed, tone, duration, engine);
+    const old = h.api.createPerformance(seed, tone, duration, '6');
+    assert.equal(JSON.stringify(p.groups), JSON.stringify(old.groups));
+    assert.equal(p.exportDuration, old.exportDuration);
+    if (duration === 'infinite') for (let n = 0; n < 80; n++)
+      assert.equal(JSON.stringify(p.continuation.next()), JSON.stringify(old.continuation.next()));
+  }
+});
+
+test('engine 10 restores the original Long drones without altering bells or adding pedals', () => {
+  const h = harness();
+  for (let i = 0; i < 120; i++) {
+    const seed = [0xb07b3c2b, 0x0393ded7, 0x0b086950][i] ?? Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = 110 + i % 91;
+    const current = h.api.createPerformance(seed, tone, 'long');
+    const original = h.api.createPerformance(seed, tone, 'long', '6');
+    const solo = h.api.createPerformance(seed, tone, 'long', '9');
+    assert.equal(JSON.stringify(current.groups), JSON.stringify(original.groups));
+    assert.equal(current.exportDuration, original.exportDuration);
+    assert.equal(JSON.stringify(current.groups.map(g => ({ ...g,
+      notes: g.notes.filter(n => n.kind === 'bell') }))), JSON.stringify(solo.groups));
+    assert.equal(current.exportDuration, solo.exportDuration);
+    const drones = current.groups.flatMap(g => g.notes).filter(n => n.kind === 'bass');
+    assert.ok(drones.length > 0);
+    assert.ok(current.groups.every(g => g.notes.every(n => n.kind !== 'pedal')));
+    for (const drone of drones) {
+      const pc = ((Math.round(12 * Math.log2(drone.freq / tone)) % 12) + 12) % 12;
+      assert.ok([0, 7].includes(pc));
+      assert.equal(drone.duration, 22);
+    }
+  }
+});
+
+test('the newest default and g3 schedule identical Short Study synthesis controls', async () => {
+  const current = dialHarness('200'), legacy = dialHarness('200');
+  current.sandbox.crypto.getRandomValues = a => { a[0] = 0x0393ded7; return a; };
+  legacy.elements.get('replayInput').value = 'open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406';
+  await current.api.startFromUI(); await legacy.api.replayFromUI();
+  const a = current.api.state().bus.origin, b = legacy.api.state().bus.origin;
+  current.advance(84); legacy.advance(84);
+  assert.equal(JSON.stringify(voiceControls(current.contexts[0], a)),
+    JSON.stringify(voiceControls(legacy.contexts[0], b)));
+  current.sandbox.__OPEN_PLAYER_KILL__(); legacy.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('Long pedal effects are stereo, bounded, identical live/offline, and released after their tails', async () => {
+  const h = dialHarness('121');
+  h.elements.get('songDuration').value = 'long';
+  h.elements.get('replayInput').value = 'open-run-b07b3c2b-fixture-g8-121hz-long-44100sr-1.wav';
+  await h.api.replayFromUI();
+  const ctx = h.contexts[0], origin = h.api.state().bus.origin;
+  const score = h.api.state().snapshot;
+  const pedal = score.groups.flatMap(g => g.notes).find(n => n.kind === 'pedal');
+  h.advance(119);
+  assert.equal(ctx.nodes.filter(n => n.kind === 'delay').length, 1); // Only room pre-delay.
+  const before = ctx.nodes.length;
+  h.advance(pedal.time + 1 - 119);
+  const added = ctx.nodes.slice(before);
+  const delays = added.filter(n => n.kind === 'delay');
+  assert.equal(delays.length, 3);
+  const sweep = delay => {
+    const mod = ctx.nodes.find(n => n.connections.includes(delay.delayTime));
+    const lfo = ctx.nodes.find(n => n.connections.includes(mod));
+    const center = delay.delayTime.events[0][1];
+    assert.ok(center - mod.gain.value > 0);
+    assert.ok(center + mod.gain.value < 0.05);
+    return [center, mod.gain.value, lfo.frequency.value, lfo.startTime - origin, lfo.stopTime - origin];
+  };
+  const signature = delays.map(sweep);
+  const pans = added.filter(n => n.kind === 'panner').map(n => n.pan.events[0][1]);
+  assert.ok(pans.includes(-1) && pans.includes(1));
+  const rendering = h.api.renderWavExport();
+  const offline = h.contexts[1];
+  const offlineDelays = offline.nodes.filter(n => n.kind === 'delay' &&
+    Math.abs(n.delayTime.events[0]?.[2] - pedal.time) < 1e-7);
+  assert.equal(offlineDelays.length, 3);
+  const offlineSignature = offlineDelays.map(delay => {
+    const mod = offline.nodes.find(n => n.connections.includes(delay.delayTime));
+    const lfo = offline.nodes.find(n => n.connections.includes(mod));
+    return [delay.delayTime.events[0][1], mod.gain.value, lfo.frequency.value, lfo.startTime, lfo.stopTime];
+  });
+  const normalized = value => JSON.stringify(value, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+  assert.equal(normalized(signature), normalized(offlineSignature));
+  offline.reject(Error('end synthetic render')); await rendering;
+  h.advance(pedal.duration + 2);
+  for (const delay of delays) assert.equal(delay.disconnected, true);
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('restored FM studies preserve the score and borrow every original strike recipe', () => {
+  const h = harness();
+  const musicalScore = p => JSON.stringify(p.groups, (key, value) =>
+    key === 'voices' || key === 'totalAmp' ? undefined : value);
+  let variableVoiceCounts = 0, changingRatios = 0;
+  for (let i = 0; i < 64; i++) {
+    const seed = [0, 0xffffffff, 0xe5561004, 0x4daae09d, 0xa94105f2, 0x4b715932][i]
+      ?? (Math.imul(i, 0x9e3779b9) >>> 0);
+    const tone = [110, 121, 155, 200][i % 4];
+    const smooth = h.api.createPerformance(seed, tone, 'long', '4');
+    const struck = h.api.createPerformance(seed, tone, 'long', '5');
+    assert.equal(musicalScore(struck), musicalScore(smooth));
+    assert.equal(struck.exportDuration, smooth.exportDuration);
+    assert.equal(JSON.stringify(struck.study), JSON.stringify(smooth.study));
+    const original = h.api.createPerformanceGenerator(seed, tone, Infinity, '3');
+    let previous = null;
+    for (const group of struck.groups) for (const bell of group.notes) {
+      if (bell.kind !== 'bell') continue;
+      let recipe;
+      while (!recipe) recipe = original.next().notes.find(n => n.kind === 'bell');
+      assert.equal(bell.voices.length, recipe.voices.length);
+      assert.equal(bell.totalAmp, recipe.totalAmp);
+      bell.voices.forEach((v, index) => {
+        const source = recipe.voices[index];
+        for (const key of ['amp', 'modRatio', 'modIndex']) assert.equal(v[key], source[key]);
+        assert.ok(Math.abs((v.frequency - bell.freq) - (source.frequency - recipe.freq)) < 1e-10);
+      });
+      if (previous) {
+        if (previous.voices.length !== bell.voices.length) variableVoiceCounts++;
+        if (Math.abs(previous.voices[0].modRatio - bell.voices[0].modRatio) > 0.1) changingRatios++;
+      }
+      previous = bell;
+    }
+    const repeated = h.api.createPerformance(seed, tone, 'long', '5');
+    assert.equal(JSON.stringify(struck), JSON.stringify(repeated));
+  }
+  assert.ok(variableVoiceCounts > 64);
+  assert.ok(changingRatios > 64);
+});
+
+test('Long study drones share the melody tuning and remain compatible through complete tails', () => {
+  const h = harness();
+  // Use the actual selected frequency, not a rounded concert-pitch note name.
+  // Include every dial value, especially the 174/175 Hz bass-octave boundary.
+  const cases = [];
+  for (let tone = 110; tone <= 200; tone++)
+    for (const seed of [0xe5561004, 0x4daae09d]) cases.push({ seed, tone });
+  for (let i = 0; i < 64; i++) cases.push({
+    seed: i === 0 ? 0 : i === 1 ? 0xffffffff : Math.imul(i, 0x9e3779b9) >>> 0,
+    tone: [110, 121, 175, 200][i % 4]
+  });
+  const semitones = (a, b) => 12 * Math.log2(a / b);
+  const forbidden = new Set([1, 6, 11]);
+  const tail = 0.1 + 0.1 + 10 + 0.015 + 0.25;
+  let droneEntries = 0, melodyPairs = 0, tailOnlyPairs = 0;
+  for (const { seed, tone } of cases) for (const engine of ['4', '5']) {
+    const p = h.api.createPerformance(seed, tone, 'long', engine);
+    const label = `engine ${engine}, seed ${seed.toString(16)}, ${tone} Hz`;
+    for (const group of p.groups) {
+      const drones = group.notes.filter(n => n.kind === 'bass');
+      if (!drones.length) continue;
+      droneEntries++;
+      // An open fifth avoids imposing a major third against the melody's fourth.
+      assert.equal(drones.length, 2, `unexpected drone chord: ${label}`);
+      const [root, fifth] = drones;
+      const octaves = Math.log2(root.freq / tone);
+      assert.ok(Math.abs(octaves - Math.round(octaves)) < 1e-10,
+        `drone root is not an octave of the selected tone: ${label}`);
+      assert.ok(root.freq >= 87.31 && root.freq <= tone,
+        `drone root leaves the bass range: ${label}`);
+      assert.ok(Math.abs(semitones(fifth.freq, root.freq) - 7) < 1e-9,
+        `drone is not a tuned perfect fifth: ${label}`);
+      assert.equal(root.time, fifth.time);
+      assert.equal(root.duration, fifth.duration);
+    }
+    // Sweep the full sounding score, not just notes sharing an onset. Check
+    // new drones against old bells as well as new bells against old drones.
+    let sounding = [];
+    const notes = p.groups.flatMap(g => g.notes).sort((a, b) => a.time - b.time);
+    for (const note of notes) {
+      sounding = sounding.filter(n => n.time + n.duration + tail > note.time);
+      for (const previous of sounding) {
+        if (note.kind !== 'bass' && previous.kind !== 'bass') continue;
+        const interval = Math.abs(semitones(note.freq, previous.freq));
+        assert.ok(Math.abs(interval - Math.round(interval)) < 1e-8,
+          `melody and drone use different nominal tuning: ${label}`);
+        const pitchClassInterval = Math.round(interval) % 12;
+        assert.ok(!forbidden.has(pitchClassInterval),
+          `drone clash (${pitchClassInterval} semitones) at ${note.time}: ${label}`);
+        if (note.kind !== previous.kind) {
+          melodyPairs++;
+          if (previous.time + previous.duration <= note.time) tailOnlyPairs++;
+        }
+      }
+      sounding.push(note);
+    }
+  }
+  assert.ok(droneEntries > cases.length * 2);
+  assert.ok(melodyPairs > droneEntries);
+  assert.ok(tailOnlyPairs > droneEntries);
+});
+
+test('fixed Long studies retain one collection, recurring phrases, and gradual FM across seeds', () => {
+  const h = harness();
+  const scale = new Set([0, 2, 4, 5, 7, 9]);
+  let changedPhrases = 0;
+  for (let i = 0; i < 180; i++) {
+    const seed = i === 0 ? 0x0393ded7 : Math.imul(i, 0x9e3779b9) >>> 0;
+    const tone = [200, 110, 121, 155][i % 4];
+    const p = h.api.createPerformance(seed, tone, 'long', '4');
+    const theme = Array.from(p.study.theme);
+    const bells = p.groups.map(g => g.notes.find(n => n.kind === 'bell'));
+    const pc = freq => ((Math.round(12 * Math.log2(freq / tone)) % 12) + 12) % 12;
+    assert.equal(theme.length, 11);
+    if (i === 0) assert.deepEqual(theme.map(f => Math.round(12 * Math.log2(f / tone))),
+      [2, 0, 2, 4, 5, 7, 9, 7, 5, 7, 9]);
+    assert.deepEqual(Array.from(bells.slice(0, 11), n => n.freq), theme);
+    assert.deepEqual(Array.from(bells.slice(11, 22), n => n.freq), theme);
+    for (let start = 22; start + 11 < bells.length; start += 11) {
+      const cycle = start / 11;
+      const changes = bells.slice(start, start + 11).filter((n, j) => n.freq !== theme[j]).length;
+      assert.ok(changes <= 1);
+      if (cycle % 2 === 1) assert.equal(changes, 0);
+      else changedPhrases += changes;
+    }
+    const usedPitches = new Set(p.groups.flatMap(g => g.notes.map(n => pc(n.freq))));
+    for (const a of usedPitches) for (const b of usedPitches)
+      assert.notEqual(((a - b) % 12 + 12) % 12, 6, `tritone pair for seed ${seed}`);
+    for (const g of p.groups) for (const n of g.notes) {
+      assert.ok(scale.has(pc(n.freq)), `out-of-collection note for seed ${seed}`);
+      assert.ok(Number.isFinite(n.freq) && n.duration > 0);
+      if (n.kind === 'bell') assert.ok(n.freq >= 110 && n.freq <= 415.3);
+    }
+    for (let j = 1; j < bells.length; j++) {
+      const a = bells[j - 1], b = bells[j];
+      assert.ok(b.time > a.time);
+      assert.ok(b.time - a.time <= 1.077 / p.density);
+      assert.equal(a.voices.length, b.voices.length);
+      for (let v = 0; v < b.voices.length; v++) {
+        assert.ok(Math.abs(a.voices[v].modRatio - b.voices[v].modRatio) <= 0.012);
+        assert.ok(Math.abs(a.voices[v].modIndex - b.voices[v].modIndex) <= 0.02);
+        const deltaA = a.voices[v].frequency - a.freq;
+        const deltaB = b.voices[v].frequency - b.freq;
+        assert.ok(Math.abs(deltaB) <= 1.100001);
+        assert.ok(Math.abs(deltaA - deltaB) <= 0.02);
+      }
+    }
+    assert.equal(p.groups.filter(g => g.ending).length, 1);
+    assert.ok(p.groups.at(-1).ending);
+    assert.ok(p.groups.at(-1).time >= p.targetDuration);
+    assert.ok(p.groups.at(-1).time < p.targetDuration + 12 / p.density);
+    const voiceEnd = Math.max(...p.groups.flatMap(g => g.notes.map(n => n.time + n.duration)));
+    assert.ok(p.exportDuration >= voiceEnd + 10.465 - 1e-8);
+    const again = h.api.createPerformance(seed, tone, 'long', '4');
+    assert.equal(JSON.stringify(p), JSON.stringify(again));
+  }
+  assert.ok(changedPhrases > 180);
+});
+
+for (const engine of ['4', '5']) test(`engine ${engine} replay filenames and links restore Long and reject other lengths without stopping audio`, async () => {
+  const h = dialHarness('200');
+  h.elements.get('songDuration').value = 'long';
+  h.elements.get('replayInput').value = `open-run-0393ded7-fixture-g${engine}-200hz-long-44100sr-1.wav`;
+  await h.api.replayFromUI();
+  const first = h.api.state().snapshot;
+  assert.equal(first.engine, engine);
+  const link = h.api.replayLink(first);
+  for (const input of [link, `open-run-0393ded7-fixture-g${engine}-200hz-long-44100sr-1.wav`]) {
+    h.elements.get('replayInput').value = input;
+    await h.api.replayFromUI();
+    assert.equal(JSON.stringify(h.api.state().snapshot.groups), JSON.stringify(first.groups));
+  }
+  const original = h.api.state().snapshot;
+  for (const mode of ['short', 'infinite']) {
+    h.elements.get('replayInput').value = link.replace('length=long', `length=${mode}`);
+    await h.api.replayFromUI();
+    assert.equal(h.api.state().snapshot, original);
+    assert.equal(h.api.state().isPlaying, true);
+    assert.match(h.elements.get('replayStatus').textContent, /length must be long/);
+    assert.throws(() => h.api.createPerformance(0, 110, mode, engine), /requires Long/);
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
 test('varied seeds retain the engine-1 approach and tonic fallback without changing Infinite', () => {
   const h = harness(), kinds = new Set();
   for (let i = 0; i < 400; i++) {
@@ -419,7 +891,7 @@ test('legacy filenames and boundary seeds use explicit current controls', async 
     assert.equal(snapshot.seed, seed);
     assert.equal(snapshot.tone, 121);
     assert.equal(snapshot.duration, 'long');
-    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '3');
+    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '10');
     assert.match(h.elements.get('replayStatus').textContent, /selected root tone and length/);
   }
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -430,7 +902,7 @@ test('invalid replay data never interrupts or replaces a playing performance', a
   const original = h.api.state().snapshot, bus = h.api.state().bus;
   const link = h.api.replayLink(original);
   const invalid = ['', '123', '0x12345678', '123456789', 'zzzzzzzz',
-    link.replace('engine=3', 'engine=2'), link.replace('tone=155', 'tone=201'),
+    link.replace(/engine=\d+/, 'engine=2'), link.replace('tone=155', 'tone=201'),
     link.replace('tone=155', 'tone=109'), link.replace('tone=155', 'tone=121.5'),
     link.replace('length=short', 'length=300'), link.replace('rate=44100', 'rate=NaN'),
     link.replace('rate=44100', 'rate=0'), link.replace('&rate=44100', ''),
@@ -879,7 +1351,8 @@ test('live voice parameters and timing match the original source for ten minutes
   const original = process.env.OPEN_BASELINE;
   if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
-  await a.api.startFromUI(); await b.api.startFromUI();
+  a.sandbox.document.getElementById('replayInput').value = 'open-run-00003039-baseline-g3-110hz-infinite-44100sr-1.wav';
+  await a.api.replayFromUI(); await b.api.startFromUI();
   const origin = a.api.state().bus.origin;
   a.advance(602); b.advance(602);
   // Compare the first ten musical minutes, excluding the scheduler lookahead.
@@ -1282,4 +1755,187 @@ test('failed offline resonator setup stops partial oscillators and leaves export
   h.contexts[2].reject(Error('finish test render'));
   await retry;
   h.api.stopAllManual(true);
+});
+
+
+
+test('engine 3 keeps its frozen Short, Long and Infinite scores during the Long experiment', () => {
+  const h = harness();
+  const { createHash } = require('node:crypto');
+  // Captured from main 897911b before this experiment.
+  const fixtures = [
+  [
+    0,
+    "short",
+    "7d9d75dba713570d3ab99190375f7722b5cb249e8c2bab49b92083e7f289443e"
+  ],
+  [
+    0,
+    "long",
+    "780a9fe95361f5ad1ea9adbd75c53d42a2485709986ce3e2d92591b7b5cee938"
+  ],
+  [
+    0,
+    "infinite",
+    "a64ccdf37793fac41a68e6e936cf8408b304e43217c032e0bc7a706786fd0824"
+  ],
+  [
+    60022487,
+    "short",
+    "90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9"
+  ],
+  [
+    60022487,
+    "long",
+    "d050b8f93aa9785dfca3392bb5fa9202bfb1766351f78ef95dcc9b559f1e38f0"
+  ],
+  [
+    60022487,
+    "infinite",
+    "cc25061e2d4d5863459afc57a589b0c0b2c36e8bca58146921bf5b71e1879cfc"
+  ],
+  [
+    145758558,
+    "short",
+    "975ba6e3d7bfd8de36ce7d4f57558d90213cc96bbb2e1bd4547946bfda940076"
+  ],
+  [
+    145758558,
+    "long",
+    "da83151cd8c7d45b08ee37b4b379eb2eb696f5a1d8d174103bde381070c9c506"
+  ],
+  [
+    145758558,
+    "infinite",
+    "e52f3d67ef26a0568caf42c03873c897cf54db026baccf35e58ac1379372076d"
+  ],
+  [
+    4294967295,
+    "short",
+    "b311e52505cc2b847e5b5211cf0fbdc81a9425761b65ea744fac4c0f7ea5618d"
+  ],
+  [
+    4294967295,
+    "long",
+    "46b266ae79f3b92c1386fb738dc5d9b4669ed6e84c01b7713d31541ef1713a59"
+  ],
+  [
+    4294967295,
+    "infinite",
+    "7d784a556c58c1e9837fdce470408d7329b45019303b591f2f57eb82107aa2e0"
+  ]
+];
+  for (const [seed, mode, hash] of fixtures) {
+    const p = h.api.createPerformance(seed, 200, mode, '3');
+    const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
+
+  }
+});
+
+
+test('engine 4 retains its frozen smooth-FM scores after restoring individual bell strikes', () => {
+  const h = harness();
+  const { createHash } = require('node:crypto');
+  // Captured from the first audition branch before engine 5 was added.
+  const fixtures = [
+  [
+    0,
+    110,
+    "0ea9a27e649e115ad44516bef3d211af2d9ff2b0a774a4cd0043398db7fea722"
+  ],
+  [
+    0,
+    200,
+    "69fee1a9891dbb74a7cb0f6588a3c8676925250510ffc2be68903e187c568b80"
+  ],
+  [
+    145758558,
+    110,
+    "8b8e62cecde5deafb6eabd8e6a82c693467a6a63ebaf70fd0d79d3ad409c1336"
+  ],
+  [
+    145758558,
+    200,
+    "3f1b6a8c1ae148081a234591872bd80cc07f5edd88aec171a5a2e6585dc3ea53"
+  ],
+  [
+    3847622660,
+    110,
+    "0faa224889793e3181c0550d7d08e44e0d37b5c5406734109660b5c5e3214743"
+  ],
+  [
+    3847622660,
+    200,
+    "53d2045e7ae962106639453f44283b528c532982cb45608df172a92f0d442d28"
+  ],
+  [
+    4294967295,
+    110,
+    "e1a1a57a10e0fc9e3d6890e5f2776b1f4c1bbc187adcf68cf73a59a7e1eb5ea9"
+  ],
+  [
+    4294967295,
+    200,
+    "40c7f6c21a3c991e683f32f71a837f52c6ca6426b53cebb326f4b2e14de9edde"
+  ]
+];
+  for (const [seed, tone, hash] of fixtures) {
+    const p = h.api.createPerformance(seed, tone, 'long', '4');
+    const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
+  }
+});
+
+
+test('engine 5 preserves its frozen recordings after engine 6 becomes the default', () => {
+  const h = harness();
+  const { createHash } = require('node:crypto');
+  const fixtures = [
+  [
+    0,
+    110,
+    "7917cf6c0f9366286baf6dd685bb7d1260eed11ee9fc9ea6e1488117fa8819ee"
+  ],
+  [
+    0,
+    200,
+    "70ef0d0de482a84a22cdbc53c38667417683d6b4777c1cc39d13e484b5de2263"
+  ],
+  [
+    185100624,
+    110,
+    "70bde2ffae25fb410198b4cd23d89eb13505b8d596a7ebf038543e5c5cc55325"
+  ],
+  [
+    185100624,
+    200,
+    "7aaba2809e59f8ed2d121ea357396b1c6ad884afe7c18d56adf4885ae557a93a"
+  ],
+  [
+    3847622660,
+    110,
+    "7be4e066c1fee839a8030fd68ba7edd91445c2138c8f99148a543346c74e2ed0"
+  ],
+  [
+    3847622660,
+    200,
+    "a85f4e641dbaeb5d01ff6b193a8fdabc8eaf40e07fd82b5eddd82e8c738e4408"
+  ],
+  [
+    4294967295,
+    110,
+    "d6de382adb61044b366589e9f385b9529aa59a3def0aac3c43d0fd55f99b2ebb"
+  ],
+  [
+    4294967295,
+    200,
+    "dd8b2d2c0ad8dfb6e8ebabd3c170f0fa4d0c4ce783a1d1a27ac8799e86eaa466"
+  ]
+];
+  for (const [seed, tone, hash] of fixtures) {
+    const p = h.api.createPerformance(seed, tone, 'long', '5');
+    const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), hash);
+  }
 });

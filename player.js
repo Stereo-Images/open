@@ -58,13 +58,25 @@
   // Engine 2 is reserved for the separate tempo experiment. Musical engine
   // identifiers are independent of the public v1.0 release number.
   const ENGINE_VERSION = "3";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION]);
+  const LONG_STUDY_ENGINE = "5";
+  const FIXED_COLLECTION_ENGINE = "6";
+  const DOMINANT_PEDAL_ENGINE = "7";
+  const LOW_PEDAL_ENGINE = "8";
+  const BELLS_ONLY_ENGINE = "9";
+  const RESTORED_DRONE_ENGINE = "10";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE]);
+
+  // New performances hold one collection for every duration. Versioned replays
+  // select their original engine, independently of the current length control.
+  function defaultEngine() {
+    return RESTORED_DRONE_ENGINE;
+  }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1 and ${ENGINE_VERSION}.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7, 8, 9 and 10.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -72,6 +84,8 @@
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (!["short", "long", "infinite"].includes(record.duration))
       throw new Error("The replay length must be short, long, or infinite.");
+    if (["4", LONG_STUDY_ENGINE].includes(record.engine) && record.duration !== "long")
+      throw new Error(`Engine ${record.engine} is a Long study experiment; its replay length must be long.`);
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
@@ -104,7 +118,7 @@
       throw new Error("Paste an eight-character seed, an Open WAV filename, or a replay link.");
     // Older open-run names use engine 1 by convention. Bare seeds explore the
     // current engine; complete filenames and links always retain their version.
-    return { ...validateReplay({ seed, engine: legacy ? "1" : ENGINE_VERSION,
+    return { ...validateReplay({ seed, engine: legacy ? "1" : defaultEngine($("songDuration")?.value ?? "short"),
       tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
       partial: true, legacy: !!legacy };
   }
@@ -777,7 +791,7 @@
 
   // The live musical rules have one owner. Planning draws all musical and
   // spatial choices before rendering; neither renderer consumes these streams.
-  function createPerformanceGenerator(seed, baseFreq, duration, engine = ENGINE_VERSION) {
+  function createPerformanceGenerator(seed, baseFreq, duration, engine = ENGINE_VERSION, holdHarmony = false) {
     const rand = mulberry32(seed);
     const chance = p => rand() < p;
     const spatialRandom = mulberry32((seed ^ 0x57E2E0) >>> 0);
@@ -890,6 +904,9 @@
         let appliedDur = noteDur;
         let pressure = Math.min(1.0, notesSinceModulation / 48.0);
         updateHarmonyState();
+        // Used only to gather engine 4's opening phrase. Keep the legacy draw
+        // order, but hold both the circle position and the major/minor state.
+        if (holdHarmony) { circlePosition = 0; isMinor = false; }
 
         if (duration !== Infinity && nextTimeA >= duration + LOOKAHEAD) {
           if (patternIdxA % 7 === 0) {
@@ -1071,6 +1088,256 @@
     };
   }
 
+  // Long study experiment. The opening comes from Open's existing walk, held
+  // in a six-note major collection (1–2–3–4–5–6), with no tritone pairs.
+  // Composition, FM and space have separate
+  // streams: changing a timbre target cannot change the remembered melody.
+  function createFixedStudyGenerator(seed, baseFreq, duration) {
+    const phraseRandom = mulberry32((seed ^ 0x50485241) >>> 0);
+    const fmRandom = mulberry32((seed ^ 0x464D4452) >>> 0);
+    const droneRandom = mulberry32((seed ^ 0x44524F4E) >>> 0);
+    const spatialRandom = mulberry32((seed ^ 0x57E2E0) >>> 0);
+    const opening = createPerformanceGenerator(seed, baseFreq, Infinity, "3", true);
+    const theme = [], gaps = [];
+    while (theme.length < 11) {
+      const group = opening.next();
+      const bell = group.notes.find(n => n.kind === "bell");
+      // Omit the leading tone, which forms a tritone with degree 4. Resolve it
+      // upward to the tonic; octave folding preserves the instrument's range.
+      const pc = ((Math.round(12 * Math.log2(bell.freq / baseFreq)) % 12) + 12) % 12;
+      let freq = pc === 11 ? bell.freq * Math.pow(2, 1 / 12) : bell.freq;
+      if (freq > MELODY_CEILING_HZ) freq /= 2;
+      theme.push(freq);
+      gaps.push(opening.nextTime - group.time);
+    }
+    const density = opening.density;
+    const noteDuration = 2.5 / density;
+    const interval = (a, b) => Math.abs(12 * Math.log2(a / b));
+    const pitchClass = freq => ((Math.round(12 * Math.log2(freq / baseFreq)) % 12) + 12) % 12;
+    const degree = freq => [0, 2, 4, 5, 7, 9, 11].indexOf(pitchClass(freq));
+    const colors = [...new Set(theme.map(pitchClass))];
+    const variants = [];
+    for (let i = 1; i < theme.length - 1; i++) {
+      for (const freq of new Set([theme[i - 1], theme[i + 1]])) {
+        if (freq !== theme[i] && interval(freq, theme[i - 1]) <= 4.01 &&
+            interval(freq, theme[i + 1]) <= 4.01) variants.push({ slot: i, freq });
+      }
+    }
+
+    const bounded = (value, lo, hi) => Math.max(lo, Math.min(hi, value));
+    const voiceCount = 2 + Math.floor(fmRandom() * 2);
+    const weights = Array.from({ length: voiceCount }, () => 0.3 + fmRandom() * 0.7);
+    const totalAmp = weights.reduce((a, b) => a + b, 0);
+    const indexOffsets = weights.map(() => (fmRandom() - 0.5) * 0.2);
+    let fmFrom = {
+      ratio: 1.7 + fmRandom() * 1.8,
+      index: 1.2 + fmRandom() * 1.2,
+      detune: weights.map((_, i) => (i - (voiceCount - 1) / 2) * (0.6 + fmRandom() * 0.4))
+    };
+    function nextFMTarget(from) {
+      return {
+        ratio: bounded(from.ratio + (fmRandom() - 0.5) * 0.36, 1.6, 3.6),
+        index: bounded(from.index + (fmRandom() - 0.5) * 0.6, 1.1, 2.7),
+        detune: from.detune.map(v => bounded(v + (fmRandom() - 0.5) * 0.6, -1.1, 1.1))
+      };
+    }
+    let fmTo = nextFMTarget(fmFrom), fmSegment = 0;
+    let nextTime = 0.05, strike = 0, finished = false, variant = null;
+    const history = [];
+    let drones = [];
+    function bellAt(freq, time, volume) {
+      const segment = Math.floor(strike / 24);
+      if (segment !== fmSegment) {
+        fmFrom = fmTo; fmTo = nextFMTarget(fmFrom); fmSegment = segment;
+      }
+      const phase = (strike % 24) / 24;
+      const blend = phase * phase * (3 - 2 * phase);
+      const mix = (a, b) => a + (b - a) * blend;
+      const ratio = mix(fmFrom.ratio, fmTo.ratio);
+      const index = mix(fmFrom.index, fmTo.index);
+      return { kind: "bell", freq, time, duration: noteDuration, volume,
+        totalAmp, pan: choosePan(spatialRandom),
+        voices: weights.map((amp, i) => ({ amp, modRatio: ratio,
+          modIndex: index + indexOffsets[i],
+          frequency: freq + mix(fmFrom.detune[i], fmTo.detune[i]) })) };
+    }
+    return {
+      density, arcLen: 0, arcClimaxAt: -1,
+      study: Object.freeze({ form: "fixed-collection", scale: Object.freeze([0, 2, 4, 5, 7, 9]),
+        theme: Object.freeze(theme.slice()) }),
+      get nextTime() { return nextTime; },
+      next() {
+        if (finished) return null;
+        const slot = strike % theme.length, cycle = Math.floor(strike / theme.length);
+        if (slot === 0) {
+          // Two complete statements, then a single-note variant alternating
+          // with an exact return. Endpoints and the phrase's register stay put.
+          variant = cycle >= 2 && cycle % 2 === 0 && variants.length
+            ? variants[Math.floor(phraseRandom() * variants.length)] : null;
+        }
+        const fallback = nextTime >= duration && slot === 0;
+        const freq = fallback ? baseFreq : variant?.slot === slot ? variant.freq : theme[slot];
+        const colorPhase = strike / (theme.length * 4);
+        const colorIndex = Math.floor(colorPhase), colorBlend = colorPhase - colorIndex;
+        const pc = pitchClass(freq);
+        const emphasis = (pc === colors[colorIndex % colors.length] ? 1 - colorBlend : 0)
+          + (pc === colors[(colorIndex + 1) % colors.length] ? colorBlend : 0);
+        const bell = bellAt(freq, nextTime, 0.4 * (0.96 + 0.08 * emphasis));
+        const group = { time: nextTime, notes: [], ending: false,
+          study: { cycle, slot, varied: !!variant && variant.slot === slot } };
+        drones = drones.filter(n => nextTime < n.time + n.duration + 10.465);
+        history.push({ freq, key: "0:false", tension: 0.05 });
+        if (history.length > 5) history.shift();
+        if (nextTime >= duration) {
+          const ending = degree(freq) === 0 ? "tonic"
+            : qualifiedEnding(history, degree(freq), false, false, drones, nextTime);
+          if (ending || fallback) {
+            group.ending = finished = true;
+            group.endingKind = ending || "tonic";
+            bell.duration = 25;
+          }
+        }
+        // Let the solo phrase establish itself before its first root/fifth
+        // support. No drone-only blocks or newly inserted empty beats.
+        if (!finished && slot === 0 && cycle % 3 === 1) {
+          const root = clampFreqMin(baseFreq / 2, DRONE_FLOOR_HZ);
+          const added = planDrone(root, Math.max(0, nextTime - 0.05), 22,
+            0.28, "maj", false, droneRandom, spatialRandom);
+          group.notes.push(...added); drones.push(...added);
+        }
+        group.notes.push(bell);
+        // The original phrase's slight timing irregularity remains recognizable.
+        // A slow, small breathing motion avoids metronomic repeated blocks.
+        nextTime += gaps[slot] * (1 + 0.025 * Math.sin(2 * Math.PI * strike / (theme.length * 8)));
+        strike++;
+        return group;
+      }
+    };
+  }
+
+  // Keep engine 4's composition and spatial plan, but borrow each successive
+  // bell's complete FM voice recipe from the original engine-3 stream. This
+  // restores its strike-specific voice count, weights, ratios, indices and
+  // detuning without letting those draws change the recurring melody.
+  function createStruckStudyGenerator(seed, baseFreq, duration) {
+    const composition = createFixedStudyGenerator(seed, baseFreq, duration);
+    const original = createPerformanceGenerator(seed, baseFreq, Infinity, "3");
+    return {
+      density: composition.density, arcLen: composition.arcLen,
+      arcClimaxAt: composition.arcClimaxAt, study: composition.study,
+      get nextTime() { return composition.nextTime; },
+      next() {
+        const group = composition.next();
+        if (!group) return null;
+        for (const note of group.notes) {
+          if (note.kind !== "bell") continue;
+          // Original drone-only passages contain no bell recipe. Skip those
+          // groups in the timbre source only; the new score's timing is fixed.
+          let recipe;
+          while (!recipe) recipe = original.next().notes.find(n => n.kind === "bell");
+          note.voices = recipe.voices.map(voice => ({ ...voice,
+            frequency: note.freq + (voice.frequency - recipe.freq) }));
+          note.totalAmp = recipe.totalAmp;
+        }
+        return group;
+      }
+    };
+  }
+
+  // Short and Infinite retain the original evolving walk and strike recipes,
+  // with its harmonic state held at the starting major center. Consume the
+  // legacy random draws so an already-compatible score can remain unchanged.
+  // The omitted leading tone resolves upward; its FM carrier offsets follow
+  // the nominal pitch. Drone roots and fifths share that same fixed collection.
+  function createFixedWalkGenerator(seed, baseFreq, duration) {
+    const original = createPerformanceGenerator(seed, baseFreq, duration, ENGINE_VERSION, true);
+    const root = clampFreqMin(baseFreq / 2, DRONE_FLOOR_HZ);
+    return {
+      density: original.density, arcLen: original.arcLen, arcClimaxAt: original.arcClimaxAt,
+      study: Object.freeze({ form: "fixed-collection-walk", scale: Object.freeze([0, 2, 4, 5, 7, 9]) }),
+      get nextTime() { return original.nextTime; },
+      next() {
+        const group = original.next();
+        if (!group) return null;
+        let droneIndex = 0;
+        group.notes = group.notes.filter(note => {
+          if (note.kind === "bass") {
+            const index = droneIndex++;
+            if (index >= 2) return false;
+            note.freq = index === 0 ? root : root * Math.pow(2, 7 / 12);
+          } else {
+            const pc = ((Math.round(12 * Math.log2(note.freq / baseFreq)) % 12) + 12) % 12;
+            if (pc === 11) {
+              const before = note.freq;
+              note.freq *= Math.pow(2, 1 / 12);
+              if (note.freq > MELODY_CEILING_HZ) note.freq /= 2;
+              for (const voice of note.voices) voice.frequency = note.freq + (voice.frequency - before);
+            }
+          }
+          return true;
+        });
+        return group;
+      }
+    };
+  }
+
+  // Keep every engine-6 Long bell, replacing its chordal drones with a single
+  // quiet dominant. Six groups of lookahead define an exact five-strike span
+  // without changing the source's timing or random draws. Short and Infinite
+  // keep the fixed walk; in particular the retained Short Study stays exact.
+  function createDominantPedalGenerator(seed, baseFreq, duration, lowerOctave = false) {
+    const composition = createStruckStudyGenerator(seed, baseFreq, duration);
+    // Lower only this new pedal after choosing engine 7's register. Applying
+    // the legacy bass floor afterward would fold it straight back up.
+    const freq = clampFreqMin(baseFreq * Math.pow(2, -5 / 12), DRONE_FLOOR_HZ)
+      * (lowerOctave ? 0.5 : 1);
+    const pending = [];
+    let exhausted = false, strike = 0, nextPedalStrike = 0;
+    return {
+      density: composition.density, arcLen: composition.arcLen,
+      arcClimaxAt: composition.arcClimaxAt,
+      study: Object.freeze({ ...composition.study, form: "dominant-pedal",
+        pedalAfter: 120, pedalStrikes: 5, ...(lowerOctave ? { pedalOctave: -1 } : {}) }),
+      get nextTime() { return pending.length ? pending[0].time : composition.nextTime; },
+      next() {
+        while (pending.length < 6 && !exhausted) {
+          const group = composition.next();
+          if (group) pending.push(group); else exhausted = true;
+        }
+        const group = pending.shift();
+        if (!group) return null;
+        group.notes = group.notes.filter(note => note.kind === "bell");
+        if (group.time >= 120 && strike >= nextPedalStrike && pending.length === 5 &&
+            !group.ending && !pending.some(next => next.ending)) {
+          group.notes.push({ kind: "pedal", freq, time: group.time,
+            duration: pending[4].time - group.time, volume: lowerOctave ? 0.025 : 0.035,
+            attack: 6, release: 8, modRatio: 2, modIndex: 0.16, pan: 0 });
+          // Two eleven-note phrases between entries leave a substantial gap.
+          nextPedalStrike = strike + 22;
+        }
+        strike++;
+        return group;
+      }
+    };
+  }
+
+  // The newest Long study keeps the complete bell performance, with no
+  // accompaniment. Older versioned studies retain their original bass layers.
+  function createBellsOnlyGenerator(seed, baseFreq, duration) {
+    const composition = createStruckStudyGenerator(seed, baseFreq, duration);
+    return {
+      density: composition.density, arcLen: composition.arcLen,
+      arcClimaxAt: composition.arcClimaxAt,
+      study: Object.freeze({ ...composition.study, form: "bells-only" }),
+      get nextTime() { return composition.nextTime; },
+      next() {
+        const group = composition.next();
+        if (group) group.notes = group.notes.filter(note => note.kind === "bell");
+        return group;
+      }
+    };
+  }
+
   function resolveDuration(seed, durationInput) {
     if (durationInput === "short") return 60;
     if (durationInput === "long") {
@@ -1082,10 +1349,26 @@
     throw new Error("Invalid duration");
   }
 
-  function createPerformance(seed, tone, durationInput, engine = ENGINE_VERSION) {
+  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput)) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
+    if (["4", LONG_STUDY_ENGINE].includes(engine) && durationInput !== "long")
+      throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
-    const generator = createPerformanceGenerator(seed, tone, duration, engine);
+    const generator = engine === BELLS_ONLY_ENGINE
+      ? (durationInput === "long" ? createBellsOnlyGenerator(seed, tone, duration)
+        : createFixedWalkGenerator(seed, tone, duration))
+      : [DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE].includes(engine)
+      ? (durationInput === "long" ? createDominantPedalGenerator(seed, tone, duration, engine === LOW_PEDAL_ENGINE)
+        : createFixedWalkGenerator(seed, tone, duration))
+      // Restore the original sparse root/fifth drones without changing any
+      // bell, timing, gain or ending. Engine 9 remains bells-only on replay.
+      : [FIXED_COLLECTION_ENGINE, RESTORED_DRONE_ENGINE].includes(engine)
+      ? (durationInput === "long" ? createStruckStudyGenerator(seed, tone, duration)
+        : createFixedWalkGenerator(seed, tone, duration))
+      : engine === LONG_STUDY_ENGINE
+      ? createStruckStudyGenerator(seed, tone, duration)
+      : engine === "4" ? createFixedStudyGenerator(seed, tone, duration)
+      : createPerformanceGenerator(seed, tone, duration, engine);
     const groups = [];
     let lastVoiceEnd = 0;
     while (duration !== Infinity || generator.nextTime < 1800) {
@@ -1106,6 +1389,7 @@
     return Object.freeze({
       seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
+      ...(generator.study ? { study: generator.study } : {}),
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
       exportDuration: Math.max(duration === Infinity ? 1800 : duration, lastVoiceEnd)
@@ -1232,6 +1516,71 @@
     registerVoice(ctx, [carrier, modulator, modGain, ampGain, lp], time + duration);
   }
 
+  // A soft sustained voice for engines 7 and 8. Exact 2:1 modulation and a low
+  // index keep the pedal dark; a light flanger feeds a wide stereo chorus.
+  function schedulePedalVoice(ctx, destination, wetSend, note, time) {
+    const carrier = trackNode(ctx, ctx.createOscillator());
+    const modulator = trackNode(ctx, ctx.createOscillator());
+    const modGain = trackNode(ctx, ctx.createGain());
+    const ampGain = trackNode(ctx, ctx.createGain());
+    const lp = trackNode(ctx, ctx.createBiquadFilter());
+    carrier.type = modulator.type = "sine";
+    carrier.frequency.value = note.freq;
+    modulator.frequency.value = note.freq * note.modRatio;
+    modGain.gain.setValueAtTime(0, time);
+    modGain.gain.linearRampToValueAtTime(note.freq * note.modIndex, time + note.duration / 2);
+    modGain.gain.linearRampToValueAtTime(0, time + note.duration);
+    const attack = Math.min(note.attack, note.duration / 3);
+    const release = Math.min(note.release, note.duration / 3);
+    ampGain.gain.setValueAtTime(0, time);
+    ampGain.gain.linearRampToValueAtTime(note.volume, time + attack);
+    ampGain.gain.setValueAtTime(note.volume, time + note.duration - release);
+    ampGain.gain.linearRampToValueAtTime(0, time + note.duration);
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(450, time);
+    lp.Q.value = 0.6;
+    modulator.connect(modGain); modGain.connect(carrier.frequency);
+    carrier.connect(ampGain); ampGain.connect(lp);
+    lp.connect(createPedalEffects(ctx, destination, wetSend, time, note.duration));
+    modulator.start(time); carrier.start(time);
+    modulator.stop(time + note.duration); carrier.stop(time + note.duration);
+    registerVoice(ctx, [carrier, modulator, modGain, ampGain, lp], time + note.duration);
+  }
+
+  function createPedalEffects(ctx, destination, wetSend, time, duration) {
+    const nodes = [];
+    const own = node => { nodes.push(trackNode(ctx, node)); return node; };
+    const gain = value => { const node = own(ctx.createGain()); node.gain.value = value; return node; };
+    const modulatedDelay = (seconds, depth, rate) => {
+      const delay = own(ctx.createDelay(0.05));
+      delay.delayTime.setValueAtTime(seconds, time);
+      const lfo = own(ctx.createOscillator()), amount = gain(depth);
+      lfo.type = "sine"; lfo.frequency.value = rate;
+      lfo.connect(amount); amount.connect(delay.delayTime);
+      lfo.start(time); lfo.stop(time + duration);
+      return delay;
+    };
+    const input = gain(1), flanged = gain(1);
+    const flangeDry = gain(0.9), flangeWet = gain(0.1);
+    const flange = modulatedDelay(0.0015, 0.0009, 0.07);
+    input.connect(flangeDry); flangeDry.connect(flanged);
+    input.connect(flange); flange.connect(flangeWet); flangeWet.connect(flanged);
+    const output = createNoteDrift(ctx, destination, wetSend, time, duration, 0);
+    const center = gain(0.4);
+    flanged.connect(center); center.connect(output);
+    for (const [pan, delay, rate] of [[-1, 0.012, 0.11], [1, 0.018, 0.137]]) {
+      const chorus = modulatedDelay(delay, 0.003, rate);
+      const level = gain(0.3), panner = own(ctx.createStereoPanner());
+      panner.pan.setValueAtTime(pan, time);
+      flanged.connect(chorus); chorus.connect(level);
+      level.connect(panner); panner.connect(output);
+    }
+    // The maximum combined delay is below 24 ms, within the existing 100 ms
+    // voice-settling allowance. No feedback path can outlive the planned tail.
+    registerVoice(ctx, nodes, time + duration);
+    return input;
+  }
+
   // =========================
   // SCHEDULER
   // =========================
@@ -1240,6 +1589,8 @@
       const time = origin + note.time;
       if (note.kind === "bell") {
         scheduleNote(ctx, master, wetSend, note.freq, time, note.duration, note.volume, 0, 0, note);
+      } else if (note.kind === "pedal") {
+        schedulePedalVoice(ctx, master, wetSend, note, time);
       } else {
         scheduleBassVoice(ctx, master, wetSend, note.freq, time, note.duration, note.volume, rand, note);
       }
@@ -1314,7 +1665,7 @@
       if (!Number.isFinite(tone)) tone = 110;
       tone = Math.round(Math.max(110, Math.min(200, tone)));
       const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
-      const engine = replay?.engine ?? ENGINE_VERSION;
+      const engine = replay?.engine ?? defaultEngine(duration);
       const performance = createPerformance(seed, tone, duration, engine);
       buildMixBus(seed);
       setSeed(seed);
@@ -1620,4 +1971,5 @@
 
 })();
 // --- END OF SCRIPT ---
+
 
