@@ -61,19 +61,20 @@
   const LONG_STUDY_ENGINE = "5";
   const FIXED_COLLECTION_ENGINE = "6";
   const DOMINANT_PEDAL_ENGINE = "7";
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE]);
+  const LOW_PEDAL_ENGINE = "8";
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
   function defaultEngine() {
-    return DOMINANT_PEDAL_ENGINE;
+    return LOW_PEDAL_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6 and 7.`);
+      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7 and 8.`);
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -1282,16 +1283,19 @@
   // quiet dominant. Six groups of lookahead define an exact five-strike span
   // without changing the source's timing or random draws. Short and Infinite
   // keep the fixed walk; in particular the retained Short Study stays exact.
-  function createDominantPedalGenerator(seed, baseFreq, duration) {
+  function createDominantPedalGenerator(seed, baseFreq, duration, lowerOctave = false) {
     const composition = createStruckStudyGenerator(seed, baseFreq, duration);
-    const freq = clampFreqMin(baseFreq * Math.pow(2, -5 / 12), DRONE_FLOOR_HZ);
+    // Lower only this new pedal after choosing engine 7's register. Applying
+    // the legacy bass floor afterward would fold it straight back up.
+    const freq = clampFreqMin(baseFreq * Math.pow(2, -5 / 12), DRONE_FLOOR_HZ)
+      * (lowerOctave ? 0.5 : 1);
     const pending = [];
     let exhausted = false, strike = 0, nextPedalStrike = 0;
     return {
       density: composition.density, arcLen: composition.arcLen,
       arcClimaxAt: composition.arcClimaxAt,
       study: Object.freeze({ ...composition.study, form: "dominant-pedal",
-        pedalAfter: 120, pedalStrikes: 5 }),
+        pedalAfter: 120, pedalStrikes: 5, ...(lowerOctave ? { pedalOctave: -1 } : {}) }),
       get nextTime() { return pending.length ? pending[0].time : composition.nextTime; },
       next() {
         while (pending.length < 6 && !exhausted) {
@@ -1331,8 +1335,8 @@
     if (["4", LONG_STUDY_ENGINE].includes(engine) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
-    const generator = engine === DOMINANT_PEDAL_ENGINE
-      ? (durationInput === "long" ? createDominantPedalGenerator(seed, tone, duration)
+    const generator = [DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE].includes(engine)
+      ? (durationInput === "long" ? createDominantPedalGenerator(seed, tone, duration, engine === LOW_PEDAL_ENGINE)
         : createFixedWalkGenerator(seed, tone, duration))
       : engine === FIXED_COLLECTION_ENGINE
       ? (durationInput === "long" ? createStruckStudyGenerator(seed, tone, duration)
@@ -1488,7 +1492,7 @@
     registerVoice(ctx, [carrier, modulator, modGain, ampGain, lp], time + duration);
   }
 
-  // A soft sustained voice for engine 7 only. Exact 2:1 modulation and a low
+  // A soft sustained voice for engines 7 and 8. Exact 2:1 modulation and a low
   // index keep the pedal dark; a light flanger feeds a wide stereo chorus.
   function schedulePedalVoice(ctx, destination, wetSend, note, time) {
     const carrier = trackNode(ctx, ctx.createOscillator());

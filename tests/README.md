@@ -207,3 +207,8 @@ Engine 7 Long is checked across 120 seed/root combinations, covering every integ
 The protected `0393ded7` / 200 Hz / Short / 44.1 kHz recording is a permanent compatibility requirement for the **implicit newest default**. The test forces that normal random Play draw and compares the score to the independently frozen hash from main, plus the 85.56632370385142-second export length. A separate test compares all scheduled synthesis controls against g3. Native Chromium, Firefox and WebKit tests compare the newest default's WAV directly to the original g3 filename at the same sample rate. Keep these tests when changing the default engine; do not substitute legacy-only replay for this guarantee. Native round trips also cover a complete engine-7 Long performance.
 
 The new pedal effects are also checked for distinct left/right chorus paths, valid positive delay modulation, a low flanger blend without feedback, matching live/export controls, and node cleanup after their tails. Legacy bass voices never enter this effects graph.
+
+
+### Engine 8 lower-octave pedal
+
+Across 120 Long seed/root cases, engine 8 must equal engine 7 after dividing only each pedal's frequency by two. Bell notes, FM recipes, timing, bass gain, envelopes, effects and endings stay identical. The protected newest-default Short Study checks remain implicit and therefore now exercise engine 8. Native replay covers full engine-7 and engine-8 Long studies. Browser jobs run independently so the growing set of retained-engine audio comparisons can finish in parallel.

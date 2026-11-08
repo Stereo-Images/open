@@ -19,8 +19,11 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            browsers: chromium firefox
-            projects: --project=chromium --project=firefox
+            browsers: chromium
+            projects: --project=chromium
+          - os: ubuntu-latest
+            browsers: firefox
+            projects: --project=firefox
           - os: macos-latest
             browsers: webkit
             projects: --project=webkit
