@@ -174,7 +174,7 @@ for (const engine of ['1', '3', '4', '5']) test(`engine ${engine} filename recre
   const longStudy = ['4', '5'].includes(engine);
   test.setTimeout(longStudy ? 240000 : 120000);
   const length = longStudy ? 'long' : 'short';
-  const seed = longStudy ? 'a94105f2' : '03b38656';
+  const seed = longStudy ? 'a94105f2' : engine === '3' ? '0393ded7' : '03b38656';
   const tone = longStudy ? 121 : 200;
   // Exercise a complete 12-minute Long study at a modest rate to bound CI
   // memory and render time; all seeds' duration bounds are checked in Node.
@@ -193,10 +193,18 @@ for (const engine of ['1', '3', '4', '5']) test(`engine ${engine} filename recre
   expect(filename).toMatch(new RegExp(`^open-run-${seed}-[a-z0-9]+-g${engine}-${tone}hz-${length}-${rate}sr-\\d+\\.wav$`));
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
+  // Protect the retained Short Study's original full filename, including
+  // restoration from a Long selection that would otherwise use engine 5.
+  await page.locator('#songDuration').selectOption('long');
   await page.locator('#revisit summary').click();
-  await page.locator('#replayInput').fill(filename);
+  const replayFilename = engine === '3'
+    ? 'open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406'
+    : filename;
+  await page.locator('#replayInput').fill(replayFilename);
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#tone')).toHaveValue(String(tone));
+  await expect(page.locator('#songDuration')).toHaveValue(length);
   await page.locator('#stop').click();
   const secondDownload = page.waitForEvent('download');
   await page.locator('#exportWav').click();

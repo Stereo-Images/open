@@ -83,6 +83,8 @@ The generator is deterministic: matching seed, root tone, length, and engine ver
 
 Older filenames contain a seed and timestamps but omit the root tone, length, and engine version. Replay cannot infer those missing settings from the filename or verify which engine made it. Links and new filenames with an unsupported engine version are rejected with an explanation, rather than silently replayed with changed musical rules. This branch supports engines 1, 3, 4 and 5. Engine-1, engine-3 and engine-4 links and filenames preserve their original performances. New Long performances and bare seeds with Long selected use engine 5; Short and Infinite use engine 3. Full filenames and replay links retain the chosen version. Engine-4 and engine-5 replays require this experimental branch until it is released; the current public player does not support them. The player does not reconstruct a seed from an audio recording.
 
+The retained Short Study (`0393ded7`, engine 3, 200 Hz, Short, 44.1 kHz) has an explicit regression against its main-branch score and original full filename. Loading that filename restores its original settings even when the controls are currently set to Long. These experiment changes do not rewrite saved engine-3 performances.
+
 ### Output & Saving
 Save the audio for listening and keep its original filename or replay link to preserve the settings. Live recording remains a desktop keyboard feature; WAV export is also available in Revisit.
 

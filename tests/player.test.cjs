@@ -302,6 +302,44 @@ test('replay restores frozen Short and Long scores without changing musical choi
   }
 });
 
+test('the retained Short Study filename keeps its engine-3 score and 44.1 kHz export settings', async () => {
+  const h = dialHarness('110');
+  const { createHash } = require('node:crypto');
+  const filename = 'open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406';
+  // Frozen from main 897911b, independently of the Long-study experiment.
+  const expectedHash = '90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9';
+  const verify = () => {
+    const p = h.api.state().snapshot;
+    assert.equal(p.seed, 0x0393ded7);
+    assert.equal(p.engine, '3');
+    assert.equal(p.tone, 200);
+    assert.equal(p.duration, 'short');
+    assert.equal(p.sampleRate, 44100);
+    assert.equal(p.study, undefined);
+    assert.equal(p.groups.at(-1).endingKind, 'sixth');
+    assert.ok(Math.abs(p.exportDuration - 85.56632370385142) < 1e-7);
+    const normalized = JSON.stringify(p.groups, (_, v) => typeof v === 'number' ? Number(v.toFixed(8)) : v);
+    assert.equal(createHash('sha256').update(normalized).digest('hex'), expectedHash);
+    assert.equal(h.elements.get('tone').value, '200');
+    assert.equal(h.elements.get('songDuration').value, 'short');
+  };
+  // A Long selection and a different hardware rate must not reinterpret a
+  // versioned recording as the new Long engine or alter its export rate.
+  h.api.setup(); h.contexts[0].sampleRate = 48000;
+  for (const input of [filename, filename + '.wav']) {
+    h.elements.get('tone').value = '110';
+    h.elements.get('songDuration').value = 'long';
+    h.elements.get('replayInput').value = input;
+    await h.api.replayFromUI();
+    verify();
+    h.api.stopAllManual(true);
+  }
+  h.elements.get('replayInput').value = h.api.replayLink(h.api.state().snapshot);
+  await h.api.replayFromUI();
+  verify();
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
 test('new filenames with or without .wav and links restore the score, dial, and export rate', async () => {
   const h = dialHarness('200');
   h.elements.get('replayInput').value = '03b38656';
