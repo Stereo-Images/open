@@ -209,7 +209,8 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/player.html?' + replayQuery.replace('tone=200', 'tone=121'));
   const replay = page.getByRole('button', { name: 'Replay', exact: true });
-  await expect(replay).toBeDisabled();
+  await expect(page.locator('#replayLast')).toBeDisabled();
+  await expect(page.locator('#replayLast')).toBeHidden();
   await page.getByRole('button', { name: 'Load & play', exact: true }).click();
   await expect(replay).toBeEnabled();
   await page.locator('#stop').click();
@@ -234,7 +235,7 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await replay.click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
-  const dimensions = await page.locator('.form-actions button').evaluateAll(buttons =>
+  const dimensions = await page.locator('.form-actions button:visible').evaluateAll(buttons =>
     buttons.map(button => ({ width: button.getBoundingClientRect().width,
       height: button.getBoundingClientRect().height, fits: button.scrollWidth <= button.clientWidth })));
   expect(dimensions).toHaveLength(3);
@@ -245,7 +246,8 @@ test('one-click Replay restores the latest settings and clears on reload', async
   await replay.click();
   await expect(page.locator('#replayStatus')).toContainText('Replaying seed 00003039');
   await page.reload();
-  await expect(replay).toBeDisabled();
+  await expect(page.locator('#replayLast')).toBeDisabled();
+  await expect(page.locator('#replayLast')).toBeHidden();
 });
 
 test('invalid replay links stay silent and the Revisit panel fits a narrow viewport', async ({ page }) => {
@@ -258,7 +260,7 @@ test('invalid replay links stay silent and the Revisit panel fits a narrow viewp
   await page.locator('#replayInput').fill('03b38656');
   await page.locator('#replayInput').press('Enter');
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#replayStatus')).toContainText('A seed alone does not include the original settings');
+  await expect(page.locator('#replayStatus')).toContainText('a seed or older filename may omit the original settings');
 });
 
 test('clipboard denial exposes a selectable replay link after Stop', async ({ page }) => {
