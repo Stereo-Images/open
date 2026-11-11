@@ -1,11 +1,11 @@
-# The 0b086950 listening variations
+# The 08b0195e listening variations
 
-The November 11 listening batch contains eight variations of `0b086950` and eight independent Long performances, all at 121 Hz and 44.1 kHz stereo. No musical quality, pace or timbre threshold was used to accept or reject them.
+The November 11 listening batch contains eight variations of `08b0195e` and eight independent Long performances, all at 121 Hz and 44.1 kHz stereo. No musical quality, pace or timbre threshold was used to accept or reject them.
 
-The eight related seeds first matched the original eleven-note motif. Their complete replay records now preserve all fourteen opening strikes of the original `0b086950` g3 performance through 120 seconds, including the strike at 119.366 seconds. Pitches, timings, carrier detuning, accompaniment and room remain intact. The approved selective FM rule changes the modulation of opening strikes 1, 2, 4 and 11; this is therefore the refined opening, not an assertion that the old recording is sample-identical.
+The eight related seeds match the original eleven-note motif. Their complete replay records preserve all 28 opening strike times of the original `08b0195e` g3 performance through 120 seconds. Twenty-seven pitches remain unchanged; strike 23 at 95.175 seconds is lowered one semitone to replace its tritone leap with a perfect fourth. The approved selective FM rule refines opening strikes 13, 16 and 20. Carrier detuning, strike times, envelopes, accompaniment and room remain intact except for the specified pitch and FM changes.
 
-The continuation begins at the original next strike time, 128.884 seconds. The new seed determines its tempo and successive FM palettes within the mirrored bell/organ form. Existing bell tails continue across the transition. The related scores use the explicit replay recipe `g34`; ordinary new performances still use `g33`. Keep the complete filenames or replay links, since entering the bare child seed selects an ordinary new performance rather than the shared-opening variation.
+The continuation begins at 128.821 seconds, after the opening notes' direct decays. The new seed determines its tempo and successive FM palettes within the mirrored bell/organ form. The complete related replay record uses `g33` with `base=32` in links and `-g33-b32-` in filenames. Ordinary new performances use g33 without this explicit base. Keep the complete filenames or replay links; entering the bare child seed selects an ordinary new performance rather than the shared-opening variation.
 
-At the requested 121 Hz, the retained opening and all eight continuations contain no tritone leaps. The perfect-fourth substitution at 95.175 seconds belongs to the separate `08b0195e` g32 family and is preserved unchanged. Other root settings retain the corresponding original opening, including that earlier planner's register-folding behavior.
+At the requested 121 Hz, all sixteen complete scores contain no tritone leaps, including section boundaries. Other root settings retain the corresponding earlier planner's behavior.
 
-The machine-readable batch manifest is in `studies/nov11-fm/manifest.json`. Original g1–g33 replay recipes remain supported; the new family is explicit and does not change the preserved `0393ded7` Short Study.
+The machine-readable batch manifest is in `studies/nov11-fm/manifest.json`. Complete original replay recipes remain supported, including the original `0393ded7` Short Study. This draft does not change main.
