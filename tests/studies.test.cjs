@@ -33,9 +33,9 @@ test('saved-score checks tolerate only machine roundoff and detect musical chang
   }
 });
 
-test('new duration defaults preserve g21 Short and select g29 Long',()=>{
+test('new duration defaults preserve g21 Short and select suspended Long',()=>{
   const h=harness(source);
-  for(const [duration,engine] of [['short','21'],['long','29']]){
+  for(const [duration,engine] of [['short','21'],['long','30']]){
     const score=h.api.createPerformance(0x0393ded7,121,duration);
     assert.deepEqual(plain(score),plain(h.api.createPerformance(0x0393ded7,121,duration,engine)));
     assert.equal(score.study.form,duration==='long'?'nested-mirror':'fixed-collection-walk');

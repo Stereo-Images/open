@@ -88,6 +88,7 @@
   const AUDIBLE_ORGAN_ROOM_ENGINE = "27";
   const PRINCIPAL_PLENUM_ENGINE = "28";
   const SPECTRAL_ORGAN_ENGINE = "29";
+  const SUSPENDED_ORGAN_ENGINE = "30";
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
   const G21_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true});
@@ -111,12 +112,12 @@
     grainRanges: Object.freeze([[0.08, 0.11], [0.10, 0.13], [0.12, 0.15]].map(Object.freeze)),
     positionMin: 8, positionMax: 11, sprayMin: 0.015, sprayMax: 0.035
   });
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE]);
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
   function defaultEngine(durationInput) {
-    return durationInput === "long" ? SPECTRAL_ORGAN_ENGINE : RESTORED_TEMPO_ENGINE;
+    return durationInput === "long" ? SUSPENDED_ORGAN_ENGINE : RESTORED_TEMPO_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
@@ -2192,6 +2193,7 @@
   // g25 reflects events and recipes, not sampled audio. Natural decays run forward.
   function createMirroredStudyGenerator(seed, baseFreq, duration, compositionOptions = {}) {
     const clone = value => JSON.parse(JSON.stringify(value));
+    const suspendedHarmony = compositionOptions.suspendedHarmony === true;
     const raw = createStruckStudyGenerator(seed, baseFreq, Infinity, true, G22_OPTIONS);
     const originalTheme = raw.study.theme.slice(), slots = [0,1,2,3,4,5,4,3,2,1,0];
     const theme = slots.map(i => originalTheme[i]);
@@ -2266,6 +2268,16 @@
       {name:'vi',root:9,quality:'minor',pitches:[9,0,4]},
       ...[0,2,5,7,9].map((root,i)=>({name:['I','ii','IV','V','vi'][i]+' (open fifth)',
         root,quality:'open-fifth',pitches:[root,(root+7)%12]}))];
+    if(suspendedHarmony){
+      const collection=[0,2,4,5,7,9];
+      for(const [quality,interval] of [['sus2',2],['sus4',5]]){
+        for(const [index,root] of [0,2,5,7,9].entries()){
+          const pitches=[root,(root+interval)%12,(root+7)%12];
+          if(pitches.every(p=>collection.includes(p)))
+            palette.push({name:['I','ii','IV','V','vi'][index]+' '+quality,root,quality,pitches});
+        }
+      }
+    }
     const voicings=chord=>{
       const result=[],pitches=chord.pitches.flatMap(p=>[-24,-12,0,12,24].map(o=>p+o))
         .filter(p=>baseFreq*2**(p/12)>=DRONE_FLOOR_HZ&&baseFreq*2**(p/12)<=349.23).sort((a,b)=>a-b);
@@ -2274,6 +2286,8 @@
           const inversion=chord.pitches.indexOf((chosen[0]%12+12)%12);
           if(inversion>(chord.quality==='open-fifth'?0:1)||baseFreq*2**(chosen[0]/12)>200||
             chosen.at(-1)-chosen[0]>19||(baseFreq*2**(chosen[0]/12)<130&&chosen[1]-chosen[0]<5))return;
+          // Keep a suspension above its root and fifth: no low-register seconds.
+          if(chord.quality.startsWith('sus')&&(inversion!==0||chosen.at(-1)-chosen[0]<=12))return;
           result.push({semitones:chosen,inversion,spacing:chosen.at(-1)-chosen[0]>12?'open':'close'});return;
         }
         for(let i=start;i<pitches.length;i++){
@@ -2284,6 +2298,7 @@
       add([],0);return result;
     };
     const options=palette.map(c=>({...c,voicings:voicings(c)})),random=mulberry32((seed^0x4D495252)>>>0);
+    const suspensionRandom=mulberry32((seed^0x53555350)>>>0);
     const choose=(items,score)=>{
       const weights=items.map(x=>Math.exp(score(x)));let draw=random()*weights.reduce((a,b)=>a+b,0);
       return items.find((_,i)=>(draw-=weights[i])<0)||items.at(-1);
@@ -2327,14 +2342,22 @@
       const safe=options.filter(c=>c.voicings.length&&c.pitches.every(p=>contexts.every(ctx=>
         ctx.overlap.every(n=>![1,6,11].includes((p-pc(n.freq)+12)%12)))));
       if(!safe.length)throw new Error('No chord compatible with both reflected interludes');
-      const chord=choose(safe,c=>{
+      let choices=safe;
+      if(suspendedHarmony){
+        const suspended=safe.filter(c=>c.quality.startsWith('sus'));
+        // An occasional color, with no consecutive suspended choices outward.
+        const useSuspension=!previous?.quality.startsWith('sus')&&suspensionRandom()<.28&&suspended.length;
+        choices=useSuspension?suspended:safe.filter(c=>!c.quality.startsWith('sus'));
+      }
+      const chord=choose(choices,c=>{
         let coverage=0,endpoints=0;
         for(const ctx of contexts){
           ctx.before.forEach((n,j)=>{if(c.pitches.includes(pc(n.freq)))coverage+=(j+1)/ctx.before.length;});
           ctx.after.forEach((n,j)=>{if(c.pitches.includes(pc(n.freq)))coverage+=(ctx.after.length-j)/ctx.after.length;});
           endpoints+=[ctx.before.at(-1),ctx.after[0]].filter(n=>n&&c.pitches.includes(pc(n.freq))).length;
         }
-        return .45*coverage/pair.length+.6*endpoints/pair.length+(c.pitches.length===3?.65:0)-(previous?.name===c.name?1.25:0);
+        return .45*coverage/pair.length+.6*endpoints/pair.length+(c.pitches.length===3?.65:0)-(previous?.name===c.name?1.25:0)
+          +(c.quality==='sus2'?Math.log(3):0);
       });
       const voicing=choose(chord.voicings,c=>{
         if(!previous)return -Math.abs(c.semitones[0])*.08;
@@ -2345,13 +2368,33 @@
       });
       const count=pair[0].swells;
       const left=Array.from({length:Math.ceil(count/2)},()=>statement(organTemplates[templateCursor++%organTemplates.length],voicing.semitones));
+      let resolution=null;
+      // Only a middle statement may resolve, preserving reflected statements.
+      // Many suspensions remain open; the target must also fit lingering bells.
+      if(chord.quality.startsWith('sus')&&count%2===1&&suspensionRandom()<.4){
+        const target=safe.find(c=>c.root===chord.root&&['major','minor'].includes(c.quality));
+        if(target){
+          const voice=voicing.semitones.findIndex(p=>(p%12+12)%12===chord.pitches[1]);
+          const step=(target.quality==='major'?4:3)-(chord.quality==='sus2'?2:5);
+          const pitches=voicing.semitones.map((p,j)=>p+(j===voice?step:0));
+          const freq=baseFreq*2**(pitches[voice]/12);
+          if(freq>=DRONE_FLOOR_HZ&&freq<=349.23&&pitches.at(-1)-pitches[0]<=19&&
+             pitches.every((p,j)=>j===0||p-pitches[j-1]>=3)){
+            const note=left.at(-1)[voice];
+            note.organResolution=Object.freeze({freq,at:note.duration*.58,crossfadeSeconds:1.5});
+            resolution={name:target.name,quality:target.quality,voice,statement:(count+1)/2,
+              semitones:pitches,pitchClasses:target.pitches.slice()};
+          }
+        }
+      }
       const statements=Array.from({length:count},(_,j)=>left[Math.min(j,count-1-j)]);
       pair.forEach((entry,pairIndex)=>{
         const ctx=contexts[pairIndex];
         entry.harmony={name:chord.name,quality:chord.quality,root:chord.root,pitchClasses:chord.pitches.slice(),
           semitones:voicing.semitones.slice(),inversion:voicing.inversion,spacing:voicing.spacing,voiceCount:voicing.semitones.length,
           precedingPitches:ctx.before.map(n=>pc(n.freq)),followingPitches:ctx.after.map(n=>pc(n.freq)),
-          overlappingPitchClasses:[...new Set(ctx.overlap.map(n=>pc(n.freq)))].sort((a,b)=>a-b)};
+          overlappingPitchClasses:[...new Set(ctx.overlap.map(n=>pc(n.freq)))].sort((a,b)=>a-b),
+          ...(resolution?{resolution:clone(resolution)}:{})};
         for(let j=0;j<count;j++){
           const time=entry.start+j*statementDuration;
           groups.push({time,ending:false,interlude:{index:entry.index,swell:j+1,swells:count,harmony:entry.harmony,
@@ -2360,7 +2403,7 @@
             notes:statements[j].map(n=>({...clone(n),time:time+n.time}))});
         }
       });
-      previous={name:chord.name,semitones:voicing.semitones};
+      previous={name:chord.name,quality:chord.quality,semitones:voicing.semitones};
     }
     groups.sort((a,b)=>a.time-b.time);let position=0;
     return {
@@ -2372,7 +2415,10 @@
           ...(compositionOptions.bellTailHandoff?{handoff:'bell-tail-overlap',orderSymmetry:true}: {})},
         droneArch:{...clone(organSource.study.droneArch),pattern:chosen.counts,form:'single-mirrored-arch',interludes:entries,
           evolution:groups.filter(g=>g.interlude).map(g=>g.interlude.evolution),
-          harmony:{...clone(organSource.study.droneArch.harmony),policy:'paired-melody-context'},minimumDryGapSeconds:sectionGap}}),
+          harmony:{...clone(organSource.study.droneArch.harmony),policy:'paired-melody-context',
+            ...(suspendedHarmony?{allowedQualities:['major','minor','open-fifth','sus2','sus4'],
+              suspensionChance:.28,sus2Weight:3,sus4Weight:1,resolutionChance:.4,
+              suspensionVoicing:'open-root-position',resolution:'single-voice-crossfade'}:{})},minimumDryGapSeconds:sectionGap}}),
       get nextTime(){return groups[position]?.time??Infinity;},next(){return groups[position++]??null;}
     };
   }
@@ -2452,10 +2498,10 @@
     bellHoldFraction: .35, bellHoldMinimumSeconds: 4, bellHoldMaximumSeconds: 12,
     backgroundInstrument: 'legacy-fm-drone'
   });
-  function createAudibleOrganRoomGenerator(seed, baseFreq, duration) {
+  function createAudibleOrganRoomGenerator(seed, baseFreq, duration, suspendedHarmony = false) {
     const composition = createMirroredStudyGenerator(seed, baseFreq, duration,
       {sectionGapSeconds: AUDIBLE_ORGAN_ROOM.sectionGapSeconds,
-        organTailSeconds: AUDIBLE_ORGAN_ROOM.tailAllowanceSeconds, bellTailHandoff: true});
+        organTailSeconds: AUDIBLE_ORGAN_ROOM.tailAllowanceSeconds, bellTailHandoff: true, suspendedHarmony});
     return {
       density: composition.density, arcLen: composition.arcLen, arcClimaxAt: composition.arcClimaxAt,
       study: Object.freeze({...composition.study,
@@ -2533,8 +2579,8 @@
     chorus: ORGAN_CHORUS_PROFILE
   });
 
-  function createPrincipalPlenumGenerator(seed, baseFreq, duration) {
-    const composition = createAudibleOrganRoomGenerator(seed, baseFreq, duration);
+  function createPrincipalPlenumGenerator(seed, baseFreq, duration, suspendedHarmony = false) {
+    const composition = createAudibleOrganRoomGenerator(seed, baseFreq, duration, suspendedHarmony);
     return {
       density:composition.density, arcLen:composition.arcLen, arcClimaxAt:composition.arcClimaxAt,
       study:Object.freeze({...composition.study, droneArch:Object.freeze({...composition.study.droneArch,
@@ -2593,22 +2639,32 @@
       lp.connect(note.organ.spectralChorus
         ? createSpectralOrganChorus(ctx,output,note,time)
         : createOrganChorus(ctx,output,note,time));
-      for(const rank of ranks){
+      for(const rank of ranks)for(const resolving of note.organResolution?[false,true]:[false]){
+        const change=note.organResolution,freq=resolving?change.freq:note.freq;
         const oscillator=own(ctx.createOscillator()),gain=own(ctx.createGain()),pan=own(ctx.createStereoPanner());
         const real=new Float32Array(rank.harmonics.length+1),imag=new Float32Array(real.length);
         const levelScale=1/Math.sqrt(rank.harmonics.reduce((sum,a)=>sum+a*a,0));
         rank.harmonics.forEach((level,index)=>{
           const harmonic=index+1,phase=rank.phase*harmonic;
-          if(note.freq*rank.ratio*harmonic<ctx.sampleRate*.45){
+          if(freq*rank.ratio*harmonic<ctx.sampleRate*.45){
             real[harmonic]=level*levelScale*Math.sin(phase);
             imag[harmonic]=level*levelScale*Math.cos(phase);
           }
         });
         oscillator.setPeriodicWave(ctx.createPeriodicWave(real,imag,{disableNormalization:true}));
-        oscillator.frequency.value=note.freq*rank.ratio;oscillator.detune.value=rank.detuneCents;
+        oscillator.frequency.value=freq*rank.ratio;oscillator.detune.value=rank.detuneCents;
         gain.gain.value=rank.gain*normalization;pan.pan.value=rank.pan;
         oscillator.connect(gain);gain.connect(pan);pan.connect(amp);
-        oscillator.start(time);oscillator.stop(time+note.duration);
+        if(change){
+          // Complementary fades move one voice without a pitch glide or a
+          // doubled gain. Both pitches share the same envelope and effects.
+          const start=time+change.at,end=start+change.crossfadeSeconds,level=rank.gain*normalization;
+          gain.gain.setValueAtTime(resolving?0:level,start);
+          gain.gain.linearRampToValueAtTime(resolving?level:0,end);
+          oscillator.start(resolving?start:time);oscillator.stop(resolving?time+note.duration:end);
+        }else{
+          oscillator.start(time);oscillator.stop(time+note.duration);
+        }
       }
       registerVoice(ctx,nodes,time+note.duration);
       if(ctx!==audioContext)spatialStates.get(ctx).nodes.push(...nodes);
@@ -2638,11 +2694,11 @@
     ].map(b=>Object.freeze({...b,left:Object.freeze(b.left),right:Object.freeze(b.right)})))
   });
 
-  function createSpectralOrganGenerator(seed,baseFreq,duration){
-    const composition=createPrincipalPlenumGenerator(seed,baseFreq,duration);
+  function createSpectralOrganGenerator(seed,baseFreq,duration,suspendedHarmony=false){
+    const composition=createPrincipalPlenumGenerator(seed,baseFreq,duration,suspendedHarmony);
     // The retained g27 planner supplies the exact per-voice filter sweep.
     // Its independent seeded stream does not alter the g28 pipe recipes.
-    const filterSource=createAudibleOrganRoomGenerator(seed,baseFreq,duration);
+    const filterSource=createAudibleOrganRoomGenerator(seed,baseFreq,duration,suspendedHarmony);
     const {filterEdgeHz,filterPeakHz,chorus,...registration}=PRINCIPAL_PLENUM;
     return {
       density:composition.density,arcLen:composition.arcLen,arcClimaxAt:composition.arcClimaxAt,
@@ -2724,8 +2780,8 @@
     const duration = resolveDuration(seed, durationInput);
     // Engine 18 changes Long's pitch repetition and phrase-boundary ending.
     // Short and every explicit legacy version retain their old paths.
-    const generator = engine === SPECTRAL_ORGAN_ENGINE
-      ? (durationInput === "long" ? createSpectralOrganGenerator(seed, tone, duration)
+    const generator = [SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE].includes(engine)
+      ? (durationInput === "long" ? createSpectralOrganGenerator(seed, tone, duration, engine === SUSPENDED_ORGAN_ENGINE)
         : createFixedWalkGenerator(seed, tone, duration, G21_OPTIONS))
       : engine === PRINCIPAL_PLENUM_ENGINE
       ? (durationInput === "long" ? createPrincipalPlenumGenerator(seed, tone, duration)
@@ -2807,13 +2863,13 @@
     return Object.freeze({
       seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
-      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE].includes(engine) ? {tempo: Object.freeze({nominalBpm: generator.density * 60,
+      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE].includes(engine) ? {tempo: Object.freeze({nominalBpm: generator.density * 60,
         lowerBpm: 3, upperBpm: engine === SWEPT_INTERLUDE_ENGINE ? 63 : 15,
         minimumStrikeInterval: engine === SWEPT_INTERLUDE_ENGINE ? 60 / 63 : 4})} : {}),
       ...(generator.study ? { study: generator.study } : {}),
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
-      exportDuration: ([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE].includes(engine) && durationInput === "long"
+      exportDuration: ([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE].includes(engine) && durationInput === "long"
         ? lastVoiceEnd : Math.max(duration, lastVoiceEnd))
         + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25,
       continuation: null
