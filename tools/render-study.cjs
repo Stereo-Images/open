@@ -44,6 +44,7 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',d
   return await running;
  };
  let score=h.api.createPerformance(parseInt(seed,16),tone,duration,engine),tailStartsAt=27,lateTailStartsAt=27;
+ if(mode==='prefix')score={...score,groups:score.groups.filter(g=>g.time<120),exportDuration:120};
  if(mode==='background'){
   const source=score.groups.find(g=>g.background),start=source.time;
   const group={...source,time:0,notes:source.notes.map(n=>({...n,time:n.time-start}))};
@@ -102,3 +103,4 @@ if(require.main===module)(async()=>{
  fs.mkdirSync(path.join(root,'checks/render-results'),{recursive:true});
  fs.writeFileSync(path.join(root,'checks/render-results',seed+'.json'),JSON.stringify(result,null,2));
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
