@@ -7,11 +7,13 @@ const files = new Map([
   ['/index.html', 'text/html'], ['/player.html', 'text/html'],
   ['/favicon.svg', 'image/svg+xml'],
   ['/player.js', 'text/javascript'], ['/wav-worker.js', 'text/javascript'], ['/style.css', 'text/css'],
-  ['/studies/g29/deliverables/Open-g29-Sixteen-New-Studies.html', 'text/html']
+  ['/studies/index.html', 'text/html'], ['/studies/studies.js', 'text/javascript'],
+  ['/studies/g29/deliverables/Open-g29-Sixteen-New-Studies.html', 'text/html'],
+  ['/studies/g29/deliverables/Open-Filtered-Spectral-Organ-g29.html', 'text/html']
 ]);
 http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;
-  const name = pathname === '/' ? '/index.html' : pathname;
+  const name = pathname.endsWith('/') ? pathname + 'index.html' : pathname;
   if (!files.has(name)) { res.writeHead(404); res.end(); return; }
   res.setHeader('Content-Type', files.get(name));
   res.setHeader('Cache-Control', 'no-store');

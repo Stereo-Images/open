@@ -243,6 +243,40 @@ select:disabled{
   margin-top:1.5rem;
 }
 
+.form-actions.shared-ready{
+  grid-template-columns:minmax(0, 1fr);
+  margin-top:0;
+}
+
+.shared-ready .btn{
+  font-size:0.75rem;
+  letter-spacing:0.04em;
+  padding:15px 8px;
+}
+
+.shared-ready #playNow{
+  background:var(--fg);
+  color:var(--bg);
+}
+
+/* The study selector uses the same compact player and shared stylesheet. */
+.studies{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  margin-bottom:2rem;
+  font-size:0.85rem;
+  line-height:1.5;
+}
+
+.studies h2{ margin:0; font-size:1rem; font-weight:400; }
+.studies p{ margin:0; }
+.studies select{ width:100%; font-size:0.85rem; }
+.studies .btn{ padding:12px 8px; font-size:0.75rem; }
+.studies label{ font-size:0.85rem; }
+.study-return{ margin:0 0 1.5rem; font-size:0.8rem; }
+a{ color:inherit; }
+
 /* ===== Buttons ===== */
 .btn{
   font-family:inherit;

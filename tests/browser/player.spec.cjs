@@ -109,16 +109,81 @@ test('saved Infinite preferences migrate and Infinite links remain silent', asyn
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('the Long-study link opens the self-contained g29 batch without autoplay', async ({ page }) => {
+test('the Long-study link opens the shared player without autoplay', async ({ page }) => {
   await page.goto('/player.html');
   await page.locator('#revisit summary').click();
   await page.getByRole('link', { name: 'Explore sixteen Long studies' }).click();
+  await expect(page).toHaveURL('/studies/');
   await expect(page.locator('#batchSeed option')).toHaveCount(16);
   expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
   await expect(page.locator('#playNow')).toBeVisible();
 });
 
-test('replay links survive the launcher and wait for explicit Load & play', async ({ page }) => {
+test('a shared performance has clear narrow-screen controls and a separate new-performance action', async ({ page }) => {
+  await page.setViewportSize({width: 320, height: 568});
+  await page.goto('/player.html?' + replayQuery);
+  const play = page.getByRole('button', {name: 'Play this performance', exact: true});
+  await expect(play).toBeVisible();
+  const bounds = await play.evaluate(button => ({width: button.clientWidth, height: button.clientHeight,
+    fits: button.scrollWidth <= button.clientWidth}));
+  expect(bounds.width).toBeGreaterThanOrEqual(44);
+  expect(bounds.height).toBeGreaterThanOrEqual(44);
+  expect(bounds.fits).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  await page.getByRole('button', {name: 'Start a new performance', exact: true}).click();
+  await expect(page.locator('#replayStatus')).toContainText('Playing seed 00003039');
+  await expect(page.locator('#newPerformance')).toBeHidden();
+  await expect(page.locator('#playNow')).toHaveText('Play');
+});
+
+test('study playback shares the main WAV worker and creates canonical replay links', async ({ page }) => {
+  test.setTimeout(120000);
+  const errors = [], workers = [];
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('worker', worker => workers.push(worker.url()));
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', {
+    value: {writeText: async () => { throw new Error('clipboard denied'); }}
+  }));
+  await page.goto('/studies/');
+  await page.locator('#batchSeed').selectOption('02643212');
+  await page.locator('#playStudy').click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 02643212');
+  await expect(page.locator('#tone')).toHaveValue('121');
+  await page.locator('#stop').click();
+  await page.locator('#copyReplay').click();
+  let replay = new URL(await page.locator('#replayLink').inputValue());
+  expect(replay.pathname).toBe('/player.html');
+  expect(replay.searchParams.get('seed')).toBe('02643212');
+  await page.locator('#playShortStudy').click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 0393ded7');
+  await expect(page.locator('#tone')).toHaveValue('200');
+  await page.locator('#stop').click();
+  const downloading = page.waitForEvent('download');
+  await page.locator('#exportWav').click();
+  const download = await downloading;
+  expect(download.suggestedFilename()).toMatch(/-g3-200hz-short-44100sr-/);
+  const wav = await fs.readFile(await download.path());
+  expect(wav.readUInt32LE(24)).toBe(44100);
+  expect((wav.length - 44) / 4).toBe(3773475);
+  expect(workers.map(url => new URL(url).pathname)).toEqual(['/wav-worker.js']);
+  expect(errors).toEqual([]);
+  await page.getByRole('link', {name: 'Return to Open'}).click();
+  await expect(page).toHaveURL('/player.html');
+});
+
+test('previous study URLs preserve shared performances when redirecting', async ({ page }) => {
+  const old = '/studies/g29/deliverables/Open-g29-Sixteen-New-Studies.html';
+  await page.goto(old + '?' + replayQuery);
+  await expect(page).toHaveURL('/player.html?' + replayQuery);
+  await page.getByRole('button', {name: 'Play this performance', exact: true}).click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
+  await page.goto(old);
+  await expect(page).toHaveURL('/studies/index.html');
+  await expect(page.locator('#batchSeed option')).toHaveCount(16);
+});
+
+test('replay links survive the launcher and the primary button plays the shared performance', async ({ page }) => {
   await page.addInitScript(() => { window.open = () => null; });
   await page.goto('/index.html?' + replayQuery);
   await page.locator('#launchPlayer').click();
@@ -130,7 +195,7 @@ test('replay links survive the launcher and wait for explicit Load & play', asyn
   await expect(page.locator('#exportWav')).toBeDisabled();
   await expect(page.locator('#replayLast')).toBeDisabled();
   await expect(page.locator('#replayRun')).toHaveText('Load & play');
-  await page.locator('#replayRun').click();
+  await page.getByRole('button', { name: 'Play this performance', exact: true }).click();
   await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
   await expect(page.locator('#exportWav')).toBeEnabled();
   await page.locator('#stop').click();
@@ -184,7 +249,7 @@ test('one-click Replay restores the latest settings and clears on reload', async
 test('invalid replay links stay silent and the Revisit panel fits a narrow viewport', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 568 });
   await page.goto('/player.html?' + replayQuery.replace('engine=1', 'engine=2'));
-  await expect(page.locator('#replayStatus')).toContainText('needs engine 2');
+  await expect(page.locator('#replayStatus')).toContainText('saved performance is not supported');
   await page.locator('#replayRun').click();
   expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);

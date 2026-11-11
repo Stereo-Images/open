@@ -1,8 +1,0 @@
-{
-  "scoreComparisons": 16,
-  "allAudioEventsIdentical": true,
-  "onlyChange": "Correct three descriptive effect fields; synthesis uses unchanged impulseSeconds and sectionGapSeconds",
-  "renderedPlayerSha256": "44ca107f525820fff7a0882beea3ae0bab5407c520324eaac19f39723ec5e4ac",
-  "finalPlayerSha256": "2d7a0f1d63349bbb9b53b7969fbee9aa24b0581834ba8b71ae7c48d4056a7119",
-  "nativeProbeSampleIdentical": true
-}

@@ -2,7 +2,7 @@ name: Audio regression checks
 
 on:
   push:
-    branches: [main, engineering-hardening, engineering/matching-wav-performance, experiment/moving-resonators]
+    branches: [main, engineering-hardening, engineering/matching-wav-performance, experiment/moving-resonators, 'release/**']
   pull_request:
 
 permissions:
@@ -36,10 +36,11 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Check published engine and study scores
+      - name: Check shared player and study scores
         run: |
+          git show ec968f765c16837b29324fa6437cb012d39f1918:player.js > "$RUNNER_TEMP/open-release-baseline.js"
           npm run check:player
-          npm run test:study
+          OPEN_RELEASE_BASELINE="$RUNNER_TEMP/open-release-baseline.js" npm run test:study
       - name: Load original musical baseline
         run: git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > "$RUNNER_TEMP/open-baseline.js"
       - name: Run lifecycle and audio-format regressions

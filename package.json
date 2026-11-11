@@ -5,9 +5,9 @@
   "scripts": {
     "test": "node --test tests/*.test.cjs",
     "test:browser": "playwright test",
-    "build:player": "python3 tools/build-player.py",
-    "check:player": "python3 tools/build-player.py --check",
-    "test:study": "cd studies/g29 && node verify-g29.cjs && node check-g29-effects.cjs && node verify-batch.cjs && node check-batch-player.cjs"
+    "check:player": "node tools/check-player.cjs",
+    "test:study": "node tests/verify-studies.cjs && node tests/check-effects.cjs",
+    "test:audio": "node tools/check-audio.cjs"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0"

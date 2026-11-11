@@ -1,6 +1,6 @@
 # Open
 
-> *Music for Bells and Organ*
+> *Bell Music for Desktop Listening*
 
 Bells are instruments of distance. Their sound travels far, and that distance is tinged with a special kind of melancholy—the kind that comes after a struggle. I have wanted a music which studies this journey within sound itself: the collision of waves harmonic and inharmonic, and the long decay that follows. Distance gives resonance.
 
@@ -45,7 +45,7 @@ Set the length and root tone before pressing Play. Choose Short or Long.
 
 1. **Length:** Short is a song-like form with a 1-minute ending target and typically lasts about 1–3 minutes, allowing the phrase to resolve and decay. It can close on a qualified fifth or sixth near its target, with tonic fallback. New Long performances complete a mirrored form lasting 10–30 minutes, including the final melody pass and decay. Durations vary with each performance.
 2. **Root Tone:** Drag the dial up to raise the root frequency or down to lower it, using a mouse or touch. The range is 110–200 Hz. With the dial focused, use the arrow keys for 1 Hz adjustments. The readout below the dial shows the selected frequency.
-3. **Play:** Create a new performance using the selected root tone and length.
+3. **Play:** Create a new performance using the selected root tone and length. When you open a shared link, the button reads **Play this performance** and starts that saved performance. **Start a new performance** creates something new instead.
 4. **Replay:** Restart the current or most recent performance from the beginning with its saved root tone, length, and WAV sample rate. Replay restores the dial and length even if you changed them after stopping. It is disabled until a performance has started, then remains available during playback, after Stop, and after a natural ending.
 5. **Stop:** Fade out playback. The most recent performance remains available to replay, share, or export.
 
@@ -59,7 +59,7 @@ Your last length and root tone are remembered locally. On mobile, keep the playe
 
 Open **Revisit** below the playback buttons to load an earlier performance, share a replay link, or export a WAV.
 
-1. **Load & play:** Paste an eight-character hexadecimal seed, an Open export filename (with or without `.wav`, including `.mp3` or `.flac` conversions), or a replay link, then press Load & play. A seed or older filename uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and waits for you to press Load & play; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. Play always draws a fresh seed, even when a replay link is open.
+1. **Load & play:** Paste an eight-character hexadecimal seed, an Open export filename (with or without `.wav`, including `.mp3` or `.flac` conversions), or a replay link, then press Load & play. A seed or older filename uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and presents **Play this performance**; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. After playback starts, Play creates a new performance and Replay returns to the most recent one.
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 
@@ -80,11 +80,10 @@ Save the audio for listening and keep its original filename or replay link to pr
 
 ### Development and Checks
 
-The published `player.js` is generated from the approved standalone study player. Its packaging adaptation loads the encoder from `wav-worker.js` instead of an embedded Blob. Build and verify from the repository root:
+The main player and [Long Studies page](https://stereo-images.github.io/open/studies/) share `player.js`, `style.css` and `wav-worker.js`. Edit those files directly; no player-generation step is needed. Verify from the repository root:
 
 ```sh
 npm ci --ignore-scripts
-npm run build:player
 npm run check:player
 npm test
 npm run test:study

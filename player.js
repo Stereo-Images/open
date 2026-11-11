@@ -24,6 +24,11 @@
   const cancelEncoders = new Set();
   const pendingDownloads = new Set();
   const idleTitle = document.title;
+  // Resolve assets from this script, so every listening page shares one player.
+  const playerSourceUrl = document.currentScript?.src || new URL('player.js', window.location.href).href;
+  const workerUrl = new URL('wav-worker.js?v=1.0', playerSourceUrl).href;
+  const playerPageUrl = new URL('player.html', playerSourceUrl).href;
+  let sharedPerformance = null;
   let exportTitleTimer = null;
   let cancelToneDrag = () => {};
   function listen(target, type, handler, options) {
@@ -118,7 +123,7 @@
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
-      throw new Error(`This performance needs engine ${record.engine || "(unspecified)"}; this player supports engines 1, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28 and 29.`);
+      throw new Error("This saved performance is not supported. Check that you copied the complete replay link or filename.");
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -127,7 +132,7 @@
     if (!["short", "long"].includes(record.duration))
       throw new Error("The replay length must be short or long.");
     if (["4", LONG_STUDY_ENGINE].includes(record.engine) && record.duration !== "long")
-      throw new Error(`Engine ${record.engine} is a Long study experiment; its replay length must be long.`);
+      throw new Error("This saved performance requires Long. Check its original replay link or filename.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
@@ -137,7 +142,7 @@
   function parseReplayQuery(params) {
     const keys = ["seed", "tone", "length", "engine", "rate"];
     if (keys.some(key => params.getAll(key).length !== 1))
-      throw new Error("The replay link needs one seed, root tone, length, engine version, and sample rate.");
+      throw new Error("The replay link is incomplete or contains duplicate settings. Copy the complete original link.");
     return validateReplay({ seed: params.get("seed"), tone: params.get("tone"),
       duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate") });
   }
@@ -166,7 +171,7 @@
   }
 
   function replayLink(snapshot) {
-    const url = new URL(window.location.href);
+    const url = new URL(playerPageUrl);
     url.search = new URLSearchParams({ seed: seedHex(snapshot.seed), tone: String(snapshot.tone),
       length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate) }).toString();
     return url.href;
@@ -232,8 +237,20 @@
     try {
       const record = parseReplayQuery(params);
       applyControls({ tone: record.tone, songDuration: record.duration });
-      replayStatus(`Seed ${seedHex(record.seed)} ready. Press Load & play to listen, or Play for a new performance.`);
+      sharedPerformance = record;
+      updateSharedControls();
+      replayStatus(`Shared performance ${seedHex(record.seed)} ready. Press Play this performance to listen.`);
     } catch (error) { replayStatus(error.message); }
+  }
+
+  function updateSharedControls() {
+    const pending = !!sharedPerformance;
+    if ($("playNow")) $("playNow").textContent = pending ? "Play this performance" : "Play";
+    if ($("playActions")) $("playActions").classList.toggle("shared-ready", pending);
+    if ($("newPerformance")) $("newPerformance").hidden = !pending;
+    if ($("sharedHelp")) $("sharedHelp").hidden = !pending;
+    if ($("replayLast")) $("replayLast").hidden = pending;
+    if ($("stop")) $("stop").hidden = pending;
   }
 
   // =========================
@@ -3234,7 +3251,7 @@
   // CONTROLS
   // =========================
   async function startFromUI() {
-    return startPerformance();
+    return startPerformance(sharedPerformance);
   }
 
   async function startPerformance(replay = null) {
@@ -3264,6 +3281,8 @@
       const runId = `${seedHex(seed)}-${Date.now().toString(36)}`;
       sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
         runId, engine });
+      sharedPerformance = null;
+      updateSharedControls();
       if (replay) {
         applyControls({ tone, songDuration: duration });
         saveState(readControls());
@@ -3280,7 +3299,7 @@
 
       setButtonState("playing");
       replayStatus(replay?.partial
-        ? `Playing seed ${seedHex(seed)} with the selected root tone and length (engine ${engine}). ${replay.legacy ? "An older filename assumes engine 1 but cannot verify the original settings or engine." : "A seed alone does not include the original settings; keep a replay link or full filename to preserve this version."}`
+        ? `Playing seed ${seedHex(seed)} with the selected root tone and length. Keep a complete replay link or export filename to preserve this performance; a seed or older filename may omit the original settings.`
         : `${replay ? "Replaying" : "Playing"} seed ${seedHex(seed)}. You can copy its replay link or export it below.`);
 
       if (timerInterval) clearInterval(timerInterval);
@@ -3447,8 +3466,7 @@
   function bufferToWave(abuffer) {
     return new Promise((resolve, reject) => {
       if (disposed) { reject(new Error("Player disposed")); return; }
-      // Keep this cache tag aligned with the player.html asset tags.
-      const worker = new Worker("wav-worker.js?v=1.0");
+      const worker = new Worker(workerUrl);
       let offset = 0;
       let finished = false;
       let idleTicks = 0;
@@ -3506,12 +3524,11 @@
   // INIT & LISTENERS
   // =========================
   function initialize() {
-    // player.js only ever runs on player.html (see the <script src="player.js">
-    // tag there). Launcher routing/mobile-detection lives in index.html's own
-    // inline script.
+    // The main player and studies page share this runtime and WAV encoder.
     if (!isPlayerPage()) return;
 
     listen($("playNow"), "click", startFromUI);
+    listen($("newPerformance"), "click", () => startPerformance());
     listen($("replayLast"), "click", replayLastPerformance);
     listen($("stop"), "click", () => stopAllManual(false));
     listen($("replayRun"), "click", replayFromUI);

@@ -1,0 +1,141 @@
+<!-- player.html (PLAYER PAGE) -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Open — Long Studies</title>
+  <meta name="description" content="Bell music by Aaron Koppel. A new performance with every Play, with organ interludes in Long performances. Revisit and share your discoveries." />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Open" />
+  <meta property="og:title" content="Open — Bell Music for Desktop Listening" />
+  <meta property="og:description" content="Bell music by Aaron Koppel. A new performance with every Play, with organ interludes in Long performances. Revisit and share your discoveries." />
+  <meta property="og:url" content="https://stereo-images.github.io/open/studies/" />
+  <meta property="og:image" content="https://stereo-images.github.io/open/social-preview.png" />
+  <meta property="og:image:type" content="image/png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:image:alt" content="Open — Bell Music for Desktop Listening. By Aaron Koppel." />
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Open — Bell Music for Desktop Listening" />
+  <meta name="twitter:description" content="Bell music by Aaron Koppel. A new performance with every Play, with organ interludes in Long performances. Revisit and share your discoveries." />
+  <meta name="twitter:image" content="https://stereo-images.github.io/open/social-preview.png" />
+  <meta name="twitter:image:alt" content="Open — Bell Music for Desktop Listening. By Aaron Koppel." />
+  <link rel="icon" type="image/svg+xml" href="../favicon.svg" />
+  <link rel="stylesheet" href="../style.css?v=1.0&amp;rev=sharing" />
+</head>
+<body class="player">
+  <main class="shell" aria-label="Audio Instrument">
+    <h1 id="playerTitle" class="title-style">Open</h1>
+
+    <p class="study-return"><a href="../player.html">Return to Open</a></p>
+    <section class="studies" aria-labelledby="studiesHeading">
+      <h2 id="studiesHeading">Long Studies</h2>
+      <p>Sixteen performances for bells and organ, each with a mirrored melody and slowly changing sound.</p>
+      <label for="batchSeed">Choose a study</label>
+      <select id="batchSeed">
+          <optgroup label="Related studies">
+            <option value="bf187689" data-replay="open-run-bf187689-study-g29-121hz-long-44100sr-1794344482214.wav">bf187689 · 23:41</option>
+            <option value="cbbec62b" data-replay="open-run-cbbec62b-study-g29-121hz-long-44100sr-1794344482248.wav">cbbec62b · 24:47</option>
+            <option value="6d039696" data-replay="open-run-6d039696-study-g29-121hz-long-44100sr-1794344482318.wav">6d039696 · 12:49</option>
+            <option value="72c9191f" data-replay="open-run-72c9191f-study-g29-121hz-long-44100sr-1794344482377.wav">72c9191f · 20:41</option>
+            <option value="7fd94646" data-replay="open-run-7fd94646-study-g29-121hz-long-44100sr-1794344482412.wav">7fd94646 · 24:50</option>
+            <option value="a0b6d652" data-replay="open-run-a0b6d652-study-g29-121hz-long-44100sr-1794344482487.wav">a0b6d652 · 11:46</option>
+            <option value="8215b572" data-replay="open-run-8215b572-study-g29-121hz-long-44100sr-1794344482536.wav">8215b572 · 13:04</option>
+            <option value="e3213846" data-replay="open-run-e3213846-study-g29-121hz-long-44100sr-1794344482569.wav">e3213846 · 21:02</option>
+          </optgroup>
+          <optgroup label="Independent studies">
+            <option value="1407d029" data-replay="open-run-1407d029-study-g29-121hz-long-44100sr-1794344482643.wav">1407d029 · 28:19</option>
+            <option value="02643212" data-replay="open-run-02643212-study-g29-121hz-long-44100sr-1794344482705.wav">02643212 · 21:44</option>
+            <option value="5ae20a0a" data-replay="open-run-5ae20a0a-study-g29-121hz-long-44100sr-1794344482753.wav">5ae20a0a · 16:16</option>
+            <option value="fa85243b" data-replay="open-run-fa85243b-study-g29-121hz-long-44100sr-1794344482860.wav">fa85243b · 27:16</option>
+            <option value="0215981d" data-replay="open-run-0215981d-study-g29-121hz-long-44100sr-1794344482904.wav">0215981d · 17:58</option>
+            <option value="2aa6cf98" data-replay="open-run-2aa6cf98-study-g29-121hz-long-44100sr-1794344482945.wav">2aa6cf98 · 29:07</option>
+            <option value="35474048" data-replay="open-run-35474048-study-g29-121hz-long-44100sr-1794344483016.wav">35474048 · 18:21</option>
+            <option value="4943deb7" data-replay="open-run-4943deb7-study-g29-121hz-long-44100sr-1794344483088.wav">4943deb7 · 25:20</option>
+          </optgroup>
+      </select>
+      <button type="button" class="btn" id="playStudy">Play selected study</button>
+      <button type="button" class="btn" id="playShortStudy">Play Short Study</button>
+      <p class="revisit-help">The Short Study is the original saved performance. Use Revisit to copy a replay link or export a WAV.</p>
+    </section>
+    <section id="controls" aria-label="Controls">
+      <form id="songForm" onsubmit="return false;">
+        <div class="form-group">
+          <label for="songDuration">Length</label>
+          <select id="songDuration" name="songDuration">
+            <option value="short" selected>Short</option>
+            <option value="long">Long</option>
+          </select>
+        </div>
+
+        <div class="form-group tone-group">
+          <label id="toneLabel" for="tone">Root Tone<span class="sr-only"> in hertz</span></label>
+          <div class="tone-control">
+            <div class="tone-dial" id="toneDial">
+              <input
+                type="range"
+                id="tone"
+                min="110"
+                max="200"
+                step="1"
+                value="110"
+                aria-labelledby="toneLabel"
+                aria-describedby="toneHelp"
+                aria-orientation="vertical"
+                aria-valuetext="110 hertz"
+                title="Drag up or down to adjust"
+              />
+              <span class="tone-dial-face" aria-hidden="true">
+                <span class="tone-dial-marker"></span>
+              </span>
+            </div>
+            <div class="tone-readout" aria-hidden="true"><span id="hzReadout">110</span> Hz</div>
+            <span id="toneHelp" class="sr-only">Drag up to raise the tone or down to lower it. Use arrow keys for one-hertz steps.</span>
+          </div>
+        </div>
+
+        <p id="sharedHelp" class="revisit-help" hidden>A shared performance is ready to listen to.</p>
+        <div id="playActions" class="form-actions">
+          <button type="button" id="playNow" class="btn" aria-pressed="false">Play</button>
+          <button type="button" id="newPerformance" class="btn" hidden>Start a new performance</button>
+          <button type="button" id="replayLast" class="btn btn-replay" disabled aria-describedby="replayLastHelp">Replay</button>
+          <button type="button" id="stop" class="btn filled" aria-pressed="true">Stop</button>
+        </div>
+        <span id="replayLastHelp" class="sr-only">Restart the current or most recent performance from the beginning with its saved settings. Available until this page is reloaded or closed.</span>
+      </form>
+
+      <details id="revisit" class="revisit">
+        <summary>Revisit</summary>
+        <div class="revisit-content">
+          <label for="replayInput">Seed, filename or replay link</label>
+          <input id="replayInput" type="text" autocomplete="off" autocapitalize="off"
+            spellcheck="false" aria-describedby="replayHelp" placeholder="e.g. d1a0b62b" />
+          <p id="replayHelp" class="revisit-help">Filenames work with or without .wav. For a seed or older filename, set the original root tone and length above. Play always creates a new performance.</p>
+          <button type="button" id="replayRun" class="btn">Load &amp; play</button>
+          <div class="revisit-actions">
+            <button type="button" id="copyReplay" class="btn" disabled>Copy replay link</button>
+            <button type="button" id="exportWav" class="btn" disabled>Export WAV</button>
+          </div>
+          <div id="replayLinkFallback" class="revisit-fallback" hidden>
+            <label for="replayLink">Replay link</label>
+            <input id="replayLink" type="text" readonly />
+          </div>
+          <p id="replayStatus" class="revisit-help">Play or replay a performance to share or export it.</p>
+        </div>
+      </details>
+    </section>
+
+    <!-- Polite live region for announcements -->
+    <div id="playerStatus" class="sr-only" aria-live="polite"></div>
+
+    <footer id="credits" role="contentinfo">
+      <div class="credit-line">By Aaron Koppel</div>
+      <div class="credit-line">Stereo Images, 2026</div>
+    </footer>
+  </main>
+
+  <script src="../player.js?v=1.0&amp;rev=sharing"></script>
+  <script src="studies.js?v=1.0&amp;rev=sharing"></script>
+</body>
+</html>
