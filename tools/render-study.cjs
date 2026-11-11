@@ -9,6 +9,7 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',b
    ? require('node:url').pathToFileURL(path.resolve(process.env.OPEN_AUDIO_RUNTIME)).href
    : 'node-web-audio-api');
  let source=fs.readFileSync(sourceFile,'utf8');
+ const sourceSha256=crypto.createHash('sha256').update(source).digest('hex');
  source=source.replace('  function resolveDuration(seed, durationInput) {','  window.renderStudy=renderWavSession;\n  function resolveDuration(seed, durationInput) {');
  source=source.replace('  function resolveDuration(seed, durationInput) {','  window.releaseOfflineRefs=(ctx,finished)=>{const s=spatialStates.get(ctx);s.nodes=s.nodes.filter(n=>!finished.has(n));};\n  function resolveDuration(seed, durationInput) {');
  // Native adapter: explicitly commit the older room's channel writes.
@@ -85,7 +86,7 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',b
   fs.closeSync(file);
   result={seed,engine,...(baseEngine!=null?{baseEngine}:{}),duration:score.exportDuration,frames,sampleRate:rate,renderSeconds:(Date.now()-start)/1000,
    peak,peakDb:20*Math.log10(peak),rms:Math.sqrt(energy/(frames*2)),nonfinite,clipped,
-   pcmSha256:hash.digest('hex'),playerSha256:crypto.createHash('sha256').update(fs.readFileSync(sourceFile)).digest('hex'),filename,
+   pcmSha256:hash.digest('hex'),playerSha256:sourceSha256,filename,
    ...(mode==='probe'?{interludeIndex,tailStartsAt,tailPeakAfterReturn:tailPeak,tailPeakFiveSecondsAfterDirectEnd:lateTailPeak}:{})};
  };
  console.log(JSON.stringify({rendering:seed,engine,mode,seconds:score.exportDuration}));
