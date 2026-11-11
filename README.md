@@ -20,7 +20,7 @@ New performances keep one six-note major collection (1–2–3–4–5–6), avo
 
 In Long, each melody pass mirrors note recipes and timing around its center. FM palettes change on the outward half of the piece and return in reverse order. Organ interludes follow each complete pass except the last, expanding to one central three-statement interlude and then contracting. Contextual chords and inversions respect the fixed collection and the notes still ringing. Decay-aware handoffs mean the absolute timeline is not a strict palindrome.
 
-The interludes use fuller Principal organ ranks with the g27 filter contour, wide slow three-band stereo chorus, restrained feedback and a twelve-second convolution room. Direct organ and chorus end two seconds before the returning bell; the room tail may continue. Quiet FM accompaniment under the melody retains its earlier sound. Long completes its final melody with normal decay; Short seeks a qualified ending around its target.
+The interludes use fuller Principal organ ranks with a filter contour, wide slow three-band stereo chorus, restrained feedback and a twelve-second convolution room. Direct organ and chorus end two seconds before the returning bell; the room tail may continue. Quiet FM accompaniment under the melody retains its earlier sound. Long completes its final melody with normal decay; Short seeks a qualified ending around its target.
 
 ### Technical Architecture
 
