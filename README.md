@@ -22,16 +22,6 @@ In Long, each melody pass mirrors note recipes and timing around its center. FM 
 
 The interludes use fuller Principal organ ranks with the g27 filter contour, wide slow three-band stereo chorus, restrained feedback and a twelve-second convolution room. Direct organ and chorus end two seconds before the returning bell; the room tail may continue. Quiet FM accompaniment under the melody retains its earlier sound. Long completes its final melody with normal decay; Short seeks a qualified ending around its target.
 
-### Studies and Reproduction
-
-The [sixteen Long studies](studies/g29/deliverables/Open-g29-Sixteen-New-Studies.html) include eight seeds selected for the source motif of `0b086950` and eight unconditioned new draws. The [batch notes](studies/g29/README-BATCH.md), [manifest](studies/g29/manifest.json), scores, analysis data, versioned players, render scripts and validation records are in [`studies/g29`](studies/g29). WAVs are generated from the fixed replay filenames and are excluded from Git.
-
-To reproduce the original `0393ded7` Short Study, paste this complete filename into Revisit:
-
-`open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406.wav`
-
-Its preserved g3 floating-PCM regression digest is `a259348dc27fb39ca87c047d36e23d848bd35e18fce689971f799f91bd68dafa`, checked on the same native audio backend. A bare seed uses the current engine; retain the g3 tag for the original performance. Browser audio implementations can differ in their final samples.
-
 ### Technical Architecture
 
 Release line: **v1.0** (1.0.0). Current musical engines: **29 for Long**, **21 for Short**. Explicit engines **1 and 3–29** remain available for saved replays; engines 4 and 5 require Long. Engine identifiers describe musical behavior independently of the release number.
