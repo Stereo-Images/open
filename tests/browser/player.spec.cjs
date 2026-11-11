@@ -125,10 +125,12 @@ test('a shared performance has clear narrow-screen controls and a separate new-p
   const play = page.getByRole('button', {name: 'Play this performance', exact: true});
   await expect(play).toBeVisible();
   const bounds = await play.evaluate(button => ({width: button.clientWidth, height: button.clientHeight,
+    bottom: button.getBoundingClientRect().bottom,
     fits: button.scrollWidth <= button.clientWidth}));
   expect(bounds.width).toBeGreaterThanOrEqual(44);
   expect(bounds.height).toBeGreaterThanOrEqual(44);
   expect(bounds.fits).toBe(true);
+  expect(bounds.bottom).toBeLessThanOrEqual(568);
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(320);
   expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
   await page.getByRole('button', {name: 'Start a new performance', exact: true}).click();

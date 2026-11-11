@@ -107,6 +107,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../../player.js'
         contains(name) { return this.values.has(name); }
       }, style: { setProperty(name, value) { this[name] = value; } },
       attributes: {}, setAttribute(name, value) { this.attributes[name] = value; },
+      prepend() {}, append() {},
       capturedPointers: new Set(),
       setPointerCapture(id) { this.capturedPointers.add(id); },
       hasPointerCapture(id) { return this.capturedPointers.has(id); },

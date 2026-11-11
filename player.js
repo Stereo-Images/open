@@ -245,6 +245,13 @@
 
   function updateSharedControls() {
     const pending = !!sharedPerformance;
+    const form = $("songForm"), actions = $("playActions");
+    // A shared performance is the first action, before editable settings.
+    // Move the actual controls so visual and keyboard order stay together.
+    if (form && actions) {
+      if (pending) form.prepend(actions);
+      else if (actions.classList.contains("shared-ready")) form.append(actions);
+    }
     if ($("playNow")) $("playNow").textContent = pending ? "Play this performance" : "Play";
     if ($("playActions")) $("playActions").classList.toggle("shared-ready", pending);
     if ($("newPerformance")) $("newPerformance").hidden = !pending;
