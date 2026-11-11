@@ -1,0 +1,129 @@
+{
+  "legacyComparisons": 216,
+  "shortChecks": 4,
+  "originalG3ReplayParsed": true,
+  "notesChecked": 2335,
+  "verified": [
+    {
+      "seed": "bf187689",
+      "tone": 121,
+      "duration": 1421.3122741426273,
+      "passes": 6,
+      "bpm": 3.277346609160304
+    },
+    {
+      "seed": "cbbec62b",
+      "tone": 121,
+      "duration": 1486.725536314112,
+      "passes": 6,
+      "bpm": 3.2029349422082305
+    },
+    {
+      "seed": "6d039696",
+      "tone": 121,
+      "duration": 769.334914541629,
+      "passes": 8,
+      "bpm": 11.171996771357955
+    },
+    {
+      "seed": "72c9191f",
+      "tone": 121,
+      "duration": 1241.0664525460415,
+      "passes": 10,
+      "bpm": 7.812491191551088
+    },
+    {
+      "seed": "7fd94646",
+      "tone": 121,
+      "duration": 1489.8205165343036,
+      "passes": 6,
+      "bpm": 3.165434477850795
+    },
+    {
+      "seed": "a0b6d652",
+      "tone": 121,
+      "duration": 705.729394486885,
+      "passes": 8,
+      "bpm": 12.954629117622972
+    },
+    {
+      "seed": "8215b572",
+      "tone": 121,
+      "duration": 784.2112626414156,
+      "passes": 6,
+      "bpm": 7.3404772309586415
+    },
+    {
+      "seed": "e3213846",
+      "tone": 121,
+      "duration": 1261.944130924054,
+      "passes": 6,
+      "bpm": 3.958713294938207
+    },
+    {
+      "seed": "1407d029",
+      "tone": 121,
+      "duration": 1699.1291096417403,
+      "passes": 20,
+      "bpm": 13.558297203853726
+    },
+    {
+      "seed": "02643212",
+      "tone": 121,
+      "duration": 1304.3274931861747,
+      "passes": 10,
+      "bpm": 7.444051207043231
+    },
+    {
+      "seed": "5ae20a0a",
+      "tone": 121,
+      "duration": 975.8492316662404,
+      "passes": 6,
+      "bpm": 5.476586742326618
+    },
+    {
+      "seed": "fa85243b",
+      "tone": 121,
+      "duration": 1635.741468875188,
+      "passes": 20,
+      "bpm": 14.518694976344706
+    },
+    {
+      "seed": "0215981d",
+      "tone": 121,
+      "duration": 1078.3886233640076,
+      "passes": 6,
+      "bpm": 4.799586863256992
+    },
+    {
+      "seed": "2aa6cf98",
+      "tone": 121,
+      "duration": 1747.2540355952697,
+      "passes": 8,
+      "bpm": 3.7102558007463813
+    },
+    {
+      "seed": "35474048",
+      "tone": 121,
+      "duration": 1101.1971772093884,
+      "passes": 12,
+      "bpm": 12.005709847435355
+    },
+    {
+      "seed": "4943deb7",
+      "tone": 121,
+      "duration": 1519.6082202032753,
+      "passes": 16,
+      "bpm": 11.141859789378941
+    }
+  ],
+  "checks": [
+    "nested pitch/recipe/interval symmetry and mirrored pass order",
+    "one complete organ arch",
+    "paired contextual harmony",
+    "two-second handoffs with consonant reverb overlap",
+    "normal final decay",
+    "distinct outward FM palettes",
+    "background drones retained"
+  ]
+}

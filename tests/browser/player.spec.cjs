@@ -74,6 +74,50 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
+test('new performances retain the current engine in replay links for each length', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async () => { throw new Error('clipboard denied'); } }
+    });
+  });
+  await page.goto('/player.html');
+  await expect(page.locator('#songDuration option')).toHaveCount(2);
+  for (const [length, engine] of [['long', '29'], ['short', '21']]) {
+    await page.locator('#songDuration').selectOption(length);
+    await page.locator('#playNow').click();
+    await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+    await page.locator('#stop').click();
+    await page.locator('#revisit').evaluate(element => { element.open = true; });
+    await page.locator('#copyReplay').click();
+    const input = page.locator('#replayLink');
+    // Clipboard denial exposes the same link for manual copying.
+    await expect(input).toBeVisible();
+    const replay = await input.inputValue();
+    expect(new URL(replay).searchParams.get('engine')).toBe(engine);
+    expect(new URL(replay).searchParams.get('length')).toBe(length);
+  }
+});
+
+test('saved Infinite preferences migrate and Infinite links remain silent', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('open_player_settings', JSON.stringify({tone:'121',songDuration:'infinite'})));
+  await page.goto('/player.html?' + replayQuery.replace('length=short', 'length=infinite'));
+  await expect(page.locator('#songDuration')).toHaveValue('short');
+  await expect(page.locator('#songDuration option')).toHaveCount(2);
+  await expect(page.locator('#replayStatus')).toContainText('short or long');
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  await page.locator('#playNow').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('the Long-study link opens the self-contained g29 batch without autoplay', async ({ page }) => {
+  await page.goto('/player.html');
+  await page.locator('#revisit summary').click();
+  await page.getByRole('link', { name: 'Explore sixteen Long studies' }).click();
+  await expect(page.locator('#batchSeed option')).toHaveCount(16);
+  expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
+  await expect(page.locator('#playNow')).toBeVisible();
+});
+
 test('replay links survive the launcher and wait for explicit Load & play', async ({ page }) => {
   await page.addInitScript(() => { window.open = () => null; });
   await page.goto('/index.html?' + replayQuery);

@@ -1,0 +1,25 @@
+{
+  "seed": "40dc1965",
+  "engine": 28,
+  "fullFilename": "open-run-40dc1965-study-g28-121hz-long-44100sr-1794338576194.wav",
+  "durationSeconds": 1065.3062856033657,
+  "fullWavSha256": "ab369dea7e75fde7e4a399114e7cb6459ec678f3e157f7051a8b470e8ab8fd43",
+  "sampleIdenticalBeforeFirstOrgan": true,
+  "truePeakDbfs": -15.05,
+  "integratedLUFS": -29.48,
+  "clippedSamples": 0,
+  "previewFilename": "Open-40dc1965-Organ-Comparison-g27-then-g28.wav",
+  "previewDurationSeconds": 102,
+  "previewOldStart": 0,
+  "previewNewStart": 52,
+  "organEntriesInPreviewSeconds": [
+    10,
+    62
+  ],
+  "returningBellsInPreviewSeconds": [
+    34,
+    86
+  ],
+  "previewLevelAdjustmentDb": 0,
+  "boundaryFadesMilliseconds": 20
+}

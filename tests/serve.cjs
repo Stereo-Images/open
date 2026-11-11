@@ -6,7 +6,8 @@ const root = path.resolve(__dirname, '..');
 const files = new Map([
   ['/index.html', 'text/html'], ['/player.html', 'text/html'],
   ['/favicon.svg', 'image/svg+xml'],
-  ['/player.js', 'text/javascript'], ['/wav-worker.js', 'text/javascript'], ['/style.css', 'text/css']
+  ['/player.js', 'text/javascript'], ['/wav-worker.js', 'text/javascript'], ['/style.css', 'text/css'],
+  ['/studies/g29/deliverables/Open-g29-Sixteen-New-Studies.html', 'text/html']
 ]);
 http.createServer((req, res) => {
   const pathname = new URL(req.url, 'http://localhost').pathname;

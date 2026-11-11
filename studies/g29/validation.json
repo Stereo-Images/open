@@ -1,0 +1,22 @@
+{
+  "legacyChecks": 128,
+  "legacyDspUnchanged": true,
+  "longChecks": 63,
+  "interludeNotes": 2233,
+  "shortChecks": 3,
+  "infiniteChecks": 3,
+  "bellAndBackgroundRecipesUnchanged": true,
+  "harmonyTimingAndEndingsUnchanged": true,
+  "minimumDryGapSeconds": 4.999999999999943,
+  "sourcePitchModulation": false,
+  "chorusDelayModulation": true,
+  "feedback": 0.1,
+  "chorusRatesHz": [
+    0.06,
+    0.08
+  ],
+  "tremolo": false,
+  "percussion": false,
+  "rotary": false,
+  "symmetryProposalImplemented": false
+}

@@ -1,0 +1,16 @@
+{
+  "seed": "477805c9",
+  "engine": "24",
+  "duration": 890.5641982002193,
+  "frames": 39273882,
+  "sampleRate": 44100,
+  "renderSeconds": 67.993,
+  "peak": 0.17164401710033417,
+  "peakDb": -15.307426598693496,
+  "rms": 0.02062374129506676,
+  "nonfinite": 0,
+  "clipped": 0,
+  "pcmSha256": "fb05a7fabeff94e3f9fa39da03f2d02c6b64ff9395d5f4a08dfeb95629ea9199",
+  "playerSha256": "b3e3df74f8c62775619b738fd6d4dbc094158a24e8af9ebf3c42a592e18e2776",
+  "filename": "/workspace/scratch/0a3dc6c1f5d2/open-g24/deliverables/open-run-477805c9-study-g24-121hz-long-44100sr-1794320235484.wav"
+}

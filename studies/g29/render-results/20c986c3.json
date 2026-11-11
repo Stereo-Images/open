@@ -1,0 +1,19 @@
+{
+  "seed": "20c986c3",
+  "engine": "25",
+  "duration": 1583.9162779701644,
+  "frames": 69850708,
+  "sampleRate": 44100,
+  "renderSeconds": 119.145,
+  "peak": 0.18754446506500244,
+  "peakDb": -14.537914970142314,
+  "rms": 0.02518004183684856,
+  "nonfinite": 0,
+  "clipped": 0,
+  "pcmSha256": "d821a5a2f099e546f81e62de28c47f0a3eb627c53c20caa83cf3b7cf4945aed7",
+  "playerSha256": "87b041a4397f32a99ab5652046a4dbc4e126381edd63df3cb02d3758f3a5c175",
+  "filename": "/workspace/scratch/0a3dc6c1f5d2/open-g25/wav/reference/open-run-20c986c3-study-g25-121hz-long-44100sr-1794331441664.wav",
+  "wavSha256": "6bcc83cc8a6a482d2942c998e2e20ec0e4ffc4d44dd33ba7d7680c9be385773b",
+  "truePeakDbfs": -14.5,
+  "wavBytes": 279402876
+}

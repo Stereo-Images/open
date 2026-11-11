@@ -1,0 +1,11 @@
+{
+  "legacyComparisons": 296,
+  "g28Scores": 57,
+  "organStatements": 867,
+  "unchangedBellAndBackgroundScores": true,
+  "unchangedHarmonyAndTiming": true,
+  "mirroredOrganRecipes": true,
+  "deterministic": true,
+  "shortAndInfiniteUnchanged": true,
+  "originalG3ReplayParsed": true
+}

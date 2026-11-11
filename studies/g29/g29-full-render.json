@@ -1,0 +1,16 @@
+{
+  "seed": "40dc1965",
+  "engine": "29",
+  "duration": 1065.3062856033657,
+  "frames": 46980008,
+  "sampleRate": 44100,
+  "renderSeconds": 115.375,
+  "peak": 0.17685355246067047,
+  "peakDb": -15.047724241601955,
+  "rms": 0.023521310138456198,
+  "nonfinite": 0,
+  "clipped": 0,
+  "pcmSha256": "b7bba853061b965fb20e1f632a89842b978bc6db47564048727537e6a26539f3",
+  "playerSha256": "ab3f7dfa613798cc58650aff52c4401d42325435352cac92fa585f01b4a7cca5",
+  "filename": "/workspace/scratch/0a3dc6c1f5d2/open-g29/deliverables/open-run-40dc1965-study-g29-121hz-long-44100sr-1794342339267.wav"
+}

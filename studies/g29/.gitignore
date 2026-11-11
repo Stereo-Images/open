@@ -1,0 +1,14 @@
+checks/
+helpers/
+wav/
+__pycache__/
+*-upload-*.json
+upload-*.json
+saved-files.json
+logs/
+analysis/builder-dir.txt
+analysis/__pycache__/
+deliverables/*.zip
+deliverables/*.wav
+*.bundle
+deliverables/*.wav.json

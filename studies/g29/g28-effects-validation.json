@@ -1,0 +1,21 @@
+{
+  "independentPipeRanks": 7,
+  "chorusPan": [
+    -1,
+    1
+  ],
+  "chorusRatesHz": [
+    0.06,
+    0.08
+  ],
+  "chorusDepthSeconds": [
+    0.003,
+    -0.0034
+  ],
+  "feedback": 0.1,
+  "convolutionSeconds": 12,
+  "wetGain": 1.1,
+  "wetShelfDb": 1.5,
+  "noDuplicateRoom": true,
+  "cleanup": true
+}

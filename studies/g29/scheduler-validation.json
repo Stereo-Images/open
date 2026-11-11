@@ -1,0 +1,20 @@
+[
+  {
+    "duration": "short",
+    "nominalBpm": 14.673177807591856,
+    "bells": 22,
+    "organVoices": 0,
+    "missing": 0,
+    "duplicates": 0,
+    "slowdown": false
+  },
+  {
+    "duration": "long",
+    "nominalBpm": 14.673177807591856,
+    "bells": 77,
+    "organVoices": 28,
+    "missing": 0,
+    "duplicates": 0,
+    "slowdown": false
+  }
+]

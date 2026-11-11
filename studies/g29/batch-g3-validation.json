@@ -1,0 +1,21 @@
+{
+  "g3SampleIdentical": true,
+  "results": [
+    {
+      "seed": "0393ded7",
+      "engine": "3",
+      "duration": 85.56632370385142,
+      "frames": 3773475,
+      "sampleRate": 44100,
+      "renderSeconds": 10.029,
+      "peak": 0.17246666550636292,
+      "peakDb": -15.265896665218804,
+      "rms": 0.02528461449404094,
+      "nonfinite": 0,
+      "clipped": 0,
+      "pcmSha256": "a259348dc27fb39ca87c047d36e23d848bd35e18fce689971f799f91bd68dafa",
+      "playerSha256": "e2193a764d1b837c14768e3ee78d79d9b41879a33e0b3f69e40c7ab3edbcd0b1",
+      "filename": "checks/g29-preserved-g3.wav"
+    }
+  ]
+}

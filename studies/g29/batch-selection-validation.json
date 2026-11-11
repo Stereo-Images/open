@@ -1,0 +1,21 @@
+{
+  "newSeeds": 16,
+  "referenceSeeds": 8,
+  "randomSeeds": 8,
+  "exactSourceMotifMatch": true,
+  "sourceMotif": [
+    2,
+    4,
+    2,
+    4,
+    5,
+    7,
+    5,
+    7,
+    9,
+    7,
+    9
+  ],
+  "referenceSearchAttempts": 7141,
+  "allPreviouslyKnownSeedsExcluded": true
+}

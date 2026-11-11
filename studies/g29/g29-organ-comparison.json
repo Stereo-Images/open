@@ -1,0 +1,74 @@
+[
+  {
+    "engine": 27,
+    "interlude": 1,
+    "duration": 35.32501133786848,
+    "activeRmsDbfs": -37.04261658073584,
+    "centroidHz": 421.448593173013,
+    "energyAbove1kPercent": 0.04875146109731261,
+    "sideMidDb": 1.0573630240584866,
+    "channelCorrelation": -0.12664097324542326,
+    "integratedLUFS": -35.82,
+    "truePeakDbfs": -24.84
+  },
+  {
+    "engine": 28,
+    "interlude": 1,
+    "duration": 35.32501133786848,
+    "activeRmsDbfs": -38.43438862749026,
+    "centroidHz": 626.7845166560462,
+    "energyAbove1kPercent": 1.5596487225783313,
+    "sideMidDb": -1.4221763675556642,
+    "channelCorrelation": 0.1632615005181254,
+    "integratedLUFS": -37.25,
+    "truePeakDbfs": -25.57
+  },
+  {
+    "engine": 29,
+    "interlude": 1,
+    "duration": 35.32501133786848,
+    "activeRmsDbfs": -37.59924831290065,
+    "centroidHz": 453.24670058893327,
+    "energyAbove1kPercent": 0.05702402869108891,
+    "sideMidDb": -1.304391367160328,
+    "channelCorrelation": 0.15057510212924577,
+    "integratedLUFS": -36.45,
+    "truePeakDbfs": -24.92
+  },
+  {
+    "engine": 27,
+    "interlude": 6,
+    "duration": 79.32501133786847,
+    "activeRmsDbfs": -39.441050515237464,
+    "centroidHz": 399.78753178267004,
+    "energyAbove1kPercent": 0.37951427599853427,
+    "sideMidDb": -2.3083055182890084,
+    "channelCorrelation": 0.25969798238395997,
+    "integratedLUFS": -37.92,
+    "truePeakDbfs": -27.01
+  },
+  {
+    "engine": 28,
+    "interlude": 6,
+    "duration": 79.32501133786847,
+    "activeRmsDbfs": -38.33230511296825,
+    "centroidHz": 611.0212330406569,
+    "energyAbove1kPercent": 7.979053908194221,
+    "sideMidDb": -3.0779729847625896,
+    "channelCorrelation": 0.34268148012944677,
+    "integratedLUFS": -36.53,
+    "truePeakDbfs": -25.69
+  },
+  {
+    "engine": 29,
+    "interlude": 6,
+    "duration": 79.32501133786847,
+    "activeRmsDbfs": -37.58221906026192,
+    "centroidHz": 402.6628731675874,
+    "energyAbove1kPercent": 0.517045324112134,
+    "sideMidDb": -3.2938210376578,
+    "channelCorrelation": 0.3637279106357706,
+    "integratedLUFS": -35.93,
+    "truePeakDbfs": -25.26
+  }
+]

@@ -1,0 +1,117 @@
+{
+  "method": "First transition, last bell onset to 8 seconds after organ onset; 250 ms stereo RMS at 8 kHz. Thresholds describe measured low levels, not universal perceptual silence.",
+  "recordings": [
+    {
+      "seed": "5a99ef5c",
+      "firstStrikeToOrganSeconds": 14.0,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -52.61088943481445
+    },
+    {
+      "seed": "edb87592",
+      "firstStrikeToOrganSeconds": 6.065295059089912,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.75,
+      "rmsAtOrganOnsetDbfs": -54.4271240234375
+    },
+    {
+      "seed": "65ae8ea6",
+      "firstStrikeToOrganSeconds": 6.990578218544542,
+      "longestBelowMinus60DbfsSeconds": 1.75,
+      "longestBelowMinus55DbfsSeconds": 2.25,
+      "rmsAtOrganOnsetDbfs": -62.79334259033203
+    },
+    {
+      "seed": "eeae5400",
+      "firstStrikeToOrganSeconds": 7.530728414619226,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -54.09524917602539
+    },
+    {
+      "seed": "6ca495d8",
+      "firstStrikeToOrganSeconds": 7.066327009330202,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.25,
+      "rmsAtOrganOnsetDbfs": -49.701560974121094
+    },
+    {
+      "seed": "40dc1965",
+      "firstStrikeToOrganSeconds": 6.115173367147179,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -49.5517578125
+    },
+    {
+      "seed": "bbab7e1f",
+      "firstStrikeToOrganSeconds": 7.49045976086893,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -49.69419479370117
+    },
+    {
+      "seed": "912af832",
+      "firstStrikeToOrganSeconds": 8.971929421229262,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -47.88848876953125
+    },
+    {
+      "seed": "f80caeb9",
+      "firstStrikeToOrganSeconds": 12.550388524403942,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -47.6984748840332
+    },
+    {
+      "seed": "a5980454",
+      "firstStrikeToOrganSeconds": 14.0,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -42.11693572998047
+    },
+    {
+      "seed": "f4461735",
+      "firstStrikeToOrganSeconds": 11.692072924715447,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.5,
+      "rmsAtOrganOnsetDbfs": -57.98522186279297
+    },
+    {
+      "seed": "3e2a08d9",
+      "firstStrikeToOrganSeconds": 8.385672093258094,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.25,
+      "rmsAtOrganOnsetDbfs": -51.942115783691406
+    },
+    {
+      "seed": "be1c0950",
+      "firstStrikeToOrganSeconds": 11.76365764782635,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.0,
+      "rmsAtOrganOnsetDbfs": -51.683998107910156
+    },
+    {
+      "seed": "e9399bc9",
+      "firstStrikeToOrganSeconds": 6.0,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 0.5,
+      "rmsAtOrganOnsetDbfs": -55.335697174072266
+    },
+    {
+      "seed": "0c87d391",
+      "firstStrikeToOrganSeconds": 6.0,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 1.25,
+      "rmsAtOrganOnsetDbfs": -56.24554443359375
+    },
+    {
+      "seed": "ed842866",
+      "firstStrikeToOrganSeconds": 7.086257500463724,
+      "longestBelowMinus60DbfsSeconds": 0.0,
+      "longestBelowMinus55DbfsSeconds": 1.0,
+      "rmsAtOrganOnsetDbfs": -55.02528762817383
+    }
+  ]
+}

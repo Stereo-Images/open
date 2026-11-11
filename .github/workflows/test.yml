@@ -36,6 +36,10 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Check published engine and study scores
+        run: |
+          npm run check:player
+          npm run test:study
       - name: Load original musical baseline
         run: git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > "$RUNNER_TEMP/open-baseline.js"
       - name: Run lifecycle and audio-format regressions

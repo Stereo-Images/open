@@ -35,12 +35,14 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
       const n = { kind, gain: param(), frequency: param(), detune: param(), Q: param(),
         delayTime: param(), connections: [], disconnected: false,
         connect(to) { this.connections.push(to); }, disconnect() { this.disconnected = true; },
-        start(t) { this.startTime = t; }, stop(t) { this.stopTime = t; } };
+        start(t) { this.startTime = t; }, stop(t) { this.stopTime = t; },
+        setPeriodicWave(wave) { this.wave = wave; } };
       this.nodes.push(n); return n;
     }
     createGain() { return this.node('gain'); }
     createStereoPanner() { const n = this.node('panner'); n.pan = param(); return n; }
     createOscillator() { return this.node('oscillator'); }
+    createPeriodicWave(real, imag, options) { return { real, imag, options }; }
     createBiquadFilter() { return this.node('filter'); }
     createConvolver() { return this.node('convolver'); }
     createDelay() { return this.node('delay'); }
@@ -52,7 +54,8 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     createBuffer(channels, length, rate) {
       const data = Array.from({ length: channels }, () => new Float32Array(length));
       return { duration: length / rate, sampleRate: rate,
-        getChannelData: ch => data[ch] };
+        getChannelData: ch => data[ch],
+        copyToChannel: (samples, ch, offset = 0) => data[ch].set(samples, offset) };
     }
     resume() { this.state = 'running'; return Promise.resolve(); }
     close() { this.state = 'closed'; return Promise.resolve(); }
@@ -97,7 +100,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../player.js'), 
     terminate() { this.terminated = true; }
   }
   function element(id) {
-    if (!elements.has(id)) elements.set(id, { value: id === 'tone' ? '110' : 'infinite',
+    if (!elements.has(id)) elements.set(id, { value: id === 'tone' ? '110' : 'long',
       classList: {
         values: new Set(),
         toggle(name, on) { if (on) this.values.add(name); else this.values.delete(name); },
@@ -243,21 +246,19 @@ test('one-click Replay restores the latest score and controls during playback, a
   assert.equal(h.api.state().snapshot, null);
 });
 
-test('one-click Replay rebuilds an advanced Infinite continuation from the beginning', async () => {
+test('one-click Replay rebuilds a Long performance from its beginning', async () => {
   const h = dialHarness('121');
-  h.elements.get('songDuration').value = 'infinite';
+  h.elements.get('songDuration').value = 'long';
   await h.api.startFromUI();
   const original = h.api.state().snapshot;
   const score = JSON.stringify(original.groups);
-  const continuationTime = original.continuation.nextTime;
-  h.advance(1900);
-  assert.ok(original.continuation.nextTime > continuationTime);
+  h.advance(200);
   await h.api.replayLastPerformance();
   const replay = h.api.state().snapshot;
   assert.equal(replay.seed, original.seed);
   assert.equal(JSON.stringify(replay.groups), score);
-  assert.notEqual(replay.continuation, original.continuation);
-  assert.equal(replay.continuation.nextTime, continuationTime);
+  assert.equal(replay.continuation, null);
+  assert.equal(replay.targetDuration, original.targetDuration);
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
@@ -312,7 +313,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
   h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
   await pending;
   assert.equal(h.elements.get('exportWav').disabled, false);
-  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g3-200hz-short-48000sr-\d+\.wav$/);
+  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g21-200hz-short-48000sr-\d+\.wav$/);
   for (const value of [h.downloads[0], h.downloads[0].replace('.wav', ' (1).wav'),
     h.downloads[0].replace('.wav', ''), h.downloads[0].replace('.wav', ' (1)'), h.api.replayLink(original)]) {
     const restored = dialHarness();
@@ -322,7 +323,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
     assert.equal(snapshot.tone, 200);
     assert.equal(snapshot.duration, 'short');
     assert.equal(snapshot.sampleRate, 48000);
-    assert.equal(snapshot.engine, '3');
+    assert.equal(snapshot.engine, '21');
     assert.equal(JSON.stringify(snapshot.groups), JSON.stringify(original.groups));
     assert.equal(restored.elements.get('tone').value, '200');
     assert.equal(restored.elements.get('hzReadout').textContent, '200');
@@ -377,7 +378,7 @@ test('open endings reject unsettled harmony, unprepared sixths, leaps, and confl
   assert.equal(check(sixth, 5, false, false, [drone(-12), drone(-5)]), 'sixth');
 });
 
-test('varied seeds retain the engine-1 approach and tonic fallback without changing Infinite', () => {
+test('varied seeds retain the engine-1 approach and tonic fallback', () => {
   const h = harness(), kinds = new Set();
   for (let i = 0; i < 400; i++) {
     const seed = Math.imul(i + 1, 0x9e3779b9) >>> 0;
@@ -394,13 +395,7 @@ test('varied seeds retain the engine-1 approach and tonic fallback without chang
     assert.ok(after.exportDuration <= before.exportDuration);
   }
   assert.deepEqual([...kinds].sort(), ['fifth', 'sixth', 'tonic']);
-  for (const seed of [0, 0x0bd8aae6, 0xffffffff]) {
-    const a = h.api.createPerformance(seed, 200, 'infinite', '1');
-    const b = h.api.createPerformance(seed, 200, 'infinite', '3');
-    assert.equal(JSON.stringify(a.groups), JSON.stringify(b.groups));
-    for (let i = 0; i < 20; i++)
-      assert.equal(JSON.stringify(a.continuation.next()), JSON.stringify(b.continuation.next()));
-  }
+
 });
 
 test('legacy filenames and boundary seeds use explicit current controls', async () => {
@@ -419,7 +414,7 @@ test('legacy filenames and boundary seeds use explicit current controls', async 
     assert.equal(snapshot.seed, seed);
     assert.equal(snapshot.tone, 121);
     assert.equal(snapshot.duration, 'long');
-    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '3');
+    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '29');
     assert.match(h.elements.get('replayStatus').textContent, /selected root tone and length/);
   }
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -430,16 +425,16 @@ test('invalid replay data never interrupts or replaces a playing performance', a
   const original = h.api.state().snapshot, bus = h.api.state().bus;
   const link = h.api.replayLink(original);
   const invalid = ['', '123', '0x12345678', '123456789', 'zzzzzzzz',
-    link.replace('engine=3', 'engine=2'), link.replace('tone=155', 'tone=201'),
+    link.replace(/engine=\d+/, 'engine=2'), link.replace('tone=155', 'tone=201'),
     link.replace('tone=155', 'tone=109'), link.replace('tone=155', 'tone=121.5'),
-    link.replace('length=short', 'length=300'), link.replace('rate=44100', 'rate=NaN'),
+    link.replace('length=short', 'length=300'), link.replace('length=short', 'length=infinite'), link.replace('rate=44100', 'rate=NaN'),
     link.replace('rate=44100', 'rate=0'), link.replace('&rate=44100', ''),
     link + '&seed=00000000', 'https://[invalid/',
     'open-run-00003039-abc-g2-155hz-short-44100sr-123.wav',
     'open-run-00003039-abc-g2-155hz-short-44100sr-123',
-    'open-run-00003039-abc-g1-155hz-short-44100sr-123.mp3',
+    'open-run-00003039-abc-g1-155hz-short-44100sr-123.aiff',
     'open-run-00003039-abc-g1-155hz-short-44100sr-123.wav.bak',
-    'open-run-d1a0b62b-muyo9xsw-1791411784126.mp3'];
+    'open-run-d1a0b62b-muyo9xsw-1791411784126.aiff'];
   for (const input of invalid) {
     h.elements.get('replayInput').value = input;
     await h.api.replayFromUI();
@@ -520,8 +515,8 @@ test('dial restores the saved frequency, accessible text, and marker', () => {
   assert.equal(h.saved.length, 0);
 });
 
-test('legacy duration settings migrate to the three current lengths', () => {
-  for (const [saved, expected] of [['60', 'short'], ['300', 'short'], ['600', 'long'], ['1800', 'long']]) {
+test('legacy duration settings migrate to Short or Long', () => {
+  for (const [saved, expected] of [['60', 'short'], ['300', 'short'], ['600', 'long'], ['1800', 'long'], ['infinite', 'short']]) {
     const h = harness();
     h.sandbox.localStorage.getItem = () => JSON.stringify({ songDuration: saved });
     h.sandbox.document.dispatch('DOMContentLoaded');
@@ -787,16 +782,19 @@ test('an older rejected resume cannot stop a newer successful Play', async () =>
   assert.equal(h.api.state().bus, current); assert.equal(h.api.state().isPlaying, true);
 });
 
-test('two simulated hours keep voice references bounded and preserve the shared reverb', async () => {
-  const h = harness(); await h.api.startFromUI(); const bus = h.api.state().bus;
+test('a complete Long performance releases every voice and its shared reverb', async () => {
+  const h = harness(); await h.api.startFromUI();
+  const bus = h.api.state().bus, snapshot = h.api.state().snapshot;
   let peak = 0;
-  for (let minute = 0; minute < 120; minute++) {
+  for (let second = 0; second <= snapshot.exportDuration + 60; second += 60) {
     h.advance(60); peak = Math.max(peak, h.api.state().nodes);
-    assert.ok(h.api.state().nodes < 150);
+    assert.ok(h.api.state().nodes < 1000);
   }
-  assert.ok(peak > 0); assert.equal(bus.reverbNode.disconnected, false);
-  assert.ok(h.contexts[0].nodes.filter(n => n.kind === 'oscillator' && n.disconnected).length > 1000);
-  h.api.stopAllManual(true); assert.equal(h.api.state().nodes, 0);
+  assert.ok(peak > 0);
+  assert.equal(h.api.state().isPlaying, false);
+  assert.equal(h.api.state().nodes, 0);
+  assert.equal(bus.reverbNode.disconnected, true);
+  assert.equal(h.api.state().snapshot, snapshot);
 });
 
 test('natural cleanup waits for the longest voice, reverb, and audio clock; recording finishes', () => {
@@ -879,7 +877,8 @@ test('live voice parameters and timing match the original source for ten minutes
   const original = process.env.OPEN_BASELINE;
   if (!original) { t.skip('Set OPEN_BASELINE to an original player.js for comparison'); return; }
   const a = harness(), b = harness(fs.readFileSync(original, 'utf8'));
-  await a.api.startFromUI(); await b.api.startFromUI();
+  a.sandbox.document.getElementById('replayInput').value = 'open-run-00003039-baseline-g1-110hz-long-44100sr-1.wav';
+  await a.api.replayFromUI(); await b.api.startFromUI();
   const origin = a.api.state().bus.origin;
   a.advance(602); b.advance(602);
   // Compare the first ten musical minutes, excluding the scheduler lookahead.
@@ -959,17 +958,16 @@ test('export preserves the last run after Stop, changed controls, and a replacem
   h.contexts[2].reject(Error('test')); await second;
 });
 
-test('Infinite exports its fixed first 30 minutes and keeps only bounded playback state', async () => {
+test('Long exports remain identical after natural completion', async () => {
   const h = harness(); await h.api.startFromUI();
   const snapshot = h.api.state().snapshot;
-  const groupCount = snapshot.groups.length;
-  assert.ok(groupCount < 500);
-  assert.ok(snapshot.groups.every(g => g.time < 1800 && !g.ending));
+  assert.equal(snapshot.continuation, null);
+  assert.equal(snapshot.groups.at(-1).ending, true);
   const first = h.api.renderWavExport(); const expected = voiceControls(h.contexts[1]);
-  h.advance(7200);
-  assert.equal(h.api.state().isPlaying, true);
-  assert.ok(h.api.state().nodes < 150);
-  assert.equal(snapshot.groups.length, groupCount);
+  h.advance(snapshot.exportDuration + 1);
+  assert.equal(h.api.state().isPlaying, false);
+  assert.equal(h.api.state().nodes, 0);
+  assert.equal(h.api.state().snapshot, snapshot);
   h.contexts[1].reject(Error('test')); await first;
   const second = h.api.renderWavExport();
   assert.deepEqual(voiceControls(h.contexts[2]), expected);
@@ -1098,7 +1096,7 @@ test('a stalled encoder times out, leaves playback running, and allows export re
   const pending = h.api.renderWavExport();
   h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
   await new Promise(resolve => setImmediate(resolve));
-  h.elements.get('songDuration').value = 'infinite';
+  h.elements.get('songDuration').value = 'long';
   h.sandbox.document.hidden = true; h.advance(120);
   assert.equal(worker.terminated, undefined);
   h.sandbox.document.hidden = false; h.advance(31); await pending;
@@ -1209,7 +1207,7 @@ test('each bell owns one chance-driven trajectory shared by its partials and bot
 });
 
 test('offline note panners follow note starts and release after render failure', async () => {
-  const h = harness(); await h.api.startFromUI(); h.elements.get('songDuration').value = 'short';
+  const h = harness(); h.sandbox.document.getElementById('songDuration').value = 'short'; await h.api.startFromUI();
   const pending = h.api.renderWavExport(); const ctx = h.contexts[1];
   const pans = ctx.nodes.filter(n => n.kind === 'panner');
   assert.ok(pans.length > 2);

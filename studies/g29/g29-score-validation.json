@@ -1,0 +1,12 @@
+{
+  "legacyScoreComparisons": 208,
+  "g29Scores": 57,
+  "organStatements": 867,
+  "g27FiltersExact": true,
+  "g28PipeRecipesExact": true,
+  "bellsAndBackgroundExact": true,
+  "harmonyAndTimingExact": true,
+  "mirroredOrganRecipes": true,
+  "shortUnchanged": true,
+  "deterministic": true
+}
