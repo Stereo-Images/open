@@ -90,6 +90,7 @@
   const SPECTRAL_ORGAN_ENGINE = "29";
   const SUSPENDED_ORGAN_ENGINE = "30";
   const INHERITED_OPENING_ENGINE = "31";
+  const GENTLER_OPENING_ENGINE = "32";
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
   const G21_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true});
@@ -113,7 +114,7 @@
     grainRanges: Object.freeze([[0.08, 0.11], [0.10, 0.13], [0.12, 0.15]].map(Object.freeze)),
     positionMin: 8, positionMax: 11, sprayMin: 0.015, sprayMax: 0.035
   });
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE]);
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
@@ -133,7 +134,7 @@
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (!["short", "long"].includes(record.duration))
       throw new Error("The replay length must be short or long.");
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE].includes(record.engine) && record.duration !== "long")
+    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(record.engine) && record.duration !== "long")
       throw new Error("This saved performance requires Long. Check its original replay link or filename.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
@@ -2778,12 +2779,25 @@
   // Explicit replay family: retain the original 08b0195e opening, including
   // accompaniment and stereo recipes, before a new suspended-organ study.
   // This path is never selected by Play's default duration controls.
-  function createInheritedOpeningGenerator(seed, baseFreq, duration) {
+  function createInheritedOpeningGenerator(seed, baseFreq, duration, softenTritone = false) {
     const parentSeed = 0x08b0195e, throughSeconds = 120;
     const parent = createPerformanceGenerator(parentSeed, baseFreq, Infinity, "3");
     const groups = [];
     while (parent.nextTime <= throughSeconds) groups.push(parent.next());
     const prefix = groups.flatMap(group => group.notes);
+    let adjustment = null;
+    if (softenTritone) {
+      const bells = prefix.filter(note => note.kind === 'bell');
+      const note = bells[22], previous = bells[21];
+      if (Math.abs(Math.round(12 * Math.log2(note.freq / previous.freq))) === 6) {
+        const originalFrequency = note.freq, frequency = originalFrequency / 2 ** (1 / 12);
+        const shift = frequency - originalFrequency;
+        note.freq = frequency;
+        note.voices = note.voices.map(voice => ({...voice, frequency: voice.frequency + shift}));
+        adjustment = {strike: 23, time: note.time, originalFrequency, frequency,
+          semitoneShift: -1, reason: 'replace-tritone-landing'};
+      }
+    }
     const offset = Math.max(throughSeconds, ...prefix.map(note => note.time + note.duration)) + 2 - .05;
     const body = createSpectralOrganGenerator(seed, baseFreq, duration - offset, true,
       {maximumDurationSeconds: 1800 - offset});
@@ -2793,7 +2807,8 @@
     study.form = 'inherited-opening-and-nested-mirror';
     study.inheritedOpening = {seed: seedHex(parentSeed), engine: '3', throughSeconds,
       bellCount: prefix.filter(note => note.kind === 'bell').length,
-      nextOriginalStrikeTime: parent.nextTime, bodyStartSeconds: offset + .05};
+      nextOriginalStrikeTime: parent.nextTime, bodyStartSeconds: offset + .05,
+      ...(adjustment ? {adjustment} : {})};
     for (const key of ['start', 'end', 'midpoint']) study.mirror[key] += offset;
     for (const pass of study.mirror.passes) {
       for (const key of ['start', 'end', 'bellDirectEnd']) if (key in pass) pass[key] += offset;
@@ -2812,13 +2827,13 @@
 
   function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput)) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE].includes(engine) && durationInput !== "long")
+    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
     // Engine 18 changes Long's pitch repetition and phrase-boundary ending.
     // Short and every explicit legacy version retain their old paths.
-    const generator = engine === INHERITED_OPENING_ENGINE
-      ? createInheritedOpeningGenerator(seed, tone, duration)
+    const generator = [INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine)
+      ? createInheritedOpeningGenerator(seed, tone, duration, engine === GENTLER_OPENING_ENGINE)
       : [SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE].includes(engine)
       ? (durationInput === "long" ? createSpectralOrganGenerator(seed, tone, duration, engine === SUSPENDED_ORGAN_ENGINE)
         : createFixedWalkGenerator(seed, tone, duration, G21_OPTIONS))
@@ -2903,13 +2918,13 @@
       seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
       ...(generator.audioSeed !== undefined ? {audioSeed: generator.audioSeed} : {}),
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
-      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE].includes(engine) ? {tempo: Object.freeze({nominalBpm: (generator.continuationDensity ?? generator.density) * 60,
+      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) ? {tempo: Object.freeze({nominalBpm: (generator.continuationDensity ?? generator.density) * 60,
         lowerBpm: 3, upperBpm: engine === SWEPT_INTERLUDE_ENGINE ? 63 : 15,
         minimumStrikeInterval: engine === SWEPT_INTERLUDE_ENGINE ? 60 / 63 : 4})} : {}),
       ...(generator.study ? { study: generator.study } : {}),
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
-      exportDuration: ([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE].includes(engine) && durationInput === "long"
+      exportDuration: ([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) && durationInput === "long"
         ? lastVoiceEnd : Math.max(duration, lastVoiceEnd))
         + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25,
       continuation: null

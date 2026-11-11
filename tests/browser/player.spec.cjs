@@ -131,7 +131,7 @@ test('the new related study replays and shares its inherited opening settings', 
   await page.locator('#stop').click();
   await page.locator('#copyReplay').click();
   const replay = new URL(await page.locator('#replayLink').inputValue());
-  expect(replay.searchParams.get('engine')).toBe('31');
+  expect(replay.searchParams.get('engine')).toBe('32');
   expect(replay.searchParams.get('length')).toBe('long');
   expect(replay.searchParams.get('rate')).toBe('44100');
 });

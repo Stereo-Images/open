@@ -21,7 +21,7 @@ while(related.length<8){
   if(attempts>1000000)throw Error('Motif search exceeded limit');
 }
 const independent=Array.from({length:8},draw),recordings=[];
-for(const [batch,seeds,engine] of [['reference',related,'31'],['random',independent,'30']])for(let i=0;i<8;i++){
+for(const [batch,seeds,engine] of [['reference',related,'32'],['random',independent,'30']])for(let i=0;i<8;i++){
   const seed=seeds[i],score=h.api.createPerformance(parseInt(seed,16),121,'long',engine);
   const bells=score.groups.flatMap(g=>g.notes).filter(n=>n.kind==='bell');
   const replayFilename=`open-run-${seed}-study-g${engine}-121hz-long-44100sr-${Date.now()+i}.wav`;
@@ -38,6 +38,6 @@ for(const [batch,seeds,engine] of [['reference',related,'31'],['random',independ
 }
 fs.writeFileSync(path.join(dir,'manifest.json'),JSON.stringify({created:new Date().toISOString(),referenceSeed:'08b0195e',
   referenceEngine:'3',rootHz:121,referenceThroughSeconds:120,referenceBellCount:28,
-  relatedSelection:'Eight random seeds matching the original eleven-note motif, with the original two-minute opening inherited verbatim',
+  relatedSelection:'Eight random seeds matching the original eleven-note motif, with the original two-minute opening except the tritone landing lowered one semitone',
   randomSelection:'Eight unconditioned random draws; no pitch, tempo, duration or timbre filtering',
   referenceSearchAttempts:attempts,playerSha256:crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,'../player.js'))).digest('hex'),recordings},null,2));

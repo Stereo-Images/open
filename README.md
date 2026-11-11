@@ -78,7 +78,7 @@ Open **Revisit** below the playback buttons to load an earlier performance, shar
 
 Keep the complete replay link or original export filename: it preserves the planned notes, timing, FM voices, and stereo movement. A seed alone is not a complete record of a performance, and older filenames may omit settings that cannot be recovered automatically. Unsupported replay settings are explained when you try to load them. Open does not reconstruct a seed from an audio recording.
 
-The Long Studies collection includes eight variations that preserve the opening two minutes of 08b0195e before developing its source melody. Their complete replay links or filenames also preserve this shared opening. Ordinary new performances continue to use their own seed from the beginning.
+The Long Studies collection includes eight variations that preserve the opening two minutes of 08b0195e before developing its source melody, with one deliberate change: the tritone landing at 1:35 is lowered a semitone to make a perfect-fourth leap. Their complete replay links or filenames preserve this shared opening. Ordinary new performances continue to use their own seed from the beginning.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 

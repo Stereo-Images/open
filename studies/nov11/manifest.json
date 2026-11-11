@@ -5,16 +5,16 @@
   "rootHz": 121,
   "referenceThroughSeconds": 120,
   "referenceBellCount": 28,
-  "relatedSelection": "Eight random seeds matching the original eleven-note motif, with the original two-minute opening inherited verbatim",
+  "relatedSelection": "Eight random seeds matching the original eleven-note motif; inherited opening through 2:00 except strike 23 lowered one semitone to replace its tritone leap with a perfect fourth",
   "randomSelection": "Eight unconditioned random draws; no pitch, tempo, duration or timbre filtering",
   "referenceSearchAttempts": 10329,
-  "playerSha256": "6dc126672245b1258e9d548a66ab7edd33f558fb8dfc59fcf5a70b3334622cb6",
+  "playerSha256": "985cd3b14d309893549e3e016301a3cb14e7074d42098700b002709a23604490",
   "recordings": [
     {
       "batch": "reference",
       "number": 1,
       "seed": "d4030604",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -68,22 +68,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-d4030604-study-g31-121hz-long-44100sr-1794379416209.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=d4030604&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-d4030604-study-g32-121hz-long-44100sr-1794379416209.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=d4030604&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 2,
       "seed": "5e350109",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -137,22 +145,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-5e350109-study-g31-121hz-long-44100sr-1794379416302.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=5e350109&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-5e350109-study-g32-121hz-long-44100sr-1794379416302.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=5e350109&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 3,
       "seed": "9e98b56d",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -202,22 +218,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-9e98b56d-study-g31-121hz-long-44100sr-1794379416354.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=9e98b56d&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-9e98b56d-study-g32-121hz-long-44100sr-1794379416354.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=9e98b56d&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 4,
       "seed": "a06b094d",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -267,22 +291,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-a06b094d-study-g31-121hz-long-44100sr-1794379416408.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=a06b094d&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-a06b094d-study-g32-121hz-long-44100sr-1794379416408.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=a06b094d&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 5,
       "seed": "4eb4023d",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -332,22 +364,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-4eb4023d-study-g31-121hz-long-44100sr-1794379416452.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=4eb4023d&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-4eb4023d-study-g32-121hz-long-44100sr-1794379416452.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=4eb4023d&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 6,
       "seed": "6d12dcc9",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -397,22 +437,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-6d12dcc9-study-g31-121hz-long-44100sr-1794379416505.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=6d12dcc9&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-6d12dcc9-study-g32-121hz-long-44100sr-1794379416505.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=6d12dcc9&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 7,
       "seed": "60ccdd40",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -478,22 +526,30 @@
         1,
         0
       ],
-      "replayFilename": "open-run-60ccdd40-study-g31-121hz-long-44100sr-1794379416591.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=60ccdd40&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-60ccdd40-study-g32-121hz-long-44100sr-1794379416591.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=60ccdd40&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
       "batch": "reference",
       "number": 8,
       "seed": "070f9ead",
-      "engine": "31",
+      "engine": "32",
       "rootHz": 121,
       "sampleRate": 44100,
       "duration": "long",
@@ -543,15 +599,23 @@
         1,
         0
       ],
-      "replayFilename": "open-run-070f9ead-study-g31-121hz-long-44100sr-1794379416658.wav",
-      "replayLink": "https://stereo-images.github.io/open/player.html?seed=070f9ead&tone=121&length=long&engine=31&rate=44100",
+      "replayFilename": "open-run-070f9ead-study-g32-121hz-long-44100sr-1794379416658.wav",
+      "replayLink": "https://stereo-images.github.io/open/player.html?seed=070f9ead&tone=121&length=long&engine=32&rate=44100",
       "inheritedOpening": {
         "seed": "08b0195e",
         "engine": "3",
         "throughSeconds": 120,
         "bellCount": 28,
         "nextOriginalStrikeTime": 120.33007572194911,
-        "bodyStartSeconds": 128.82105724674017
+        "bodyStartSeconds": 128.82105724674017,
+        "adjustment": {
+          "strike": 23,
+          "time": 95.17469945409798,
+          "originalFrequency": 323.0312447091483,
+          "frequency": 304.9008940745593,
+          "semitoneShift": -1,
+          "reason": "replace-tritone-landing"
+        }
       }
     },
     {
@@ -1082,5 +1146,7 @@
       "replayFilename": "open-run-8f4b3c92-study-g30-121hz-long-44100sr-1794379417339.wav",
       "replayLink": "https://stereo-images.github.io/open/player.html?seed=8f4b3c92&tone=121&length=long&engine=30&rate=44100"
     }
-  ]
+  ],
+  "referenceUnchangedBellPitches": 27,
+  "openingException": "Strike 23 at 95.174699 seconds is lowered one semitone; A-sharp to E becomes A-sharp to D-sharp at this tuning (a tritone becomes a perfect fourth)."
 }

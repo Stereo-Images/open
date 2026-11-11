@@ -42,3 +42,28 @@ test('New opening family leaves every retained version and both default modes un
     }
   }
 });
+
+test('Gentler opening changes only the tritone landing pitch while preserving timing, detuning and the entire continuation',()=>{
+  const {api}=harness();
+  for(const seed of [0xd4030604,0x5e350109,0x9e98b56d,0xa06b094d,0x4eb4023d,0x6d12dcc9,0x60ccdd40,0x070f9ead]){
+    const original=api.createPerformance(seed,121,'long','31');
+    const current=api.createPerformance(seed,121,'long','32');
+    const before=plain(original.groups),after=plain(current.groups);
+    const bells=after.flatMap(g=>g.notes).filter(n=>n.kind==='bell');
+    const change=current.study.inheritedOpening.adjustment;
+    assert.equal(change.strike,23);
+    assert.ok(change.time>95&&change.time<96);
+    assert.equal(Math.round(12*Math.log2(bells[22].freq/bells[21].freq)),5);
+    assert.ok(Math.abs(bells[22].freq-bells[23].freq)<1e-9);
+    assert.ok(bells.slice(1).every((n,i)=>Math.abs(Math.round(12*Math.log2(n.freq/bells[i].freq)))!==6));
+    const changed=after.flatMap(g=>g.notes).find(n=>n.kind==='bell'&&n.time===change.time);
+    const old=before.flatMap(g=>g.notes).find(n=>n.kind==='bell'&&n.time===change.time);
+    const shift=changed.freq-old.freq;
+    changed.voices.forEach((v,i)=>assert.ok(Math.abs((v.frequency-old.voices[i].frequency)-shift)<1e-9));
+    changed.freq=old.freq;changed.voices.forEach((v,i)=>v.frequency=old.voices[i].frequency);
+    assert.deepEqual(after,before);
+    assert.equal(current.exportDuration,original.exportDuration);
+    const record=api.parseReplayInput(api.replayLink({seed,tone:121,duration:'long',engine:'32',sampleRate:44100}));
+    assert.equal(record.engine,'32');
+  }
+});
