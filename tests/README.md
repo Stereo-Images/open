@@ -27,7 +27,7 @@ OPEN_BASELINE=/tmp/open-baseline.js npm test
 
 The comparison explicitly requests engine 1 and Long duration. It compares the first ten minutes of the original musical and spatial control data. Without `OPEN_BASELINE`, only that optional historical comparison is skipped.
 
-`test:study` verifies 208 historical Short/Long scores, 57 g29 parameter fixtures, organ chorus/room wiring, 216 additional preserved-version comparisons and all sixteen saved Long-study scores. The study checks also exercise mirrored melodies, contextual organ chords, gains, timing, ending behavior and deterministic replay.
+`test:study` verifies 208 historical Short/Long scores, 57 g29 parameter fixtures, organ chorus/room wiring, 216 additional preserved-version comparisons and all sixteen saved Long-study scores. The study checks also exercise mirrored melodies, contextual organ chords, gains, timing, ending behavior and deterministic replay. Archived-score comparisons allow at most eight machine epsilons of relative floating-point roundoff between JavaScript versions; structure and integer choices remain exact. Same-runtime determinism checks remain strict.
 
 ## Native browser checks
 

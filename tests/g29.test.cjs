@@ -4,6 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {spawnSync}=require('node:child_process');
 const {harness}=require('../studies/g29/harness.cjs');
+const {assertSavedScoreEqual}=require('../studies/g29/score-check.cjs');
 const root=path.resolve(__dirname,'..');
 const source=fs.readFileSync(path.join(root,'player.js'),'utf8');
 const plain=value=>JSON.parse(JSON.stringify(value));
@@ -21,7 +22,14 @@ test('published Long player reproduces all sixteen saved g29 scores',()=>{
     assert.equal(replay.engine,'29');
     const actual=h.api.createPerformance(replay.seed,replay.tone,replay.duration,replay.engine);
     const expected=JSON.parse(fs.readFileSync(path.join(root,'studies/g29/scores',row.seed+'.json')));
-    assert.deepEqual(plain(actual),expected,row.seed);
+    assertSavedScoreEqual(plain(actual),expected,row.seed);
+  }
+});
+
+test('saved-score checks tolerate only machine roundoff and detect musical changes',()=>{
+  assertSavedScoreEqual({pitch:[242]}, {pitch:[241.99999999999997]});
+  for(const changed of [{pitch:[242.000001]},{pitch:[243]},{pitch:[242,242]},{pitch:[242],extra:true},{pitch:[NaN]}]){
+    assert.throws(()=>assertSavedScoreEqual(changed,{pitch:[242]}));
   }
 });
 

@@ -97,5 +97,6 @@
   "g28-audio-validation.json",
   "scheduler-check.cjs",
   "refresh-scores.cjs",
-  "zip-wavs.py"
+  "zip-wavs.py",
+  "score-check.cjs"
 ]

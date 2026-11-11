@@ -3,6 +3,7 @@
   "htmlSha256": "e2193a764d1b837c14768e3ee78d79d9b41879a33e0b3f69e40c7ab3edbcd0b1",
   "seedOptions": 16,
   "batches": 2,
-  "allReplayScoresExact": true,
+  "allReplayScoresMatch": true,
+  "floatingToleranceEpsilons": 8,
   "preservedShortStudyShortcut": true
 }
