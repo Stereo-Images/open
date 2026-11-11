@@ -26,9 +26,11 @@ git show ec968f765c16837b29324fa6437cb012d39f1918:player.js > /tmp/open-release-
 git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > /tmp/open-original-baseline.js
 OPEN_BASELINE=/tmp/open-original-baseline.js npm test
 OPEN_RELEASE_BASELINE=/tmp/open-release-baseline.js npm run test:study
+git show da8aded3b9c871a8473d74fc4ed08ad1a00098fc:player.js > /tmp/open-fm-baseline.js
+OPEN_FM_BASELINE=/tmp/open-fm-baseline.js node --test tests/fm.test.cjs
 ```
 
-CI runs both baseline comparisons. The release comparison covers 216 saved-version Short/Long plans and four Short defaults. Without the corresponding environment variables, only those optional historical comparisons are skipped.
+CI runs both baseline comparisons. The release comparison covers 216 saved-version Short/Long plans and four former Short defaults, explicitly pinned to their original recipe. Without the corresponding environment variables, only those optional historical comparisons are skipped. The selective FM tests also check that new Short and Long plans preserve every non-FM field, reproduce the approved reference recipe, and retain deterministic replay. See [the timbre rule](../docs/slow-beating-fm.md) for its scope and audition limits.
 
 ## Native browser checks
 
@@ -52,7 +54,7 @@ node tools/render-study.cjs bf187689
 
 The renderer reads `player.js` and the approved study manifest directly. Pass any of the sixteen study seeds; the WAV and render report are written under the ignored `checks/` directory with the manifest's complete replay filename. Repeat the command for each desired study. The timestamp in the filename does not add randomness.
 
-`test:audio` preserves the original `0393ded7` Short Study at 200 Hz and 44.1 kHz: 3,773,475 frames and floating-PCM SHA-256 `a259348dc27fb39ca87c047d36e23d848bd35e18fce689971f799f91bd68dafa` on the retained native backend. It also checks repeated Long organ audio and the room tail. With `OPEN_RELEASE_BASELINE` set, it compares the organ samples with the pre-consolidation player.
+`test:audio` preserves the original `0393ded7` Short Study at 200 Hz and 44.1 kHz: 3,773,475 frames and floating-PCM SHA-256 `a259348dc27fb39ca87c047d36e23d848bd35e18fce689971f799f91bd68dafa` on the retained native backend, with and without selective FM refinement. It checks that the reference Long excerpt changes only after its first targeted strike, and checks repeated Long organ audio and the room tail. With `OPEN_RELEASE_BASELINE` set, it compares the organ samples with the pre-consolidation player.
 
 ## Saved performances and archive
 
@@ -61,3 +63,4 @@ Internal replay identifiers remain in links, filenames and score data so existin
 Short and Long are the only duration modes. Stored Infinite preferences reset to Short; Infinite replay requests are rejected. Internal unbounded generator calls assemble finite melodies and do not provide an Infinite playback mode.
 
 The approved [manifest and scores](../studies/g29) remain in the main branch. Earlier players, analyses, workbooks and development scripts are preserved on the [archive branch](https://github.com/Stereo-Images/open/tree/archive/g29-development/studies/g29).
+

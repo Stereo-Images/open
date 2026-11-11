@@ -42,11 +42,14 @@ jobs:
           npm run check:player
           OPEN_RELEASE_BASELINE="$RUNNER_TEMP/open-release-baseline.js" npm run test:study
       - name: Load original musical baseline
-        run: git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > "$RUNNER_TEMP/open-baseline.js"
+        run: |
+          git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > "$RUNNER_TEMP/open-baseline.js"
+          git show da8aded3b9c871a8473d74fc4ed08ad1a00098fc:player.js > "$RUNNER_TEMP/open-fm-baseline.js"
       - name: Run lifecycle and audio-format regressions
         run: npm test
         env:
           OPEN_BASELINE: ${{ runner.temp }}/open-baseline.js
+          OPEN_FM_BASELINE: ${{ runner.temp }}/open-fm-baseline.js
       - name: Install browsers
         run: npx playwright install --with-deps --only-shell ${{ matrix.browsers }}
       - name: Provide a virtual audio output for Linux browsers
@@ -61,3 +64,4 @@ jobs:
         run: defaults write NSGlobalDomain AppleKeyboardUIMode -int 3
       - name: Run native browser checks
         run: npm run test:browser -- ${{ matrix.projects }}
+

@@ -91,6 +91,7 @@
   const SUSPENDED_ORGAN_ENGINE = "30";
   const INHERITED_OPENING_ENGINE = "31";
   const GENTLER_OPENING_ENGINE = "32";
+  const SLOW_BEATING_ENGINE = "33";
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
   const G21_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true});
@@ -114,12 +115,12 @@
     grainRanges: Object.freeze([[0.08, 0.11], [0.10, 0.13], [0.12, 0.15]].map(Object.freeze)),
     positionMin: 8, positionMax: 11, sprayMin: 0.015, sprayMax: 0.035
   });
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE]);
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SLOW_BEATING_ENGINE]);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
-  function defaultEngine(durationInput) {
-    return durationInput === "long" ? SUSPENDED_ORGAN_ENGINE : RESTORED_TEMPO_ENGINE;
+  function defaultEngine() {
+    return SLOW_BEATING_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
@@ -127,6 +128,9 @@
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
       throw new Error("This saved performance is not supported. Check that you copied the complete replay link or filename.");
+    if (record.baseEngine != null && (record.engine !== SLOW_BEATING_ENGINE
+        || record.baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(record.baseEngine)))
+      throw new Error("The saved performance's original recipe is invalid. Copy the complete replay link or filename.");
     if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
       throw new Error("Enter an eight-character hexadecimal seed.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
@@ -134,20 +138,21 @@
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (!["short", "long"].includes(record.duration))
       throw new Error("The replay length must be short or long.");
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(record.engine) && record.duration !== "long")
+    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(record.baseEngine ?? record.engine) && record.duration !== "long")
       throw new Error("This saved performance requires Long. Check its original replay link or filename.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
     return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
-      engine: record.engine, sampleRate: record.sampleRate == null ? null : sampleRate };
+      engine: record.engine, sampleRate: record.sampleRate == null ? null : sampleRate,
+      ...(record.baseEngine != null ? {baseEngine: record.baseEngine} : {}) };
   }
 
   function parseReplayQuery(params) {
     const keys = ["seed", "tone", "length", "engine", "rate"];
-    if (keys.some(key => params.getAll(key).length !== 1))
+    if (keys.some(key => params.getAll(key).length !== 1) || params.getAll("base").length > 1)
       throw new Error("The replay link is incomplete or contains duplicate settings. Copy the complete original link.");
     return validateReplay({ seed: params.get("seed"), tone: params.get("tone"),
-      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate") });
+      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate"), baseEngine: params.get("base") });
   }
 
   function parseReplayInput(value) {
@@ -159,9 +164,9 @@
     }
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
-    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
-    if (file) return validateReplay({ seed: file[1], engine: file[2], tone: file[3],
-      duration: file[4].toLowerCase(), sampleRate: file[5] });
+    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
+    if (file) return validateReplay({ seed: file[1], engine: file[2], baseEngine: file[3], tone: file[4],
+      duration: file[5].toLowerCase(), sampleRate: file[6] });
     const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
     const seed = legacy ? legacy[1] : input;
     if (!/^[0-9a-f]{8}$/i.test(seed))
@@ -176,12 +181,14 @@
   function replayLink(snapshot) {
     const url = new URL(playerPageUrl);
     url.search = new URLSearchParams({ seed: seedHex(snapshot.seed), tone: String(snapshot.tone),
-      length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate) }).toString();
+      length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate),
+      ...(snapshot.baseEngine != null ? {base: snapshot.baseEngine} : {}) }).toString();
     return url.href;
   }
 
   function exportFilename(snapshot, timestamp) {
-    return `open-run-${snapshot.runId}-g${snapshot.engine}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr-${timestamp}.wav`;
+    const base = snapshot.baseEngine != null ? `-b${snapshot.baseEngine}` : "";
+    return `open-run-${snapshot.runId}-g${snapshot.engine}${base}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr-${timestamp}.wav`;
   }
 
   function replayStatus(message) {
@@ -206,10 +213,10 @@
 
   async function replayLastPerformance() {
     if (disposed || !sessionSnapshot) return;
-    const { seed, tone, duration, sampleRate, engine } = sessionSnapshot;
+    const { seed, tone, duration, sampleRate, engine, baseEngine } = sessionSnapshot;
     // Rebuild from the saved settings and seed. Edited controls and the
     // Revisit field belong to other runs.
-    return startPerformance({ seed, tone, duration, sampleRate, engine });
+    return startPerformance({ seed, tone, duration, sampleRate, engine, baseEngine });
   }
 
   async function copyReplayLink() {
@@ -234,7 +241,7 @@
 
   function loadReplayLink() {
     const params = new URLSearchParams(window.location.search);
-    if (!["seed", "tone", "length", "engine", "rate"].some(key => params.has(key))) return;
+    if (!["seed", "tone", "length", "engine", "rate", "base"].some(key => params.has(key))) return;
     $("revisit").open = true;
     $("replayInput").value = window.location.href;
     try {
@@ -2825,8 +2832,20 @@
       next() { return groups[position++] ?? null; }};
   }
 
-  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput)) {
+  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput), baseEngine = null) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
+    if (baseEngine != null && (engine !== SLOW_BEATING_ENGINE
+        || baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(baseEngine)))
+      throw new Error("Unsupported original performance recipe");
+    if (engine === SLOW_BEATING_ENGINE) {
+      // Rebuild the original score first. An explicit base preserves an older
+      // performance's entire form; it is never replanned with today's defaults.
+      const original = createPerformance(seed, tone, durationInput,
+        baseEngine ?? (durationInput === "long" ? SUSPENDED_ORGAN_ENGINE : RESTORED_TEMPO_ENGINE));
+      const groups = original.groups.map(group => Object.freeze({...group,
+        notes: Object.freeze(group.notes.map(refineBellFM))}));
+      return Object.freeze({...original, groups: Object.freeze(groups)});
+    }
     if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
@@ -2934,6 +2953,39 @@
   // Only plain note data is retained. Audio nodes are created near playback time.
   function choosePan(random) { return random() < 0.65 ? (random() * 2 - 1) * 0.22 : null; }
 
+  // A selective timbre rule, calibrated to listening comparison E. These are
+  // engineering thresholds for one FM pattern, not a general roughness score.
+  // The carrier and its reflected first sideband are |fm - 2*fc| Hz apart.
+  // Work on the finished plan without drawing randomness or changing pitches,
+  // timing, carrier detuning, amplitudes, decay lengths, drones or organ voices.
+  function refineBellFM(note) {
+    if (note.kind !== "bell" || !(note.totalAmp > 0)) return note;
+    const prominent = note.voices.filter(v => v.amp / note.totalAmp >= 0.10);
+    const trigger = prominent.filter(v => {
+      const gap = Math.abs(note.freq * v.modRatio - 2 * v.frequency);
+      return v.amp / note.totalAmp >= 0.20 && v.modIndex / v.modRatio >= 1.2
+        && gap >= 12 && gap <= 45;
+    }).sort((a, b) => b.amp - a.amp)[0];
+    if (!trigger) return note;
+
+    // Prefer a 2% offset from 2:1, capped at 4 Hz in the upper register. Keep
+    // every prominent layer within 6 Hz, allowing its original carrier detune.
+    const lower = Math.max(...prominent.map(v => 2 * v.frequency - 6));
+    const upper = Math.min(...prominent.map(v => 2 * v.frequency + 6));
+    if (lower > upper) return note; // Wide layers need a separate listening test.
+    const side = note.freq * trigger.modRatio < 2 * trigger.frequency ? -1 : 1;
+    const preferred = note.freq * (2 + side * Math.min(0.02, 4 / note.freq));
+    const ratio = Math.min(upper, Math.max(lower, preferred)) / note.freq;
+    const voices = note.voices.map(voice => {
+      const beta = voice.modIndex / voice.modRatio;
+      return {...voice, modRatio: ratio,
+        modIndex: (voice.amp / note.totalAmp >= 0.10 ? Math.min(beta, 1.2) : beta) * ratio,
+        // Preserve the normalized FM endpoint when changing modulator frequency.
+        terminalModIndex: (voice.terminalModIndex ?? 0.01) * (ratio / voice.modRatio)};
+    });
+    return Object.freeze({...note, voices: Object.freeze(voices.map(Object.freeze))});
+  }
+
   function planBell(freq, time, duration, volume, instability, tensionAmt, rand, spatialRandom) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
 
@@ -2997,7 +3049,7 @@
       modulator.frequency.value = freq * voice.modRatio;
 
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
+      modGain.gain.exponentialRampToValueAtTime(freq * (voice.terminalModIndex ?? 0.01), time + (duration * 0.3));
 
       ampGain.gain.setValueAtTime(0.0001, time);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
@@ -3392,13 +3444,14 @@
       tone = Math.round(Math.max(110, Math.min(200, tone)));
       const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
       const engine = replay?.engine ?? defaultEngine(duration);
-      const performance = createPerformance(seed, tone, duration, engine);
+      const baseEngine = replay?.baseEngine;
+      const performance = createPerformance(seed, tone, duration, engine, baseEngine);
       buildMixBus(performance.audioSeed ?? seed);
       setSeed(seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
       const runId = `${seedHex(seed)}-${Date.now().toString(36)}`;
       sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
-        runId, engine });
+        runId, engine, ...(baseEngine != null ? {baseEngine} : {}) });
       sharedPerformance = null;
       updateSharedControls();
       if (replay) {
@@ -3697,4 +3750,5 @@
 
 })();
 // --- END OF SCRIPT ---
+
 

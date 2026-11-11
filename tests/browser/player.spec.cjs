@@ -82,7 +82,7 @@ test('new performances retain the current engine in replay links for each length
   });
   await page.goto('/player.html');
   await expect(page.locator('#songDuration option')).toHaveCount(2);
-  for (const [length, engine] of [['long', '30'], ['short', '21']]) {
+  for (const [length, engine] of [['long', '33'], ['short', '33']]) {
     await page.locator('#songDuration').selectOption(length);
     await page.locator('#playNow').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
@@ -300,9 +300,9 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
+for (const [engine, base] of [['1', ''], ['3', ''], ['33', '21']]) test(`engine ${engine}${base ? ' based on ' + base : ''} filename recreates the same native WAV after reloading`, async ({ page }) => {
   test.setTimeout(120000);
-  await page.goto('/player.html?' + replayQuery.replace('engine=1', `engine=${engine}`));
+  await page.goto('/player.html?' + replayQuery.replace('engine=1', `engine=${engine}`) + (base ? `&base=${base}` : ''));
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
@@ -310,7 +310,7 @@ for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the s
   await page.locator('#exportWav').click();
   const first = await firstDownload;
   const filename = first.suggestedFilename();
-  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}-200hz-short-44100sr-\\d+\\.wav$`));
+  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}${base ? '-b' + base : ''}-200hz-short-44100sr-\\d+\\.wav$`));
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
   await page.locator('#revisit summary').click();
@@ -576,4 +576,5 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   const second = await fs.readFile(await (await downloading).path());
   expectMatchingWavs(first, second, 'Repeat WAV comparison');
 });
+
 

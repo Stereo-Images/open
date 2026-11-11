@@ -18,7 +18,7 @@ if(old) for(const seed of [0x0393ded7,0x6fa6f7c1,0x0b086950,0x477805c9]){
   }
  }
  for(const duration of ['short']){
-  const a=now.api.createPerformance(seed,121,duration),b=old.api.createPerformance(seed,121,duration);
+  const a=now.api.createPerformance(seed,121,duration,'21'),b=old.api.createPerformance(seed,121,duration);
   equal(a,b);equal(now.api.createPerformance(seed,121,duration,'29'),b);short++;
  }
 }
@@ -82,3 +82,4 @@ const seeds=[];
 for(const r of JSON.parse(fs.readFileSync(path.join(root,'studies/g29/manifest.json'))).recordings)seeds.push(parseInt(r.seed,16));
 const checked=[];for(const seed of new Set(seeds))for(const tone of [121])checked.push(verify(seed,tone));
 console.log(JSON.stringify({legacy,short,longScores:checked.length,notesChecked,passed:true}));
+

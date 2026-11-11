@@ -141,6 +141,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../../player.js'
     // Lazy wrappers also allow loading the original source, which predates planning.
     planDrone: (...args) => planDrone(...args), renderGroup: (...args) => renderGroup(...args),
     createPerformance: (...args) => createPerformance(...args),
+    refineBellFM: (...args) => refineBellFM(...args),
     createPerformanceGenerator: (...args) => createPerformanceGenerator(...args),
     startNewPerformance: () => startPerformance(),
     qualifiedEnding: (...args) => qualifiedEnding(...args),
@@ -171,3 +172,4 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../../player.js'
 }
 
 module.exports = { harness };
+

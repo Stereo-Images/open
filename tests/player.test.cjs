@@ -151,7 +151,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
   h.contexts[1].resolve(audioBuffer([new Float32Array(4)]));
   await pending;
   assert.equal(h.elements.get('exportWav').disabled, false);
-  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g21-200hz-short-48000sr-\d+\.wav$/);
+  assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g33-200hz-short-48000sr-\d+\.wav$/);
   for (const value of [h.downloads[0], h.downloads[0].replace('.wav', ' (1).wav'),
     h.downloads[0].replace('.wav', ''), h.downloads[0].replace('.wav', ' (1)'), h.api.replayLink(original)]) {
     const restored = dialHarness();
@@ -161,7 +161,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
     assert.equal(snapshot.tone, 200);
     assert.equal(snapshot.duration, 'short');
     assert.equal(snapshot.sampleRate, 48000);
-    assert.equal(snapshot.engine, '21');
+    assert.equal(snapshot.engine, '33');
     assert.equal(JSON.stringify(snapshot.groups), JSON.stringify(original.groups));
     assert.equal(restored.elements.get('tone').value, '200');
     assert.equal(restored.elements.get('hzReadout').textContent, '200');
@@ -252,7 +252,7 @@ test('legacy filenames and boundary seeds use explicit current controls', async 
     assert.equal(snapshot.seed, seed);
     assert.equal(snapshot.tone, 121);
     assert.equal(snapshot.duration, 'long');
-    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '30');
+    assert.equal(snapshot.engine, input.startsWith('open-run-') ? '1' : '33');
     assert.match(h.elements.get('replayStatus').textContent, /selected root tone and length/);
   }
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -1123,3 +1123,4 @@ test('failed offline resonator setup stops partial oscillators and leaves export
   await retry;
   h.api.stopAllManual(true);
 });
+

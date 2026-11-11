@@ -12,7 +12,7 @@ test('Long suspensions preserve bells, fixed harmony, mirrored form and safe han
   const {api}=harness(source),counts={sus2:0,sus4:0,resolved:0,total:0};
   for(let i=0;i<24;i++)for(const tone of [110,121,165,200]){
     const seed=Math.imul(i+1,0x9e3779b1)>>>0;
-    const score=api.createPerformance(seed,tone,'long');
+    const score=api.createPerformance(seed,tone,'long','30');
     const old=api.createPerformance(seed,tone,'long','29');
     equal(score.groups.filter(g=>!g.interlude),old.groups.filter(g=>!g.interlude));
     equal(score.study.mirror,old.study.mirror);
@@ -78,15 +78,14 @@ test('Long suspensions preserve bells, fixed harmony, mirrored form and safe han
   assert.ok(counts.resolved>0&&counts.resolved<counts.sus2+counts.sus4,'Some resolve and some stay open');
 });
 
-test('Short is unchanged and new suspended Long performances replay deterministically',()=>{
+test('saved suspension recipes preserve Short and replay Long deterministically',()=>{
   const {api}=harness(source);
   for(const seed of [0,0x0393ded7,0x0b086950,0xffffffff])for(const tone of [110,121,165,200]){
     const short=api.createPerformance(seed,tone,'short','21');
-    equal(short,api.createPerformance(seed,tone,'short'));
     equal(short,api.createPerformance(seed,tone,'short','30'));
   }
   const snapshot={seed:0x8ff34739,tone:110,duration:'long',engine:'30',sampleRate:44100};
-  const original=api.createPerformance(snapshot.seed,snapshot.tone,snapshot.duration);
+  const original=api.createPerformance(snapshot.seed,snapshot.tone,snapshot.duration,snapshot.engine);
   const link=api.replayLink(snapshot),record=api.parseReplayInput(link);
   equal(record,snapshot);
   equal(original,api.createPerformance(record.seed,record.tone,record.duration,record.engine));
@@ -123,3 +122,4 @@ test('a resolving organ voice crossfades fixed pitches through one shared chorus
   fx.dispose(ctx);
   assert.ok(ctx.nodes.filter(n=>n!==out).every(n=>n.disconnected));
 });
+

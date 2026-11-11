@@ -1,7 +1,7 @@
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto'),assert=require('node:assert/strict');
 const {harness}=require('../tests/support/harness.cjs');
 const root=path.resolve(__dirname,'..'),dir=path.join(root,'studies/g29');
-async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',duration='long',tone=121,filename,mode='full',interludeIndex=1}){
+async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',baseEngine,duration='long',tone=121,filename,mode='full',interludeIndex=1}){
  // Native audio handles need explicit collection between offline segments;
  // otherwise ended panners can accumulate during very dense, long studies.
  if(!global.gc){require('node:v8').setFlagsFromString('--expose_gc');global.gc=require('node:vm').runInNewContext('gc');}
@@ -43,7 +43,7 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',d
   }
   return await running;
  };
- let score=h.api.createPerformance(parseInt(seed,16),tone,duration,engine),tailStartsAt=27,lateTailStartsAt=27;
+ let score=h.api.createPerformance(parseInt(seed,16),tone,duration,engine,baseEngine),tailStartsAt=27,lateTailStartsAt=27;
  if(mode==='prefix')score={...score,groups:score.groups.filter(g=>g.time<120),exportDuration:120};
  if(mode==='background'){
   const source=score.groups.find(g=>g.background),start=source.time;
@@ -83,7 +83,7 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',d
    fs.writeSync(file,pcm,0,count*4);
   }
   fs.closeSync(file);
-  result={seed,engine,duration:score.exportDuration,frames,sampleRate:rate,renderSeconds:(Date.now()-start)/1000,
+  result={seed,engine,...(baseEngine!=null?{baseEngine}:{}),duration:score.exportDuration,frames,sampleRate:rate,renderSeconds:(Date.now()-start)/1000,
    peak,peakDb:20*Math.log10(peak),rms:Math.sqrt(energy/(frames*2)),nonfinite,clipped,
    pcmSha256:hash.digest('hex'),playerSha256:crypto.createHash('sha256').update(fs.readFileSync(sourceFile)).digest('hex'),filename,
    ...(mode==='probe'?{interludeIndex,tailStartsAt,tailPeakAfterReturn:tailPeak,tailPeakFiveSecondsAfterDirectEnd:lateTailPeak}:{})};
@@ -103,4 +103,5 @@ if(require.main===module)(async()=>{
  fs.mkdirSync(path.join(root,'checks/render-results'),{recursive:true});
  fs.writeFileSync(path.join(root,'checks/render-results',seed+'.json'),JSON.stringify(result,null,2));
 })().catch(e=>{console.error(e);process.exitCode=1;});
+
 
