@@ -14,6 +14,19 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 
 
+### Open EP
+
+The planned *Open* EP pairs **Short Study** and **Long Study**, two selected recordings made with this instrument. Each captures one performance from Open's many possible unfoldings.
+
+*Release details and listening links will be added here.*
+
+| Track | Listen | Seed | Replay |
+| --- | --- | --- | --- |
+| Short Study | To be added | To be confirmed | To be added |
+| Long Study | To be added | To be confirmed | To be added |
+
+The final track notes will identify the eight-character seed that generated each performance, together with its root tone, length, WAV sample rate, and complete replay link or original export filename. These details preserve the source performance before any mastering applied to the EP.
+
 ### Musical Structure & Harmony
 
 New performances keep one six-note major collection (1–2–3–4–5–6), avoiding nominal tritone pairs and modulation. Short uses the evolving melodic walk; Long develops an eleven-note mirrored melody with repeated notes and changing FM palettes. Nominal tempo is selected by seed between 3 and 15 BPM, with at least four seconds between melody strikes.
