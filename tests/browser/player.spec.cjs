@@ -22,7 +22,7 @@ function expectMatchingWavs(first, second, label) {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    crypto.getRandomValues = array => { array[0] = 12345; return array; };
+    crypto.getRandomValues = array => { array.fill(12345); if(array.length>1)array[0]=0; return array; };
     window.audioProbe = { contexts: [], workers: 0, recorders: [], edges: [] };
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function(destination, ...args) {
@@ -74,6 +74,93 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
+test('the exact 0393ded7 saved Short Study and ordinary Short Play export the same audio', async ({ page }) => {
+  test.setTimeout(120000);
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/player.html');
+  // Compare both paths at the saved recording's rate, independent of the CI device default.
+  await page.evaluate(()=>{
+    window.AudioContext=new Proxy(window.AudioContext,{
+      construct(Target,args){return new Target({...args[0],sampleRate:44100});}
+    });
+  });
+  await page.locator('#revisit').evaluate(element=>{element.open=true;});
+  await page.locator('#replayInput').fill('open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406');
+  await page.locator('#replayRun').click();
+  await expect(page.locator('#tone')).toHaveValue('200');
+  await expect(page.locator('#songDuration')).toHaveValue('short');
+  await page.locator('#stop').click();
+  const exportWav=async()=>{
+    const downloading=page.waitForEvent('download');
+    await page.locator('#exportWav').click();
+    const download=await downloading;
+    return {name:download.suggestedFilename(),wav:await fs.readFile(await download.path())};
+  };
+  const saved=await exportWav();
+  expect(saved.name).toMatch(/-g3-200hz-short-44100sr-/);
+  expect((saved.wav.length-44)/4).toBe(3773475);
+  await page.evaluate(()=>{
+    crypto.getRandomValues=words=>{
+      if(words.length!==1)throw new Error('Short must retain its original seed format');
+      words[0]=0x0393ded7;return words;
+    };
+  });
+  await page.locator('#playNow').click();
+  await expect(page.locator('#replayStatus')).toContainText('Playing seed 0393ded7');
+  await page.locator('#stop').click();
+  const ordinary=await exportWav();
+  expect(ordinary.name).toMatch(/-g33-200hz-short-44100sr-/);
+  expectMatchingWavs(saved.wav,ordinary.wav,'0393ded7 archived recipe versus ordinary Short');
+  console.log('0393ded7 browser WAV SHA-256',require('node:crypto').createHash('sha256').update(saved.wav).digest('hex'));
+  expect(errors).toEqual([]);
+});
+
+for (const [construction, melody, performance] of [[1,'08b0195e','037586a8'],[0,'4850166b','697bb2c6'],[0,'ee4d8944','ee4d8944']]) {
+  test(`ordinary Play draws and replays the complete seed ${construction}${melody}${performance}`,async({page})=>{
+    const seed=String(construction)+melody+performance;
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.goto('/player.html');
+    await page.locator('#songDuration').selectOption('long');
+    await page.evaluate(({construction,melody,performance})=>{
+      document.getElementById('tone').value='121';
+      crypto.getRandomValues=words=>{words.set([construction,parseInt(melody,16),parseInt(performance,16)]);return words;};
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('clipboard denied');}}});
+    },{construction,melody,performance});
+    await page.locator('#playNow').click();
+    await expect(page.locator('#replayStatus')).toContainText('Playing seed '+seed);
+    await page.locator('#stop').click();
+    await page.locator('#revisit').evaluate(el=>{el.open=true;});
+    await page.locator('#copyReplay').click();
+    const link=await page.locator('#replayLink').inputValue();
+    expect(new URL(link).searchParams.get('seed')).toBe(seed);
+    expect(new URL(link).searchParams.get('engine')).toBe('38');
+    await page.locator('#replayInput').fill(seed);
+    await page.locator('#replayRun').click();
+    await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','true');
+    await expect(page.locator('#replayStatus')).toContainText(seed);
+    expect(errors).toEqual([]);
+  });
+}
+
+for (const engine of ['35', '36', '37']) test(`complete theme pair recipe ${engine} starts and retains its replay settings`, async ({ page }) => {
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {configurable:true,value:{writeText:async()=>{throw new Error('clipboard denied');}}});
+  });
+  await page.goto(`/player.html?seed=1a1155f9&tone=121&length=long&engine=${engine}&rate=44100`);
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','false');
+  await page.locator('#playNow').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','true');
+  await page.locator('#stop').click();
+  await page.locator('#revisit').evaluate(element=>{element.open=true;});
+  await page.locator('#copyReplay').click();
+  const replay=new URL(await page.locator('#replayLink').inputValue());
+  expect(replay.searchParams.get('engine')).toBe(engine);
+  expect(replay.searchParams.get('seed')).toBe('1a1155f9');
+  expect(replay.searchParams.get('tone')).toBe('121');
+  expect(errors).toEqual([]);
+});
+
 test('new performances retain the current engine in replay links for each length', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', {
@@ -82,7 +169,7 @@ test('new performances retain the current engine in replay links for each length
   });
   await page.goto('/player.html');
   await expect(page.locator('#songDuration option')).toHaveCount(2);
-  for (const [length, engine] of [['long', '30'], ['short', '21']]) {
+  for (const [length, engine] of [['long', '38'], ['short', '33']]) {
     await page.locator('#songDuration').selectOption(length);
     await page.locator('#playNow').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
@@ -134,6 +221,38 @@ test('the new related study replays and shares its inherited opening settings', 
   expect(replay.searchParams.get('engine')).toBe('32');
   expect(replay.searchParams.get('length')).toBe('long');
   expect(replay.searchParams.get('rate')).toBe('44100');
+});
+
+test('the refined 08b0195e opening variation retains its replay recipe in the browser', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', {
+    value: {writeText: async () => { throw new Error('clipboard denied'); }}
+  }));
+  await page.goto('/player.html?seed=3460e991&tone=121&length=long&engine=33&base=32&rate=44100');
+  await page.getByRole('button', {name: 'Play this performance', exact: true}).click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 3460e991');
+  await page.locator('#stop').click();
+  await page.locator('#copyReplay').click();
+  const replay = new URL(await page.locator('#replayLink').inputValue());
+  expect(replay.searchParams.get('engine')).toBe('33');
+  expect(replay.searchParams.get('base')).toBe('32');
+  expect(replay.searchParams.get('tone')).toBe('121');
+  expect(replay.searchParams.get('length')).toBe('long');
+});
+
+test('the pitch-only variation retains the child tempo recipe in the browser', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', {
+    value: {writeText: async () => { throw new Error('clipboard denied'); }}
+  }));
+  await page.goto('/player.html?seed=3460e991&tone=121&length=long&engine=33&base=34&rate=44100');
+  await page.getByRole('button', {name: 'Play this performance', exact: true}).click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 3460e991');
+  await page.locator('#stop').click();
+  await page.locator('#copyReplay').click();
+  const replay = new URL(await page.locator('#replayLink').inputValue());
+  expect(replay.searchParams.get('engine')).toBe('33');
+  expect(replay.searchParams.get('base')).toBe('34');
+  expect(replay.searchParams.get('tone')).toBe('121');
+  expect(replay.searchParams.get('length')).toBe('long');
 });
 
 test('a shared performance has clear narrow-screen controls and a separate new-performance action', async ({ page }) => {
@@ -300,9 +419,9 @@ test('clipboard denial exposes a selectable replay link after Stop', async ({ pa
   await expect(page.locator('#replayLink')).toBeFocused();
 });
 
-for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the same native WAV after reloading`, async ({ page }) => {
+for (const [engine, base] of [['1', ''], ['3', ''], ['33', '21']]) test(`engine ${engine}${base ? ' based on ' + base : ''} filename recreates the same native WAV after reloading`, async ({ page }) => {
   test.setTimeout(120000);
-  await page.goto('/player.html?' + replayQuery.replace('engine=1', `engine=${engine}`));
+  await page.goto('/player.html?' + replayQuery.replace('engine=1', `engine=${engine}`) + (base ? `&base=${base}` : ''));
   await page.locator('#replayRun').click();
   await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#stop').click();
@@ -310,7 +429,7 @@ for (const engine of ['1', '3']) test(`engine ${engine} filename recreates the s
   await page.locator('#exportWav').click();
   const first = await firstDownload;
   const filename = first.suggestedFilename();
-  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}-200hz-short-44100sr-\\d+\\.wav$`));
+  expect(filename).toMatch(new RegExp(`^open-run-03b38656-[a-z0-9]+-g${engine}${base ? '-b' + base : ''}-200hz-short-44100sr-\\d+\\.wav$`));
   const original = await fs.readFile(await first.path());
   await page.goto('/player.html');
   await page.locator('#revisit summary').click();
@@ -576,4 +695,5 @@ test('repeated native WAV exports preserve the performance after Stop and contro
   const second = await fs.readFile(await (await downloading).path());
   expectMatchingWavs(first, second, 'Repeat WAV comparison');
 });
+
 

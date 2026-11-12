@@ -33,12 +33,12 @@ test('saved-score checks tolerate only machine roundoff and detect musical chang
   }
 });
 
-test('new duration defaults preserve g21 Short and select suspended Long',()=>{
+test('new duration defaults use selective FM refinement in both forms',()=>{
   const h=harness(source);
-  for(const [duration,engine] of [['short','21'],['long','30']]){
+  for(const duration of ['short','long']){
     const score=h.api.createPerformance(0x0393ded7,121,duration);
-    assert.deepEqual(plain(score),plain(h.api.createPerformance(0x0393ded7,121,duration,engine)));
-    assert.equal(score.study.form,duration==='long'?'nested-mirror':'fixed-collection-walk');
+    assert.deepEqual(plain(score),plain(h.api.createPerformance(0x0393ded7,121,duration,duration==='long'?'38':'33')));
+    assert.equal(score.study.form,duration==='long'?'theme-mirror-pairs':'fixed-collection-walk');
     assert.ok(score.density*60>=3&&score.density*60<=15);
   }
 });
@@ -63,3 +63,4 @@ test('the original Short Study and converted audio filenames retain their engine
     assert.equal(replay.tone,200);assert.equal(replay.duration,'short');assert.equal(replay.sampleRate,44100);
   }
 });
+

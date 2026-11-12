@@ -91,6 +91,13 @@
   const SUSPENDED_ORGAN_ENGINE = "30";
   const INHERITED_OPENING_ENGINE = "31";
   const GENTLER_OPENING_ENGINE = "32";
+  const SLOW_BEATING_ENGINE = "33";
+  const SEEDED_OPENING_ENGINE = "34";
+  const THEME_PAIR_ENGINE = "35";
+  const REFERENCE_THEME_PAIR_ENGINE = "36";
+  const SPARSE_THEME_PAIR_ENGINE = "37";
+  const ORDINARY_THEME_ENGINE = "38";
+  const THEME_PAIR_ENGINES = new Set([THEME_PAIR_ENGINE, REFERENCE_THEME_PAIR_ENGINE, SPARSE_THEME_PAIR_ENGINE, ORDINARY_THEME_ENGINE]);
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
   const G21_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true});
@@ -114,40 +121,70 @@
     grainRanges: Object.freeze([[0.08, 0.11], [0.10, 0.13], [0.12, 0.15]].map(Object.freeze)),
     positionMin: 8, positionMax: 11, sprayMin: 0.015, sprayMax: 0.035
   });
-  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE]);
+  const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SLOW_BEATING_ENGINE, SEEDED_OPENING_ENGINE]);
+
+  for (const engine of THEME_PAIR_ENGINES) SUPPORTED_ENGINES.add(engine);
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
-  function defaultEngine(durationInput) {
-    return durationInput === "long" ? SUSPENDED_ORGAN_ENGINE : RESTORED_TEMPO_ENGINE;
+  function defaultEngine(duration) {
+    return duration === "long" ? ORDINARY_THEME_ENGINE : SLOW_BEATING_ENGINE;
   }
 
-  function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
+  function seedHex(seed) { return typeof seed === "string" ? seed.toLowerCase() : seed.toString(16).padStart(8, "0"); }
+
+  // One text seed carries the construction bit and two complete 32-bit words.
+  // Keep it as text: converting 65 bits to Number would discard information.
+  function decodeLongSeed(seed) {
+    const text = seedHex(seed);
+    if (/^[0-9a-f]{8}$/.test(text)) {
+      const word = parseInt(text, 16);
+      return {construction:0, melodySeed:word, performanceSeed:word};
+    }
+    if (!/^[01][0-9a-f]{16}$/.test(text)) throw new Error("Invalid Long seed");
+    return {construction:Number(text[0]), melodySeed:parseInt(text.slice(1,9),16),
+      performanceSeed:parseInt(text.slice(9),16)};
+  }
+
+  function drawPerformanceSeed(duration) {
+    const words = new Uint32Array(duration === "long" ? 3 : 1);
+    if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(words);
+    else for (let i=0;i<words.length;i++) words[i]=Math.floor(Math.random()*0x100000000);
+    return duration === "long" ? `${words[0]&1}${seedHex(words[1])}${seedHex(words[2])}` : words[0];
+  }
 
   function validateReplay(record) {
     if (!SUPPORTED_ENGINES.has(record.engine))
       throw new Error("This saved performance is not supported. Check that you copied the complete replay link or filename.");
-    if (!/^[0-9a-f]{8}$/i.test(record.seed || ""))
-      throw new Error("Enter an eight-character hexadecimal seed.");
+    if (record.baseEngine != null && (record.engine !== SLOW_BEATING_ENGINE
+        || record.baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(record.baseEngine)))
+      throw new Error("The saved performance's original recipe is invalid. Copy the complete replay link or filename.");
+    const extendedSeed = /^[01][0-9a-f]{16}$/i.test(record.seed || "");
+    if (!/^[0-9a-f]{8}$/i.test(record.seed || "") && !extendedSeed)
+      throw new Error("Enter a complete eight- or seventeen-character seed.");
+    if (extendedSeed && (record.baseEngine ?? record.engine) !== ORDINARY_THEME_ENGINE)
+      throw new Error("This Long seed requires its complete current replay settings.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
     if (!Number.isInteger(tone) || tone < 110 || tone > 200)
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (!["short", "long"].includes(record.duration))
       throw new Error("The replay length must be short or long.");
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(record.engine) && record.duration !== "long")
+    if ((["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(record.baseEngine ?? record.engine)
+        || THEME_PAIR_ENGINES.has(record.baseEngine ?? record.engine)) && record.duration !== "long")
       throw new Error("This saved performance requires Long. Check its original replay link or filename.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
-    return { seed: parseInt(record.seed, 16), tone, duration: record.duration,
-      engine: record.engine, sampleRate: record.sampleRate == null ? null : sampleRate };
+    return { seed: extendedSeed ? record.seed.toLowerCase() : parseInt(record.seed, 16), tone, duration: record.duration,
+      engine: record.engine, sampleRate: record.sampleRate == null ? null : sampleRate,
+      ...(record.baseEngine != null ? {baseEngine: record.baseEngine} : {}) };
   }
 
   function parseReplayQuery(params) {
     const keys = ["seed", "tone", "length", "engine", "rate"];
-    if (keys.some(key => params.getAll(key).length !== 1))
+    if (keys.some(key => params.getAll(key).length !== 1) || params.getAll("base").length > 1)
       throw new Error("The replay link is incomplete or contains duplicate settings. Copy the complete original link.");
     return validateReplay({ seed: params.get("seed"), tone: params.get("tone"),
-      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate") });
+      duration: params.get("length"), engine: params.get("engine"), sampleRate: params.get("rate"), baseEngine: params.get("base") });
   }
 
   function parseReplayInput(value) {
@@ -159,16 +196,18 @@
     }
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
-    const file = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-g([0-9]+)-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
-    if (file) return validateReplay({ seed: file[1], engine: file[2], tone: file[3],
-      duration: file[4].toLowerCase(), sampleRate: file[5] });
+    const file = input.match(/^open-run-([01][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
+    if (file) return validateReplay({ seed: file[1], engine: file[2], baseEngine: file[3], tone: file[4],
+      duration: file[5].toLowerCase(), sampleRate: file[6] });
     const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
     const seed = legacy ? legacy[1] : input;
-    if (!/^[0-9a-f]{8}$/i.test(seed))
-      throw new Error("Paste an eight-character seed, an Open WAV filename, or a replay link.");
+    const extended = /^[01][0-9a-f]{16}$/i.test(seed);
+    if (!/^[0-9a-f]{8}$/i.test(seed) && !extended)
+      throw new Error("Paste a complete seed, an Open WAV filename, or a replay link.");
     // Older open-run names use engine 1 by convention. Bare seeds explore the
     // current engine; complete filenames and links always retain their version.
-    return { ...validateReplay({ seed, engine: legacy ? "1" : defaultEngine($("songDuration")?.value ?? "short"),
+    return { ...validateReplay({ seed, engine: legacy ? "1" : extended ? ORDINARY_THEME_ENGINE
+        : $("songDuration")?.value === "long" ? THEME_PAIR_ENGINE : SLOW_BEATING_ENGINE,
       tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
       partial: true, legacy: !!legacy };
   }
@@ -176,12 +215,14 @@
   function replayLink(snapshot) {
     const url = new URL(playerPageUrl);
     url.search = new URLSearchParams({ seed: seedHex(snapshot.seed), tone: String(snapshot.tone),
-      length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate) }).toString();
+      length: snapshot.duration, engine: snapshot.engine, rate: String(snapshot.sampleRate),
+      ...(snapshot.baseEngine != null ? {base: snapshot.baseEngine} : {}) }).toString();
     return url.href;
   }
 
   function exportFilename(snapshot, timestamp) {
-    return `open-run-${snapshot.runId}-g${snapshot.engine}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr-${timestamp}.wav`;
+    const base = snapshot.baseEngine != null ? `-b${snapshot.baseEngine}` : "";
+    return `open-run-${snapshot.runId}-g${snapshot.engine}${base}-${snapshot.tone}hz-${snapshot.duration}-${snapshot.sampleRate}sr-${timestamp}.wav`;
   }
 
   function replayStatus(message) {
@@ -206,10 +247,10 @@
 
   async function replayLastPerformance() {
     if (disposed || !sessionSnapshot) return;
-    const { seed, tone, duration, sampleRate, engine } = sessionSnapshot;
+    const { seed, tone, duration, sampleRate, engine, baseEngine } = sessionSnapshot;
     // Rebuild from the saved settings and seed. Edited controls and the
     // Revisit field belong to other runs.
-    return startPerformance({ seed, tone, duration, sampleRate, engine });
+    return startPerformance({ seed, tone, duration, sampleRate, engine, baseEngine });
   }
 
   async function copyReplayLink() {
@@ -234,7 +275,7 @@
 
   function loadReplayLink() {
     const params = new URLSearchParams(window.location.search);
-    if (!["seed", "tone", "length", "engine", "rate"].some(key => params.has(key))) return;
+    if (!["seed", "tone", "length", "engine", "rate", "base"].some(key => params.has(key))) return;
     $("revisit").open = true;
     $("replayInput").value = window.location.href;
     try {
@@ -2196,21 +2237,38 @@
   function createMirroredStudyGenerator(seed, baseFreq, duration, compositionOptions = {}) {
     const clone = value => JSON.parse(JSON.stringify(value));
     const suspendedHarmony = compositionOptions.suspendedHarmony === true;
+    const completePairs = compositionOptions.completeThemePairs === true;
     const raw = createStruckStudyGenerator(seed, baseFreq, Infinity, true, G22_OPTIONS);
-    const originalTheme = raw.study.theme.slice(), slots = [0,1,2,3,4,5,4,3,2,1,0];
+    const originalTheme = (compositionOptions.sourceTheme?.pitches ?? raw.study.theme).slice();
+    const forwardSlots = originalTheme.map((_, i) => i);
+    const slots = completePairs ? [...forwardSlots, ...forwardSlots.slice().reverse()] : [0,1,2,3,4,5,4,3,2,1,0];
     const theme = slots.map(i => originalTheme[i]);
     const tail = VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25;
     const startTime = 0.05, sectionGap = compositionOptions.sectionGapSeconds ?? 5, statementDuration = 22;
     const maximumDuration = compositionOptions.maximumDurationSeconds ?? 1800;
     const halves = [], candidates = [];
     // One expanding/contracting arch, stretched for the selected total length.
-    const countsFor = h => Array.from({length: 2*h-1}, (_, i) => h === 1 ? 3 :
-      1 + Math.floor(2*Math.min(i, 2*h-2-i)/(h-1)));
+    const countsFor = h => completePairs
+      ? Array.from({length:h-1}, (_,i) => h === 2 ? 3 :
+          1 + Math.floor(2*Math.min(i,h-2-i)/Math.max(1,Math.floor((h-2)/2))))
+      : Array.from({length: 2*h-1}, (_, i) => h === 1 ? 3 :
+          1 + Math.floor(2*Math.min(i, 2*h-2-i)/(h-1)));
     for (let h = 1; h <= 64; h++) {
-      const source = Array.from({length: 11}, () => raw.next());
-      const originals = source.map(g => g.notes.find(n => n.kind === 'bell'));
-      const gaps = originals.slice(1,6).map((n,i) => Math.max(4,n.time-originals[i].time));
-      const reflectedGaps = [...gaps,...gaps.slice().reverse()], offsets = [0];
+      const source = Array.from({length: completePairs ? originalTheme.length : 11}, () => raw.next());
+      const originals = source.map((g,i) => {
+        const n = g.notes.find(n => n.kind === 'bell');
+        if (!completePairs) return n;
+        const freq = originalTheme[i];
+        return {...n, freq, voices:n.voices.map(v => ({...v, frequency:freq+(v.frequency-n.freq)}))};
+      });
+      const gaps = originals.slice(1,completePairs ? originals.length : 6)
+        .map((n,i) => Math.max(4,n.time-originals[i].time));
+      // Keep both occurrences of the turning note, one seeded beat apart.
+      // The return reuses every forward recipe and reflects its inter-onset gaps.
+      const reflectedGaps = completePairs
+        ? [...gaps,Math.max(4,raw.nextTime-originals.at(-1).time),...gaps.slice().reverse()]
+        : [...gaps,...gaps.slice().reverse()];
+      const offsets = [0];
       reflectedGaps.forEach(gap => offsets.push(offsets.at(-1)+gap));
       const bells = slots.map((slot,i) => ({...clone(originals[slot]),time:offsets[i]}));
       const directSpan = offsets.at(-1)+bells.at(-1).duration;
@@ -2224,16 +2282,25 @@
         .map(n=>({...clone(n),time:(span-n.duration)/2}));
       halves.push({bells,background,span,gaps:reflectedGaps,finalTailExtension});
       const counts=countsFor(h);
-      const end=startTime+2*halves.reduce((sum,p)=>sum+p.span,0)
-        +statementDuration*counts.reduce((a,b)=>a+b,0)+sectionGap*(4*h-2)+halves[0].finalTailExtension;
-      if(h>=3&&end+tail>=600&&end+tail<=maximumDuration)
+      const end=startTime+(completePairs?1:2)*halves.reduce((sum,p)=>sum+p.span,0)
+        +statementDuration*counts.reduce((a,b)=>a+b,0)+sectionGap*(completePairs?2*(h-1):4*h-2)
+        +halves[completePairs?h-1:0].finalTailExtension;
+      if(h>=(completePairs?(compositionOptions.minimumPairCount??2):(compositionOptions.minimumHalfCount??3))&&
+        end+tail>=(compositionOptions.minimumDurationSeconds??600)&&end+tail<=maximumDuration)
         candidates.push({halfCount:h,counts,end,exportDuration:end+tail});
       if(end+tail>maximumDuration)break;
     }
-    if(!candidates.length)throw new Error('No complete mirrored Long form in the duration range');
+    if(!candidates.length) {
+      const error = new Error(completePairs
+        ? 'This reference theme needs a faster seed to fit two complete theme–mirror pairs within 30 minutes.'
+        : 'No complete mirrored Long form in the duration range');
+      if (completePairs) error.code = 'LONG_FORM_DURATION';
+      throw error;
+    }
     const chosen=candidates.reduce((best,c)=>Math.abs(c.exportDuration-duration)<Math.abs(best.exportDuration-duration)?c:best);
-    const h=chosen.halfCount,passCount=2*h;
-    const paletteOrder=[...Array(h).keys(),...Array(h).keys()].map((i,j)=>j<h?i:h-1-i);
+    const h=chosen.halfCount,passCount=completePairs?h:2*h;
+    const paletteOrder=completePairs?[...Array(h).keys()]
+      :[...Array(h).keys(),...Array(h).keys()].map((i,j)=>j<h?i:h-1-i);
     const groups=[],entries=[],passes=[];
     let cursor=startTime;
     for(let cycle=0;cycle<passCount;cycle++){
@@ -2243,7 +2310,8 @@
         const ending=cycle===passCount-1&&slot===pass.bells.length-1;
         groups.push({time:bell.time,notes:[bell],ending,
           ...(ending?{endingKind:'mirrored-theme-end'}:{}),
-          study:{cycle,slot,palette,mirroredSlot:10-slot,varied:false}});
+          study:{cycle,slot,palette,mirroredSlot:slots.length-1-slot,varied:false,
+            ...(completePairs?{direction:slot<originalTheme.length?'forward':'reverse',sourceSlot:slots[slot]}:{})}});
       }
       if(pass.background.length){
         const notes=pass.background.map(n=>({...clone(n),time:start+n.time}));
@@ -2252,6 +2320,8 @@
       }
       const span = pass.span+(cycle===passCount-1?pass.finalTailExtension:0);
       cursor+=span;passes.push({cycle,palette,start,end:cursor,span,
+        ...(completePairs?{forwardEnd:start+pass.bells[originalTheme.length-1].time,
+          mirrorStart:start+pass.bells[originalTheme.length].time,forwardStrikeCount:originalTheme.length}:{}),
         ...(compositionOptions.bellTailHandoff?{bellDirectEnd:start+pass.span+pass.finalTailExtension}: {})});
       if(cycle===passCount-1)continue;
       cursor+=sectionGap;
@@ -2339,7 +2409,7 @@
       notes.forEach(n=>n.envelope.forEach(p=>{p.value*=scale;}));return notes;
     }
     let previous=null,templateCursor=0;
-    for(let i=0;i<h;i++){
+    for(let i=0;i<(completePairs?Math.ceil(entries.length/2):h);i++){
       const pair=[entries[i]];if(i!==entries.length-1-i)pair.push(entries[entries.length-1-i]);
       const contexts=pair.map(contextFor);
       const safe=options.filter(c=>c.voicings.length&&c.pitches.every(p=>contexts.every(ctx=>
@@ -2411,12 +2481,18 @@
     groups.sort((a,b)=>a.time-b.time);let position=0;
     return {
       density:raw.density,arcLen:0,arcClimaxAt:-1,
-      study:Object.freeze({form:'nested-mirror',scale:[0,2,4,5,7,9],theme,sourceTheme:originalTheme,
-        pitchPolicy:'exact-mirrored-theme',endingPolicy:'complete-mirror',
+      study:Object.freeze({form:completePairs?'theme-mirror-pairs':'nested-mirror',scale:compositionOptions.sourceTheme?.reference?.construction==='walk-28'?[0,2,4,5,7,9,11]:[0,2,4,5,7,9],theme,sourceTheme:originalTheme,
+        pitchPolicy:completePairs?'complete-theme-then-retrograde':'exact-mirrored-theme',endingPolicy:'complete-mirror',
+        ...(completePairs?{sourceReference:compositionOptions.sourceTheme?.reference??null}:{}),
         mirror:{slotOrder:slots,paletteOrder,passCount,halfCount:h,passes,start:startTime,end:cursor,
+          ...(completePairs?{pairCount:passCount,forwardStrikeCount:originalTheme.length,
+            strikesPerPair:slots.length,repeatTurningNote:true,globalPaletteMirror:false}:{}),
           midpoint:(startTime+cursor)/2,sectionGapSeconds:sectionGap,eventSymmetry:!compositionOptions.bellTailHandoff,reverseAudio:false,
           ...(compositionOptions.bellTailHandoff?{handoff:'bell-tail-overlap',orderSymmetry:true}: {})},
         droneArch:{...clone(organSource.study.droneArch),pattern:chosen.counts,form:'single-mirrored-arch',interludes:entries,
+          ...(completePairs?{placement:'after-every-complete-theme-mirror-pair',minimumInterludes:1,
+            targetDurationSeconds:duration,sourceTargetDuration:duration,
+            addedDuration:entries.reduce((sum,e)=>sum+e.end-e.start+2*sectionGap,0)}:{}),
           evolution:groups.filter(g=>g.interlude).map(g=>g.interlude.evolution),
           harmony:{...clone(organSource.study.droneArch.harmony),policy:'paired-melody-context',
             ...(suspendedHarmony?{allowedQualities:['major','minor','open-fifth','sus2','sus4'],
@@ -2825,14 +2901,157 @@
       next() { return groups[position++] ?? null; }};
   }
 
-  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput)) {
+  // Pitch-only family: the source's first two minutes select 28 pitches, not
+  // two minutes on the new clock. Timing, bell recipes and room use the child
+  // seed from the first strike. Old g31/g32 recordings remain reproducible.
+  function createSeededOpeningGenerator(seed, baseFreq, duration) {
+    const parentSeed = 0x08b0195e, sourceThroughSeconds = 120;
+    const parent = createPerformanceGenerator(parentSeed, baseFreq, Infinity, "3");
+    const reference = [];
+    while (parent.nextTime <= sourceThroughSeconds) reference.push(parent.next());
+    const sourceBells = reference.flatMap(group => group.notes).filter(note => note.kind === 'bell');
+    const landing = sourceBells[22], previous = sourceBells[21];
+    let adjustment = null;
+    if (Math.abs(Math.round(12 * Math.log2(landing.freq / previous.freq))) === 6) {
+      const originalFrequency = landing.freq;
+      landing.freq /= 2 ** (1 / 12);
+      adjustment = {strike: 23, sourceTime: landing.time, originalFrequency,
+        frequency: landing.freq, semitoneShift: -1, reason: 'replace-tritone-landing'};
+    }
+    const opening = createStruckStudyGenerator(seed, baseFreq, Infinity, true, G22_OPTIONS);
+    const droneRandom = mulberry32((seed ^ 0x4F504452) >>> 0);
+    const spatialRandom = mulberry32((seed ^ 0x4F505350) >>> 0);
+    const scale = parent.density / opening.density, groups = [];
+    for (const group of reference) {
+      const sourceBell = group.notes.find(note => note.kind === 'bell');
+      if (!sourceBell) throw new Error('Reference opening contains a missing strike');
+      const planned = opening.next(), recipe = planned.notes.find(note => note.kind === 'bell');
+      const bell = {...recipe, freq: sourceBell.freq,
+        voices: recipe.voices.map(voice => ({...voice,
+          frequency: sourceBell.freq + (voice.frequency - recipe.freq)}))};
+      // The accompaniment's pitches are part of the inherited notes. Align it
+      // to the new strike clock; its detuning and placement use the child seed.
+      const bass = group.notes.filter(note => note.kind === 'bass').map(note => ({...note,
+        time: Math.max(0, bell.time + (note.time - sourceBell.time) * scale),
+        duration: note.duration * scale, detune: (droneRandom() - .5) * 8,
+        pan: choosePan(spatialRandom)}));
+      groups.push({time: bell.time, notes: [...bass, bell], ending: false});
+    }
+    // Continue on the next seeded beat, letting natural bell tails overlap.
+    const offset = opening.nextTime - .05;
+    const body = createSpectralOrganGenerator(seed, baseFreq, duration - offset, true,
+      {maximumDurationSeconds: 1800 - offset,
+        minimumDurationSeconds: Math.max(0, 600 - offset), minimumHalfCount: 2});
+    for (let group; (group = body.next());) groups.push({...group, time: group.time + offset,
+      notes: group.notes.map(note => ({...note, time: note.time + offset}))});
+    const study = JSON.parse(JSON.stringify(body.study));
+    study.form = 'inherited-pitches-and-nested-mirror';
+    study.inheritedOpening = {seed: seedHex(parentSeed), engine: '3', sourceThroughSeconds,
+      inheritance: 'pitches-only', timingSeed: seedHex(seed), nominalBpm: opening.density * 60,
+      bellCount: sourceBells.length, bodyStartSeconds: offset + .05,
+      lastStrikeSeconds: groups[sourceBells.length - 1].time,
+      ...(adjustment ? {adjustment: {...adjustment, time: groups[22].time}} : {})};
+    for (const key of ['start', 'end', 'midpoint']) study.mirror[key] += offset;
+    for (const pass of study.mirror.passes) {
+      for (const key of ['start', 'end', 'bellDirectEnd']) if (key in pass) pass[key] += offset;
+    }
+    for (const entry of study.droneArch.interludes) {
+      for (const key of ['start', 'end', 'returnTime']) entry[key] += offset;
+    }
+    let position = 0;
+    return {density: opening.density, arcLen: opening.arcLen, arcClimaxAt: opening.arcClimaxAt,
+      study: Object.freeze(study),
+      get nextTime() { return groups[position]?.time ?? Infinity; },
+      next() { return groups[position++] ?? null; }};
+  }
+
+  function createOrdinaryTheme(recipe, baseFreq) {
+    const {construction, melodySeed} = recipe;
+    if (construction === 0) return createStruckStudyGenerator(melodySeed, baseFreq, Infinity, true, G22_OPTIONS).study.theme.slice();
+    // Gather a complete 28-strike walk. Project its pitches into the root's
+    // major collection, retaining the contour and register of compatible notes.
+    // Correct any melodic tritone by nearest allowed pitch, with a lower tie.
+    // This is the same rule for every seed; no reference IDs or strike numbers.
+    const original = createPerformanceGenerator(melodySeed, baseFreq, Infinity, "3");
+    const pitches = [], allowed = [];
+    for(let n=-24;n<=36;n++) {
+      const freq=baseFreq*2**(n/12),pc=(n%12+12)%12;
+      if(freq>=MELODY_FLOOR_HZ&&freq<=MELODY_CEILING_HZ&&[0,2,4,5,7,9,11].includes(pc))allowed.push(n);
+    }
+    while(pitches.length<28) {
+      for(const bell of original.next().notes.filter(n=>n.kind==='bell')) {
+        const nominal=Math.round(12*Math.log2(bell.freq/baseFreq));
+        const previous=pitches.length?Math.round(12*Math.log2(pitches.at(-1)/baseFreq)):null;
+        const candidates=allowed.filter(n=>previous===null||Math.abs(n-previous)%12!==6)
+          .sort((a,b)=>Math.abs(a-nominal)-Math.abs(b-nominal)||a-b);
+        const shift=candidates[0]-nominal;
+        pitches.push(shift<0?bell.freq/2**(-shift/12):shift>0?bell.freq*2**(shift/12):bell.freq);
+        if(pitches.length===28)break;
+      }
+    }
+    return pitches;
+  }
+
+  function createThemePairGenerator(seed, baseFreq, duration, engine, seedRecipe = null) {
+    let sourceTheme;
+    if (engine === ORDINARY_THEME_ENGINE) {
+      const pitches=createOrdinaryTheme(seedRecipe,baseFreq);
+      sourceTheme={pitches,reference:{construction:seedRecipe.construction===0?'compact-11':'walk-28',
+        melodySeed:seedHex(seedRecipe.melodySeed),performanceSeed:seedHex(seedRecipe.performanceSeed),
+        inheritance:'ordinary-seeded-theme',bellCount:pitches.length}};
+    } else if (engine === REFERENCE_THEME_PAIR_ENGINE) {
+      const parent = createPerformanceGenerator(0x08b0195e, baseFreq, Infinity, "3");
+      const bells = [];
+      while (parent.nextTime <= 120) bells.push(...parent.next().notes.filter(n => n.kind === 'bell'));
+      const pitches = bells.map(n => n.freq);
+      let adjustment = null;
+      if (Math.abs(Math.round(12*Math.log2(pitches[22]/pitches[21]))) === 6) {
+        const originalFrequency = pitches[22];
+        pitches[22] /= 2**(1/12);
+        adjustment = {strike:23,sourceTime:bells[22].time,originalFrequency,
+          frequency:pitches[22],semitoneShift:-1,reason:'replace-tritone-landing'};
+      }
+      sourceTheme = {pitches,reference:{seed:'08b0195e',engine:'3',sourceThroughSeconds:120,
+        inheritance:'pitches-only',bellCount:pitches.length,timingSeed:seedHex(seed),
+        ...(adjustment?{adjustment}:{})}};
+    } else if (engine === SPARSE_THEME_PAIR_ENGINE) {
+      const parent = createStruckStudyGenerator(0x4850166b, baseFreq, Infinity, true, G22_OPTIONS);
+      sourceTheme = {pitches:parent.study.theme.slice(),reference:{seed:'4850166b',
+        source:'complete-original-theme-before-palindrome',inheritance:'pitches-only',
+        bellCount:parent.study.theme.length,timingSeed:seedHex(seed)}};
+    }
+    return createSpectralOrganGenerator(seed, baseFreq, duration, true,
+      {completeThemePairs:true,...(sourceTheme?{sourceTheme}:{})});
+  }
+
+  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput), baseEngine = null) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) && durationInput !== "long")
+    if (baseEngine != null && (engine !== SLOW_BEATING_ENGINE
+        || baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(baseEngine)))
+      throw new Error("Unsupported original performance recipe");
+    if (engine === SLOW_BEATING_ENGINE) {
+      // Rebuild the original score first. An explicit base preserves an older
+      // performance's entire form; it is never replanned with today's defaults.
+      const original = createPerformance(seed, tone, durationInput,
+        baseEngine ?? (durationInput === "long" ? SUSPENDED_ORGAN_ENGINE : RESTORED_TEMPO_ENGINE));
+      const groups = original.groups.map(group => Object.freeze({...group,
+        notes: Object.freeze(group.notes.map(refineBellFM))}));
+      return Object.freeze({...original, groups: Object.freeze(groups)});
+    }
+    if ((["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine)
+        || THEME_PAIR_ENGINES.has(engine)) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
+    const replaySeed = seed;
+    const seedRecipe = engine === ORDINARY_THEME_ENGINE ? decodeLongSeed(seed) : null;
+    if(seedRecipe) seed = seedRecipe.performanceSeed;
     const duration = resolveDuration(seed, durationInput);
     // Engine 18 changes Long's pitch repetition and phrase-boundary ending.
     // Short and every explicit legacy version retain their old paths.
-    const generator = [INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine)
+    const generator = THEME_PAIR_ENGINES.has(engine)
+      ? createThemePairGenerator(seed, tone, duration, engine, seedRecipe)
+      : engine === SEEDED_OPENING_ENGINE
+      ? createSeededOpeningGenerator(seed, tone, duration)
+      : [INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine)
       ? createInheritedOpeningGenerator(seed, tone, duration, engine === GENTLER_OPENING_ENGINE)
       : [SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE].includes(engine)
       ? (durationInput === "long" ? createSpectralOrganGenerator(seed, tone, duration, engine === SUSPENDED_ORGAN_ENGINE)
@@ -2900,8 +3119,9 @@
     const groups = [];
     let lastVoiceEnd = 0;
     while (true) {
-      const group = generator.next();
+      let group = generator.next();
       if (!group) break;
+      if (THEME_PAIR_ENGINES.has(engine)) group = {...group,notes:group.notes.map(refineBellFM)};
       for (const note of group.notes) {
         lastVoiceEnd = Math.max(lastVoiceEnd, note.time + note.duration);
         if (note.voices) {
@@ -2915,16 +3135,17 @@
       if (groups.length > 10000) throw new Error("Performance exceeded planning limit");
     }
     return Object.freeze({
-      seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
+      seed:replaySeed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
+      ...(seedRecipe ? {audioSeed:seed} : {}),
       ...(generator.audioSeed !== undefined ? {audioSeed: generator.audioSeed} : {}),
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
-      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) ? {tempo: Object.freeze({nominalBpm: (generator.continuationDensity ?? generator.density) * 60,
+      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) || THEME_PAIR_ENGINES.has(engine) ? {tempo: Object.freeze({nominalBpm: (generator.continuationDensity ?? generator.density) * 60,
         lowerBpm: 3, upperBpm: engine === SWEPT_INTERLUDE_ENGINE ? 63 : 15,
         minimumStrikeInterval: engine === SWEPT_INTERLUDE_ENGINE ? 60 / 63 : 4})} : {}),
       ...(generator.study ? { study: generator.study } : {}),
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
-      exportDuration: ([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine) && durationInput === "long"
+      exportDuration: (([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) || THEME_PAIR_ENGINES.has(engine)) && durationInput === "long"
         ? lastVoiceEnd : Math.max(duration, lastVoiceEnd))
         + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25,
       continuation: null
@@ -2933,6 +3154,39 @@
 
   // Only plain note data is retained. Audio nodes are created near playback time.
   function choosePan(random) { return random() < 0.65 ? (random() * 2 - 1) * 0.22 : null; }
+
+  // A selective timbre rule, calibrated to listening comparison E. These are
+  // engineering thresholds for one FM pattern, not a general roughness score.
+  // The carrier and its reflected first sideband are |fm - 2*fc| Hz apart.
+  // Work on the finished plan without drawing randomness or changing pitches,
+  // timing, carrier detuning, amplitudes, decay lengths, drones or organ voices.
+  function refineBellFM(note) {
+    if (note.kind !== "bell" || !(note.totalAmp > 0)) return note;
+    const prominent = note.voices.filter(v => v.amp / note.totalAmp >= 0.10);
+    const trigger = prominent.filter(v => {
+      const gap = Math.abs(note.freq * v.modRatio - 2 * v.frequency);
+      return v.amp / note.totalAmp >= 0.20 && v.modIndex / v.modRatio >= 1.2
+        && gap >= 12 && gap <= 45;
+    }).sort((a, b) => b.amp - a.amp)[0];
+    if (!trigger) return note;
+
+    // Prefer a 2% offset from 2:1, capped at 4 Hz in the upper register. Keep
+    // every prominent layer within 6 Hz, allowing its original carrier detune.
+    const lower = Math.max(...prominent.map(v => 2 * v.frequency - 6));
+    const upper = Math.min(...prominent.map(v => 2 * v.frequency + 6));
+    if (lower > upper) return note; // Wide layers need a separate listening test.
+    const side = note.freq * trigger.modRatio < 2 * trigger.frequency ? -1 : 1;
+    const preferred = note.freq * (2 + side * Math.min(0.02, 4 / note.freq));
+    const ratio = Math.min(upper, Math.max(lower, preferred)) / note.freq;
+    const voices = note.voices.map(voice => {
+      const beta = voice.modIndex / voice.modRatio;
+      return {...voice, modRatio: ratio,
+        modIndex: (voice.amp / note.totalAmp >= 0.10 ? Math.min(beta, 1.2) : beta) * ratio,
+        // Preserve the normalized FM endpoint when changing modulator frequency.
+        terminalModIndex: (voice.terminalModIndex ?? 0.01) * (ratio / voice.modRatio)};
+    });
+    return Object.freeze({...note, voices: Object.freeze(voices.map(Object.freeze))});
+  }
 
   function planBell(freq, time, duration, volume, instability, tensionAmt, rand, spatialRandom) {
     freq = clampFreqMin(freq, MELODY_FLOOR_HZ);
@@ -2997,7 +3251,7 @@
       modulator.frequency.value = freq * voice.modRatio;
 
       modGain.gain.setValueAtTime(freq * voice.modIndex, time);
-      modGain.gain.exponentialRampToValueAtTime(freq * 0.01, time + (duration * 0.3));
+      modGain.gain.exponentialRampToValueAtTime(freq * (voice.terminalModIndex ?? 0.01), time + (duration * 0.3));
 
       ampGain.gain.setValueAtTime(0.0001, time);
       ampGain.gain.exponentialRampToValueAtTime((voice.amp / totalAmp) * volume, time + 0.01);
@@ -3386,19 +3640,30 @@
       request = startRequest;
 
       isEndingNaturally = false;
-      const seed = replay ? replay.seed : (crypto?.getRandomValues ? crypto.getRandomValues(new Uint32Array(1))[0] : Date.now()) >>> 0;
+      let seed = replay?.seed;
       let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
       if (!Number.isFinite(tone)) tone = 110;
       tone = Math.round(Math.max(110, Math.min(200, tone)));
       const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
       const engine = replay?.engine ?? defaultEngine(duration);
-      const performance = createPerformance(seed, tone, duration, engine);
+      const baseEngine = replay?.baseEngine;
+      let performance;
+      // Structural rejection only: a very slow 28-note phrase may not fit two
+      // complete pairs in 30 minutes. Every accepted seed uses this same path.
+      // Replays never redraw, and no quality or fit score is consulted.
+      for(let attempt=0;attempt<32;attempt++) {
+        if(!replay) seed=drawPerformanceSeed(duration);
+        try { performance=createPerformance(seed,tone,duration,engine,baseEngine);break; }
+        catch(error) {
+          if(replay||engine!==ORDINARY_THEME_ENGINE||error.code!=='LONG_FORM_DURATION'||attempt===31)throw error;
+        }
+      }
       buildMixBus(performance.audioSeed ?? seed);
-      setSeed(seed);
+      setSeed(performance.audioSeed ?? seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
       const runId = `${seedHex(seed)}-${Date.now().toString(36)}`;
       sessionSnapshot = Object.freeze({ ...performance, sampleRate: replay?.sampleRate ?? ctx.sampleRate,
-        runId, engine });
+        runId, engine, ...(baseEngine != null ? {baseEngine} : {}) });
       sharedPerformance = null;
       updateSharedControls();
       if (replay) {
@@ -3697,4 +3962,5 @@
 
 })();
 // --- END OF SCRIPT ---
+
 

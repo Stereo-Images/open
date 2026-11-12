@@ -12,11 +12,11 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 *Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Its uniqueness lies in the unpredictability of a first encounter: you discover the music as it happens. Pressing Play draws a fresh seed; Replay returns to the performance you have just discovered. A performance can be revisited, shared, or saved without changing how the next new performance unfolds.
 
-
+Every newly generated performance can also arise independently through another random Play at the same root tone and length. Its seed and settings preserve the choices needed to return to it. Chance rediscovery of a particular performance is extremely rare; sharing its complete replay link makes that return direct. New performances follow the same musical rules, without a catalog of favored recordings or a musical-quality score selecting the results.
 
 ### Open EP
 
-The planned *Open* EP pairs **Short Study** and **Long Study**, two selected recordings made with this instrument. Each captures one performance from Open's many possible unfoldings.
+The planned *Open* EP pairs **Short Study** and **Long Study**, two selected recordings made with this instrument. Each captures one performance from the same musical possibilities available to every listener using Open.
 
 *Release details and listening links will be added here.*
 
@@ -25,13 +25,13 @@ The planned *Open* EP pairs **Short Study** and **Long Study**, two selected rec
 | Short Study | To be added | To be confirmed | To be added |
 | Long Study | To be added | To be confirmed | To be added |
 
-The final track notes will identify the eight-character seed that generated each performance, together with its root tone, length, WAV sample rate, and complete replay link or original export filename. These details preserve the source performance before any mastering applied to the EP.
+The final track notes will identify the complete seed that generated each performance, together with its root tone, length, WAV sample rate, and complete replay link or original export filename. These details preserve the source performance before any mastering applied to the EP.
 
 ### Musical Structure & Harmony
 
-New performances keep one six-note major collection (1–2–3–4–5–6), avoiding nominal tritone pairs and modulation. Short uses the evolving melodic walk; Long develops an eleven-note mirrored melody with repeated notes and changing FM palettes. Nominal tempo is selected by seed between 3 and 15 BPM, with at least four seconds between melody strikes.
+Short keeps its evolving walk in one six-note major collection. Long automatically chooses between two melody constructions: a compact eleven-note theme and a twenty-eight-note walk. Each construction can generate many different melodies, held in the root's major collection with melodic tritone jumps corrected. The seed selects the melody independently of its performance settings, so the same melody can unfold at different tempos and with different bell colors. Nominal tempo is between 3 and 15 BPM, with at least four seconds between melody strikes.
 
-In Long, each melody pass mirrors note recipes and timing around its center. FM palettes change on the outward half of the piece and return in reverse order. Organ interludes follow each complete pass except the last, expanding to one central three-statement interlude and then contracting. Contextual chords and inversions respect the fixed collection and the notes still ringing. Occasional widely spaced suspended chords favor sus2 over sus4; some remain unresolved, while others let one organ voice settle into a major or minor third through a gentle crossfade. Suspensions occur only in these organ interludes; the quiet drones beneath the melody keep their existing harmony. These choices affect only new Long performances; Short and saved performances retain their original behavior. Decay-aware handoffs mean the absolute timeline is not a strict palindrome.
+Each Long section states its complete theme, then returns through every strike in reverse order with the same corresponding FM recipe and reflected timing. The turning note is struck again on the next seeded beat. An organ interlude follows the complete pair. Each subsequent pair establishes a fresh FM palette. Organ interludes expand and contract around the middle of the piece; their contextual chords and inversions account for notes still ringing. Occasional widely spaced suspended chords favor sus2 over sus4; some remain unresolved, while others let one organ voice settle into a major or minor third. Suspensions occur only in the interludes. Decay-aware handoffs preserve the natural forward decay of every sound.
 
 The interludes use fuller Principal organ ranks with a filter contour, wide slow three-band stereo chorus, restrained feedback and a twelve-second convolution room. Direct organ and chorus end two seconds before the returning bell; the room tail may continue. Quiet FM accompaniment under the melody retains its earlier sound. Long completes its final melody with normal decay; Short seeks a qualified ending around its target.
 
@@ -41,6 +41,7 @@ The interludes use fuller Principal organ ranks with a filter contour, wide slow
 
 * **Drone Voicing:** Sparse root/fifth FM drones support the fixed pitch collection. Long adds contextual organ chords between melody passes, with consonant inversions, voice leading and checks against lingering notes.
 * **Synthesis (FM Drift):** Notes are synthesized by frequency modulation oscillator pairs. To replicate the physical imperfections of cast metal, each note triggers a cluster of voices with highly dynamic FM ratios, drifting unpredictably between 1.5 and 4.0 in stable passages. Under higher harmonic tension, voices instead draw from a separate set of irrational ratios (√2, φ, and others) for a more fractured, inharmonic color. This introduces a wild, inharmonic metallic smear to the attack, while a gentle lowpass filter — tuned for a smooth rolloff rather than a resonant peak — quickly tames the high end so the note settles into a dark, woody tone.
+* **Slower Bell Pulses:** Prominent, deeply modulated layers with rapid beating receive a selective FM adjustment for slower pulses. Their carrier pitches, amplitudes, timing and decay stay intact.
 * **Moving Resonators:** Three slowly moving bandpass filters add a quiet layer of changing overtones to the direct sound and reverb input. Their motion continues through notes and decays.
 * **Stereo Drift:** Each bell strike and bass note starts centered and has a 65% chance of drifting gently to its own stereo position over the note’s duration. Panning uses a separate random stream and feeds both the direct sound and reverb.
 * **Glacial Pacing:** Event density is limited to preserve long spaces between strikes and allow the reverb tail to breathe. The scheduler will never exceed roughly 15 strikes per minute.
@@ -72,13 +73,17 @@ Your last length and root tone are remembered locally. On mobile, keep the playe
 
 Open **Revisit** below the playback buttons to load an earlier performance, share a replay link, or export a WAV.
 
-1. **Load & play:** Paste an eight-character hexadecimal seed, an Open export filename (with or without `.wav`, including `.mp3` or `.flac` conversions), or a replay link, then press Load & play. A seed or older filename uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and presents **Play this performance**; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. After playback starts, Play creates a new performance and Replay returns to the most recent one.
+1. **Load & play:** Paste a complete seed (seventeen hexadecimal characters for new Long performances, eight for older records and Short), an Open export filename (with or without `.wav`, including `.mp3` or `.flac` conversions), or a replay link, then press Load & play. A seed or older filename uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and presents **Play this performance**; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. After playback starts, Play creates a new performance and Replay returns to the most recent one.
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 
 Keep the complete replay link or original export filename: it preserves the planned notes, timing, FM voices, and stereo movement. A seed alone is not a complete record of a performance, and older filenames may omit settings that cannot be recovered automatically. Unsupported replay settings are explained when you try to load them. Open does not reconstruct a seed from an audio recording.
 
-The Long Studies collection includes eight variations that preserve the opening two minutes of 08b0195e before developing its source melody, with one deliberate change: the tritone landing at 1:35 is lowered a semitone to make a perfect-fourth leap. Their complete replay links or filenames preserve this shared opening. Ordinary new performances continue to use their own seed from the beginning.
+The seventeen-character Long seed carries three choices: the melody construction, the melody itself, and the performance settings that control tempo, FM and accompaniment. Play draws all three automatically. No parent performance needs to be supplied to generate or replay a complete seed.
+
+Short keeps its eight-character seeds. The preserved [0393ded7 Short study](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=3&rate=44100) still uses `0393ded7` at 200 Hz, Short and 44.1 kHz; its notes, timing and sound settings are unchanged. Earlier complete export filenames and replay links remain valid.
+
+The twenty-four Long listening studies have complete seeds that ordinary Play can draw. Their notes, timing, FM voices and organ events are unchanged; the complete seed now includes every choice needed for independent generation. The [seed mapping and replay links](studies/nov12-ordinary-seeds/manifest.json) identify those same performances.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 
@@ -107,9 +112,12 @@ npm run test:browser
 
 Native browser checks use Playwright Chromium, Firefox and WebKit; see the [development notes](tests/README.md) for installation, scripted WAV rendering and regression checks.
 
+The [seed-generation notes](docs/ordinary-seeds.md) describe the complete Long seed format, duration constraints and verification that the saved studies are reachable through ordinary Play. The [theme and mirror notes](docs/theme-mirror-pairs.md) document the musical form.
+
 ---
 
 ### License
 
 [MIT License](LICENSE). Copyright (c) 2026 Aaron Koppel.
+
 

@@ -31,13 +31,15 @@ test('Related Long studies retain the entire original opening and complete a saf
   }
 });
 
-test('New opening family leaves every retained version and both default modes unchanged',()=>{
+test('Retained versions preserve the previous release plans',()=>{
   const baseline=process.env.OPEN_RELEASE_BASELINE;
   if(!baseline)return;
   const old=harness(fs.readFileSync(path.resolve(baseline),'utf8')).api;
   const current=harness().api;
   for(const seed of [0x08b0195e,0x0393ded7,0x12345678])for(const mode of ['short','long']){
-    for(const engine of [undefined,'3','21','29','30']){
+    // The pre-consolidation baseline ends at 29. Later saved versions are
+    // compared with the pre-FM-refinement baseline in fm.test.cjs.
+    for(const engine of ['3','21','29']){
       assert.deepEqual(plain(current.createPerformance(seed,121,mode,engine)),plain(old.createPerformance(seed,121,mode,engine)));
     }
   }
@@ -67,3 +69,4 @@ test('Gentler opening changes only the tritone landing pitch while preserving ti
     assert.equal(record.engine,'32');
   }
 });
+
