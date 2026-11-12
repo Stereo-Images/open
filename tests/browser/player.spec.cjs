@@ -152,6 +152,22 @@ test('the refined 08b0195e opening variation retains its replay recipe in the br
   expect(replay.searchParams.get('length')).toBe('long');
 });
 
+test('the pitch-only variation retains the child tempo recipe in the browser', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', {
+    value: {writeText: async () => { throw new Error('clipboard denied'); }}
+  }));
+  await page.goto('/player.html?seed=3460e991&tone=121&length=long&engine=33&base=34&rate=44100');
+  await page.getByRole('button', {name: 'Play this performance', exact: true}).click();
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 3460e991');
+  await page.locator('#stop').click();
+  await page.locator('#copyReplay').click();
+  const replay = new URL(await page.locator('#replayLink').inputValue());
+  expect(replay.searchParams.get('engine')).toBe('33');
+  expect(replay.searchParams.get('base')).toBe('34');
+  expect(replay.searchParams.get('tone')).toBe('121');
+  expect(replay.searchParams.get('length')).toBe('long');
+});
+
 test('a shared performance has clear narrow-screen controls and a separate new-performance action', async ({ page }) => {
   await page.setViewportSize({width: 320, height: 568});
   await page.goto('/player.html?' + replayQuery);
