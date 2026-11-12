@@ -78,7 +78,9 @@ Open **Revisit** below the playback buttons to load an earlier performance, shar
 
 Keep the complete replay link or original export filename: it preserves the planned notes, timing, FM voices, and stereo movement. A seed alone is not a complete record of a performance, and older filenames may omit settings that cannot be recovered automatically. Unsupported replay settings are explained when you try to load them. Open does not reconstruct a seed from an audio recording.
 
-The Long Studies collection includes eight variations that preserve the opening two minutes of 08b0195e before developing its source melody, with one deliberate change: the tritone landing at 1:35 is lowered a semitone to make a perfect-fourth leap. Their complete replay links or filenames preserve this shared opening. Ordinary new performances continue to use their own seed from the beginning.
+In new Long performances, each complete theme is followed by its notes in reverse order, using the same sound settings for corresponding strikes. An organ interlude follows the pair. The next variation gives the same theme new bell colors, then mirrors those colors in turn.
+
+The latest Long Studies collection includes eight variations using every bell pitch selected through 2:00 in the original 08b0195e, eight using the original theme of 4850166b, and eight independent seeds. The 08b0195e family retains the approved perfect-fourth substitution for the tritone landing at 1:35. Each child seed sets its own tempo, so the inherited phrase occupies a different elapsed duration. Complete replay links or filenames preserve the chosen source melody and settings; a bare seed starts an ordinary performance with its own theme.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 
@@ -112,4 +114,5 @@ Native browser checks use Playwright Chromium, Firefox and WebKit; see the [deve
 ### License
 
 [MIT License](LICENSE). Copyright (c) 2026 Aaron Koppel.
+
 

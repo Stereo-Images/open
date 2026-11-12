@@ -93,6 +93,10 @@
   const GENTLER_OPENING_ENGINE = "32";
   const SLOW_BEATING_ENGINE = "33";
   const SEEDED_OPENING_ENGINE = "34";
+  const THEME_PAIR_ENGINE = "35";
+  const REFERENCE_THEME_PAIR_ENGINE = "36";
+  const SPARSE_THEME_PAIR_ENGINE = "37";
+  const THEME_PAIR_ENGINES = new Set([THEME_PAIR_ENGINE, REFERENCE_THEME_PAIR_ENGINE, SPARSE_THEME_PAIR_ENGINE]);
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
   const G21_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true});
@@ -118,10 +122,12 @@
   });
   const SUPPORTED_ENGINES = new Set(["1", ENGINE_VERSION, "4", LONG_STUDY_ENGINE, FIXED_COLLECTION_ENGINE, DOMINANT_PEDAL_ENGINE, LOW_PEDAL_ENGINE, BELLS_ONLY_ENGINE, RESTORED_DRONE_ENGINE, DRONE_ARCH_ENGINE, LOUDER_DRONE_ARCH_ENGINE, GRANULAR_DRONE_ENGINE, VARIED_GRANULAR_ENGINE, TEXTURED_DRONE_ENGINE, CONTEXTUAL_DRONE_ENGINE, QUIETER_INTERLUDE_ENGINE, EXACT_MELODY_ENGINE, EVOLVING_INTERLUDE_ENGINE, SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SLOW_BEATING_ENGINE, SEEDED_OPENING_ENGINE]);
 
+  for (const engine of THEME_PAIR_ENGINES) SUPPORTED_ENGINES.add(engine);
+
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
-  function defaultEngine() {
-    return SLOW_BEATING_ENGINE;
+  function defaultEngine(duration) {
+    return duration === "long" ? THEME_PAIR_ENGINE : SLOW_BEATING_ENGINE;
   }
 
   function seedHex(seed) { return seed.toString(16).padStart(8, "0"); }
@@ -139,7 +145,8 @@
       throw new Error("The replay root tone must be a whole number from 110 to 200 Hz.");
     if (!["short", "long"].includes(record.duration))
       throw new Error("The replay length must be short or long.");
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(record.baseEngine ?? record.engine) && record.duration !== "long")
+    if ((["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(record.baseEngine ?? record.engine)
+        || THEME_PAIR_ENGINES.has(record.baseEngine ?? record.engine)) && record.duration !== "long")
       throw new Error("This saved performance requires Long. Check its original replay link or filename.");
     if (record.sampleRate != null && (!Number.isInteger(sampleRate) || sampleRate < 3000 || sampleRate > 384000))
       throw new Error("The replay sample rate is invalid.");
@@ -2204,21 +2211,38 @@
   function createMirroredStudyGenerator(seed, baseFreq, duration, compositionOptions = {}) {
     const clone = value => JSON.parse(JSON.stringify(value));
     const suspendedHarmony = compositionOptions.suspendedHarmony === true;
+    const completePairs = compositionOptions.completeThemePairs === true;
     const raw = createStruckStudyGenerator(seed, baseFreq, Infinity, true, G22_OPTIONS);
-    const originalTheme = raw.study.theme.slice(), slots = [0,1,2,3,4,5,4,3,2,1,0];
+    const originalTheme = (compositionOptions.sourceTheme?.pitches ?? raw.study.theme).slice();
+    const forwardSlots = originalTheme.map((_, i) => i);
+    const slots = completePairs ? [...forwardSlots, ...forwardSlots.slice().reverse()] : [0,1,2,3,4,5,4,3,2,1,0];
     const theme = slots.map(i => originalTheme[i]);
     const tail = VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25;
     const startTime = 0.05, sectionGap = compositionOptions.sectionGapSeconds ?? 5, statementDuration = 22;
     const maximumDuration = compositionOptions.maximumDurationSeconds ?? 1800;
     const halves = [], candidates = [];
     // One expanding/contracting arch, stretched for the selected total length.
-    const countsFor = h => Array.from({length: 2*h-1}, (_, i) => h === 1 ? 3 :
-      1 + Math.floor(2*Math.min(i, 2*h-2-i)/(h-1)));
+    const countsFor = h => completePairs
+      ? Array.from({length:h-1}, (_,i) => h === 2 ? 3 :
+          1 + Math.floor(2*Math.min(i,h-2-i)/Math.max(1,Math.floor((h-2)/2))))
+      : Array.from({length: 2*h-1}, (_, i) => h === 1 ? 3 :
+          1 + Math.floor(2*Math.min(i, 2*h-2-i)/(h-1)));
     for (let h = 1; h <= 64; h++) {
-      const source = Array.from({length: 11}, () => raw.next());
-      const originals = source.map(g => g.notes.find(n => n.kind === 'bell'));
-      const gaps = originals.slice(1,6).map((n,i) => Math.max(4,n.time-originals[i].time));
-      const reflectedGaps = [...gaps,...gaps.slice().reverse()], offsets = [0];
+      const source = Array.from({length: completePairs ? originalTheme.length : 11}, () => raw.next());
+      const originals = source.map((g,i) => {
+        const n = g.notes.find(n => n.kind === 'bell');
+        if (!completePairs) return n;
+        const freq = originalTheme[i];
+        return {...n, freq, voices:n.voices.map(v => ({...v, frequency:freq+(v.frequency-n.freq)}))};
+      });
+      const gaps = originals.slice(1,completePairs ? originals.length : 6)
+        .map((n,i) => Math.max(4,n.time-originals[i].time));
+      // Keep both occurrences of the turning note, one seeded beat apart.
+      // The return reuses every forward recipe and reflects its inter-onset gaps.
+      const reflectedGaps = completePairs
+        ? [...gaps,Math.max(4,raw.nextTime-originals.at(-1).time),...gaps.slice().reverse()]
+        : [...gaps,...gaps.slice().reverse()];
+      const offsets = [0];
       reflectedGaps.forEach(gap => offsets.push(offsets.at(-1)+gap));
       const bells = slots.map((slot,i) => ({...clone(originals[slot]),time:offsets[i]}));
       const directSpan = offsets.at(-1)+bells.at(-1).duration;
@@ -2232,17 +2256,21 @@
         .map(n=>({...clone(n),time:(span-n.duration)/2}));
       halves.push({bells,background,span,gaps:reflectedGaps,finalTailExtension});
       const counts=countsFor(h);
-      const end=startTime+2*halves.reduce((sum,p)=>sum+p.span,0)
-        +statementDuration*counts.reduce((a,b)=>a+b,0)+sectionGap*(4*h-2)+halves[0].finalTailExtension;
-      if(h>=(compositionOptions.minimumHalfCount??3)&&
+      const end=startTime+(completePairs?1:2)*halves.reduce((sum,p)=>sum+p.span,0)
+        +statementDuration*counts.reduce((a,b)=>a+b,0)+sectionGap*(completePairs?2*(h-1):4*h-2)
+        +halves[completePairs?h-1:0].finalTailExtension;
+      if(h>=(completePairs?(compositionOptions.minimumPairCount??2):(compositionOptions.minimumHalfCount??3))&&
         end+tail>=(compositionOptions.minimumDurationSeconds??600)&&end+tail<=maximumDuration)
         candidates.push({halfCount:h,counts,end,exportDuration:end+tail});
       if(end+tail>maximumDuration)break;
     }
-    if(!candidates.length)throw new Error('No complete mirrored Long form in the duration range');
+    if(!candidates.length)throw new Error(completePairs
+      ? 'This reference theme needs a faster seed to fit two complete theme–mirror pairs within 30 minutes.'
+      : 'No complete mirrored Long form in the duration range');
     const chosen=candidates.reduce((best,c)=>Math.abs(c.exportDuration-duration)<Math.abs(best.exportDuration-duration)?c:best);
-    const h=chosen.halfCount,passCount=2*h;
-    const paletteOrder=[...Array(h).keys(),...Array(h).keys()].map((i,j)=>j<h?i:h-1-i);
+    const h=chosen.halfCount,passCount=completePairs?h:2*h;
+    const paletteOrder=completePairs?[...Array(h).keys()]
+      :[...Array(h).keys(),...Array(h).keys()].map((i,j)=>j<h?i:h-1-i);
     const groups=[],entries=[],passes=[];
     let cursor=startTime;
     for(let cycle=0;cycle<passCount;cycle++){
@@ -2252,7 +2280,8 @@
         const ending=cycle===passCount-1&&slot===pass.bells.length-1;
         groups.push({time:bell.time,notes:[bell],ending,
           ...(ending?{endingKind:'mirrored-theme-end'}:{}),
-          study:{cycle,slot,palette,mirroredSlot:10-slot,varied:false}});
+          study:{cycle,slot,palette,mirroredSlot:slots.length-1-slot,varied:false,
+            ...(completePairs?{direction:slot<originalTheme.length?'forward':'reverse',sourceSlot:slots[slot]}:{})}});
       }
       if(pass.background.length){
         const notes=pass.background.map(n=>({...clone(n),time:start+n.time}));
@@ -2261,6 +2290,8 @@
       }
       const span = pass.span+(cycle===passCount-1?pass.finalTailExtension:0);
       cursor+=span;passes.push({cycle,palette,start,end:cursor,span,
+        ...(completePairs?{forwardEnd:start+pass.bells[originalTheme.length-1].time,
+          mirrorStart:start+pass.bells[originalTheme.length].time,forwardStrikeCount:originalTheme.length}:{}),
         ...(compositionOptions.bellTailHandoff?{bellDirectEnd:start+pass.span+pass.finalTailExtension}: {})});
       if(cycle===passCount-1)continue;
       cursor+=sectionGap;
@@ -2348,7 +2379,7 @@
       notes.forEach(n=>n.envelope.forEach(p=>{p.value*=scale;}));return notes;
     }
     let previous=null,templateCursor=0;
-    for(let i=0;i<h;i++){
+    for(let i=0;i<(completePairs?Math.ceil(entries.length/2):h);i++){
       const pair=[entries[i]];if(i!==entries.length-1-i)pair.push(entries[entries.length-1-i]);
       const contexts=pair.map(contextFor);
       const safe=options.filter(c=>c.voicings.length&&c.pitches.every(p=>contexts.every(ctx=>
@@ -2420,12 +2451,18 @@
     groups.sort((a,b)=>a.time-b.time);let position=0;
     return {
       density:raw.density,arcLen:0,arcClimaxAt:-1,
-      study:Object.freeze({form:'nested-mirror',scale:[0,2,4,5,7,9],theme,sourceTheme:originalTheme,
-        pitchPolicy:'exact-mirrored-theme',endingPolicy:'complete-mirror',
+      study:Object.freeze({form:completePairs?'theme-mirror-pairs':'nested-mirror',scale:[0,2,4,5,7,9],theme,sourceTheme:originalTheme,
+        pitchPolicy:completePairs?'complete-theme-then-retrograde':'exact-mirrored-theme',endingPolicy:'complete-mirror',
+        ...(completePairs?{sourceReference:compositionOptions.sourceTheme?.reference??null}:{}),
         mirror:{slotOrder:slots,paletteOrder,passCount,halfCount:h,passes,start:startTime,end:cursor,
+          ...(completePairs?{pairCount:passCount,forwardStrikeCount:originalTheme.length,
+            strikesPerPair:slots.length,repeatTurningNote:true,globalPaletteMirror:false}:{}),
           midpoint:(startTime+cursor)/2,sectionGapSeconds:sectionGap,eventSymmetry:!compositionOptions.bellTailHandoff,reverseAudio:false,
           ...(compositionOptions.bellTailHandoff?{handoff:'bell-tail-overlap',orderSymmetry:true}: {})},
         droneArch:{...clone(organSource.study.droneArch),pattern:chosen.counts,form:'single-mirrored-arch',interludes:entries,
+          ...(completePairs?{placement:'after-every-complete-theme-mirror-pair',minimumInterludes:1,
+            targetDurationSeconds:duration,sourceTargetDuration:duration,
+            addedDuration:entries.reduce((sum,e)=>sum+e.end-e.start+2*sectionGap,0)}:{}),
           evolution:groups.filter(g=>g.interlude).map(g=>g.interlude.evolution),
           harmony:{...clone(organSource.study.droneArch.harmony),policy:'paired-melody-context',
             ...(suspendedHarmony?{allowedQualities:['major','minor','open-fifth','sus2','sus4'],
@@ -2898,6 +2935,33 @@
       next() { return groups[position++] ?? null; }};
   }
 
+  function createThemePairGenerator(seed, baseFreq, duration, engine) {
+    let sourceTheme;
+    if (engine === REFERENCE_THEME_PAIR_ENGINE) {
+      const parent = createPerformanceGenerator(0x08b0195e, baseFreq, Infinity, "3");
+      const bells = [];
+      while (parent.nextTime <= 120) bells.push(...parent.next().notes.filter(n => n.kind === 'bell'));
+      const pitches = bells.map(n => n.freq);
+      let adjustment = null;
+      if (Math.abs(Math.round(12*Math.log2(pitches[22]/pitches[21]))) === 6) {
+        const originalFrequency = pitches[22];
+        pitches[22] /= 2**(1/12);
+        adjustment = {strike:23,sourceTime:bells[22].time,originalFrequency,
+          frequency:pitches[22],semitoneShift:-1,reason:'replace-tritone-landing'};
+      }
+      sourceTheme = {pitches,reference:{seed:'08b0195e',engine:'3',sourceThroughSeconds:120,
+        inheritance:'pitches-only',bellCount:pitches.length,timingSeed:seedHex(seed),
+        ...(adjustment?{adjustment}:{})}};
+    } else if (engine === SPARSE_THEME_PAIR_ENGINE) {
+      const parent = createStruckStudyGenerator(0x4850166b, baseFreq, Infinity, true, G22_OPTIONS);
+      sourceTheme = {pitches:parent.study.theme.slice(),reference:{seed:'4850166b',
+        source:'complete-original-theme-before-palindrome',inheritance:'pitches-only',
+        bellCount:parent.study.theme.length,timingSeed:seedHex(seed)}};
+    }
+    return createSpectralOrganGenerator(seed, baseFreq, duration, true,
+      {completeThemePairs:true,...(sourceTheme?{sourceTheme}:{})});
+  }
+
   function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput), baseEngine = null) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
     if (baseEngine != null && (engine !== SLOW_BEATING_ENGINE
@@ -2912,12 +2976,15 @@
         notes: Object.freeze(group.notes.map(refineBellFM))}));
       return Object.freeze({...original, groups: Object.freeze(groups)});
     }
-    if (["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) && durationInput !== "long")
+    if ((["4", LONG_STUDY_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine)
+        || THEME_PAIR_ENGINES.has(engine)) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const duration = resolveDuration(seed, durationInput);
     // Engine 18 changes Long's pitch repetition and phrase-boundary ending.
     // Short and every explicit legacy version retain their old paths.
-    const generator = engine === SEEDED_OPENING_ENGINE
+    const generator = THEME_PAIR_ENGINES.has(engine)
+      ? createThemePairGenerator(seed, tone, duration, engine)
+      : engine === SEEDED_OPENING_ENGINE
       ? createSeededOpeningGenerator(seed, tone, duration)
       : [INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE].includes(engine)
       ? createInheritedOpeningGenerator(seed, tone, duration, engine === GENTLER_OPENING_ENGINE)
@@ -2987,8 +3054,9 @@
     const groups = [];
     let lastVoiceEnd = 0;
     while (true) {
-      const group = generator.next();
+      let group = generator.next();
       if (!group) break;
+      if (THEME_PAIR_ENGINES.has(engine)) group = {...group,notes:group.notes.map(refineBellFM)};
       for (const note of group.notes) {
         lastVoiceEnd = Math.max(lastVoiceEnd, note.time + note.duration);
         if (note.voices) {
@@ -3005,13 +3073,13 @@
       seed, tone, duration: durationInput, targetDuration: duration, density: generator.density,
       ...(generator.audioSeed !== undefined ? {audioSeed: generator.audioSeed} : {}),
       arcLen: generator.arcLen, arcClimaxAt: generator.arcClimaxAt,
-      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) ? {tempo: Object.freeze({nominalBpm: (generator.continuationDensity ?? generator.density) * 60,
+      ...([SWEPT_INTERLUDE_ENGINE, RESTORED_TEMPO_ENGINE, PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) || THEME_PAIR_ENGINES.has(engine) ? {tempo: Object.freeze({nominalBpm: (generator.continuationDensity ?? generator.density) * 60,
         lowerBpm: 3, upperBpm: engine === SWEPT_INTERLUDE_ENGINE ? 63 : 15,
         minimumStrikeInterval: engine === SWEPT_INTERLUDE_ENGINE ? 60 / 63 : 4})} : {}),
       ...(generator.study ? { study: generator.study } : {}),
       groups: Object.freeze(groups),
       // Include per-voice settling, resonator settling, the full IR and pre-delay.
-      exportDuration: ([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) && durationInput === "long"
+      exportDuration: (([PER_PASS_ARCH_ENGINE, SMOOTH_ORGAN_ENGINE, ORGAN_CHORUS_ENGINE, MIRRORED_STUDY_ENGINE, LONG_ORGAN_ROOM_ENGINE, AUDIBLE_ORGAN_ROOM_ENGINE, PRINCIPAL_PLENUM_ENGINE, SPECTRAL_ORGAN_ENGINE, SUSPENDED_ORGAN_ENGINE, INHERITED_OPENING_ENGINE, GENTLER_OPENING_ENGINE, SEEDED_OPENING_ENGINE].includes(engine) || THEME_PAIR_ENGINES.has(engine)) && durationInput === "long"
         ? lastVoiceEnd : Math.max(duration, lastVoiceEnd))
         + VOICE_SETTLE_SECONDS + 0.1 + 10 + 0.015 + 0.25,
       continuation: null

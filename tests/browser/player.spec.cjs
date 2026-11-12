@@ -74,6 +74,25 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
+for (const engine of ['35', '36', '37']) test(`complete theme pair recipe ${engine} starts and retains its replay settings`, async ({ page }) => {
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.addInitScript(() => {
+    Object.defineProperty(navigator, 'clipboard', {configurable:true,value:{writeText:async()=>{throw new Error('clipboard denied');}}});
+  });
+  await page.goto(`/player.html?seed=1a1155f9&tone=121&length=long&engine=${engine}&rate=44100`);
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','false');
+  await page.locator('#playNow').click();
+  await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','true');
+  await page.locator('#stop').click();
+  await page.locator('#revisit').evaluate(element=>{element.open=true;});
+  await page.locator('#copyReplay').click();
+  const replay=new URL(await page.locator('#replayLink').inputValue());
+  expect(replay.searchParams.get('engine')).toBe(engine);
+  expect(replay.searchParams.get('seed')).toBe('1a1155f9');
+  expect(replay.searchParams.get('tone')).toBe('121');
+  expect(errors).toEqual([]);
+});
+
 test('new performances retain the current engine in replay links for each length', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', {
@@ -82,7 +101,7 @@ test('new performances retain the current engine in replay links for each length
   });
   await page.goto('/player.html');
   await expect(page.locator('#songDuration option')).toHaveCount(2);
-  for (const [length, engine] of [['long', '33'], ['short', '33']]) {
+  for (const [length, engine] of [['long', '35'], ['short', '33']]) {
     await page.locator('#songDuration').selectOption(length);
     await page.locator('#playNow').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');

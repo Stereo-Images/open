@@ -1,0 +1,134 @@
+[
+  {
+    "seed": "037586a8",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "907d60a9",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "8ee63dc6",
+    "batch": "reference08",
+    "accepted": false,
+    "reason": "Two complete pairs exceed the 30-minute limit at the seed tempo."
+  },
+  {
+    "seed": "956e99d9",
+    "batch": "reference08",
+    "accepted": false,
+    "reason": "Two complete pairs exceed the 30-minute limit at the seed tempo."
+  },
+  {
+    "seed": "a0f54a5b",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "558deaaa",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "b58993ae",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "b62fdfd8",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "50dde011",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "fd4a5cb0",
+    "batch": "reference08",
+    "accepted": true
+  },
+  {
+    "seed": "697bb2c6",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "f7030af4",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "ad72f973",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "ec3d31a5",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "d3a3a309",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "aa5855dd",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "6be85b52",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "e76b1964",
+    "batch": "reference485",
+    "accepted": true
+  },
+  {
+    "seed": "ee4d8944",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "31a1950a",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "068b082d",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "3cfe99ac",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "b3bc796e",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "da1b96d1",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "0d66fce9",
+    "batch": "independent",
+    "accepted": true
+  },
+  {
+    "seed": "631f8cdb",
+    "batch": "independent",
+    "accepted": true
+  }
+]

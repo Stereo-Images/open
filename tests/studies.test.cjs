@@ -37,8 +37,8 @@ test('new duration defaults use selective FM refinement in both forms',()=>{
   const h=harness(source);
   for(const duration of ['short','long']){
     const score=h.api.createPerformance(0x0393ded7,121,duration);
-    assert.deepEqual(plain(score),plain(h.api.createPerformance(0x0393ded7,121,duration,'33')));
-    assert.equal(score.study.form,duration==='long'?'nested-mirror':'fixed-collection-walk');
+    assert.deepEqual(plain(score),plain(h.api.createPerformance(0x0393ded7,121,duration,duration==='long'?'35':'33')));
+    assert.equal(score.study.form,duration==='long'?'theme-mirror-pairs':'fixed-collection-walk');
     assert.ok(score.density*60>=3&&score.density*60<=15);
   }
 });

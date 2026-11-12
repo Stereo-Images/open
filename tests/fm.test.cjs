@@ -109,13 +109,13 @@ test('the rule leaves unrelated, shallow, faint and widely detuned cases alone',
   assert.notEqual(api.refineBellFM(bell), bell);
 });
 
-test('new Short and Long plans change only selected FM parameters and replay deterministically', () => {
+test('retained g33 Short and Long plans change only selected FM parameters and replay deterministically', () => {
   const {api} = harness();
   let affected = 0, untouched = 0;
   for (const seed of [0x08c1db04, 0x0393ded7, 0x08b0195e, 0x0b086950]) {
     for (const tone of [110, 121, 165, 200]) for (const duration of ['short', 'long']) {
       const before = api.createPerformance(seed, tone, duration, duration === 'short' ? '21' : '30');
-      const after = api.createPerformance(seed, tone, duration);
+      const after = api.createPerformance(seed, tone, duration, '33');
       assert.deepEqual(withoutFM(after), withoutFM(before));
       const oldNotes = before.groups.flatMap(g => g.notes);
       after.groups.flatMap(g => g.notes).forEach((note, i) => {
