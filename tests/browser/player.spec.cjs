@@ -22,7 +22,7 @@ function expectMatchingWavs(first, second, label) {
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    crypto.getRandomValues = array => { array[0] = 12345; return array; };
+    crypto.getRandomValues = array => { array.fill(12345); if(array.length>1)array[0]=0; return array; };
     window.audioProbe = { contexts: [], workers: 0, recorders: [], edges: [] };
     const connect = AudioNode.prototype.connect;
     AudioNode.prototype.connect = function(destination, ...args) {
@@ -74,6 +74,33 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
+for (const [construction, melody, performance] of [[1,'08b0195e','037586a8'],[0,'4850166b','697bb2c6'],[0,'ee4d8944','ee4d8944']]) {
+  test(`ordinary Play draws and replays the complete seed ${construction}${melody}${performance}`,async({page})=>{
+    const seed=String(construction)+melody+performance;
+    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.goto('/player.html');
+    await page.locator('#songDuration').selectOption('long');
+    await page.evaluate(({construction,melody,performance})=>{
+      document.getElementById('tone').value='121';
+      crypto.getRandomValues=words=>{words.set([construction,parseInt(melody,16),parseInt(performance,16)]);return words;};
+      Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('clipboard denied');}}});
+    },{construction,melody,performance});
+    await page.locator('#playNow').click();
+    await expect(page.locator('#replayStatus')).toContainText('Playing seed '+seed);
+    await page.locator('#stop').click();
+    await page.locator('#revisit').evaluate(el=>{el.open=true;});
+    await page.locator('#copyReplay').click();
+    const link=await page.locator('#replayLink').inputValue();
+    expect(new URL(link).searchParams.get('seed')).toBe(seed);
+    expect(new URL(link).searchParams.get('engine')).toBe('38');
+    await page.locator('#replayInput').fill(seed);
+    await page.locator('#replayRun').click();
+    await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','true');
+    await expect(page.locator('#replayStatus')).toContainText(seed);
+    expect(errors).toEqual([]);
+  });
+}
+
 for (const engine of ['35', '36', '37']) test(`complete theme pair recipe ${engine} starts and retains its replay settings`, async ({ page }) => {
   const errors=[];page.on('pageerror',error=>errors.push(error.message));
   await page.addInitScript(() => {
@@ -101,7 +128,7 @@ test('new performances retain the current engine in replay links for each length
   });
   await page.goto('/player.html');
   await expect(page.locator('#songDuration option')).toHaveCount(2);
-  for (const [length, engine] of [['long', '35'], ['short', '33']]) {
+  for (const [length, engine] of [['long', '38'], ['short', '33']]) {
     await page.locator('#songDuration').selectOption(length);
     await page.locator('#playNow').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');

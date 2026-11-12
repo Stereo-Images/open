@@ -44,7 +44,7 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',b
   }
   return await running;
  };
- let score=h.api.createPerformance(parseInt(seed,16),tone,duration,engine,baseEngine),tailStartsAt=27,lateTailStartsAt=27;
+ let score=h.api.createPerformance(seed.length===17?seed:parseInt(seed,16),tone,duration,engine,baseEngine),tailStartsAt=27,lateTailStartsAt=27;
  if(mode==='prefix')score={...score,groups:score.groups.filter(g=>g.time<120),exportDuration:120};
  if(mode==='background'){
   const source=score.groups.find(g=>g.background),start=source.time;

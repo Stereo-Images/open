@@ -121,7 +121,7 @@ function harness(source = fs.readFileSync(path.join(__dirname, '../../player.js'
   };
   const sandbox = { console, Blob, Float32Array, Uint32Array, ArrayBuffer, DataView,
     navigator: { userAgent: 'desktop', maxTouchPoints: 0 },
-    crypto: { getRandomValues(a) { a[0] = 12345; return a; } },
+    crypto: { getRandomValues(a) { a.fill(12345); if(a.length>1)a[0]=0; return a; } },
     AudioContext: Context, OfflineAudioContext: OfflineContext, MediaRecorder: Recorder, Worker,
     localStorage: { getItem() { return null; }, setItem() {} },
     URL: class extends URL {
