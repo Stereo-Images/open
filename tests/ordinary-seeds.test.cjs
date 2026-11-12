@@ -9,6 +9,36 @@ const word=n=>(n>>>0).toString(16).padStart(8,'0');
 const seedFor=(kind,melody,performance)=>String(kind)+word(melody)+word(performance);
 const renderInput=s=>plain({groups:s.groups,density:s.density,exportDuration:s.exportDuration,audioSeed:s.audioSeed??s.seed});
 
+test('the exact 0393ded7 g3 Short Study remains identical in its saved replay and ordinary Short Play',async()=>{
+  const filename='open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406';
+  const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');
+  h.elements.get('tone').value='200';h.elements.get('songDuration').value='short';
+  const reference=h.api.createPerformance(0x0393ded7,200,'short','3');
+  const portable=JSON.stringify(reference.groups,(_,v)=>typeof v==='number'?Number(v.toFixed(8)):v);
+  assert.equal(crypto.createHash('sha256').update(portable).digest('hex'),'90a479f84b6a2b06f3a5fd69a526aa1f2ccace84126113699af423dc5f23fdd9');
+  assert.equal(reference.exportDuration,85.56632370385142);
+  assert.equal(reference.groups.flatMap(g=>g.notes).filter(n=>n.kind==='bell').length,11);
+  const expected={seed:0x0393ded7,tone:200,duration:'short',engine:'3',sampleRate:44100};
+  for(const input of [filename,filename+'.wav'])assert.deepEqual(plain(h.api.parseReplayInput(input)),expected);
+  h.elements.get('replayInput').value=filename;await h.api.replayFromUI();
+  assert.deepEqual(renderInput(h.api.state().snapshot),renderInput(reference));
+  assert.equal(h.api.state().snapshot.engine,'3');
+  let draws=0;h.sandbox.crypto.getRandomValues=words=>{assert.equal(words.length,1);draws++;words[0]=0x0393ded7;return words;};
+  await h.api.startNewPerformance();
+  assert.equal(draws,1);assert.equal(h.api.state().snapshot.engine,'33');
+  assert.equal(h.api.state().snapshot.sampleRate,44100);
+  assert.deepEqual(renderInput(h.api.state().snapshot),renderInput(reference));
+  await h.api.replayLastPerformance();assert.equal(draws,1);
+  assert.deepEqual(renderInput(h.api.state().snapshot),renderInput(reference));
+  const exportJob=h.api.renderWavExport();
+  h.contexts[1].resolve({length:1,numberOfChannels:2,sampleRate:44100,getChannelData:()=>new Float32Array(1),copyFromChannel:a=>a.fill(0)});
+  await exportJob;
+  const exported=h.api.parseReplayInput(h.downloads[0]);
+  assert.equal(exported.seed,0x0393ded7);assert.equal(exported.tone,200);assert.equal(exported.sampleRate,44100);
+  assert.deepEqual(renderInput(h.api.createPerformance(exported.seed,exported.tone,exported.duration,exported.engine)),renderInput(reference));
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
 test('ordinary Play can draw each of the 24 exact saved performances without a replay or seed registry',async()=>{
   for(const row of manifest.recordings) {
     const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');

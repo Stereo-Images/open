@@ -74,6 +74,47 @@ test('an allowed pop-up preserves the separate player window', async ({ page }) 
 
 const replayQuery = 'seed=03b38656&tone=200&length=short&engine=1&rate=44100';
 
+test('the exact 0393ded7 saved Short Study and ordinary Short Play export the same audio', async ({ page }) => {
+  test.setTimeout(120000);
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  await page.goto('/player.html');
+  // Compare both paths at the saved recording's rate, independent of the CI device default.
+  await page.evaluate(()=>{
+    window.AudioContext=new Proxy(window.AudioContext,{
+      construct(Target,args){return new Target({...args[0],sampleRate:44100});}
+    });
+  });
+  await page.locator('#revisit').evaluate(element=>{element.open=true;});
+  await page.locator('#replayInput').fill('open-run-0393ded7-mviswtcb-g3-200hz-short-44100sr-1792628825406');
+  await page.locator('#replayRun').click();
+  await expect(page.locator('#tone')).toHaveValue('200');
+  await expect(page.locator('#songDuration')).toHaveValue('short');
+  await page.locator('#stop').click();
+  const exportWav=async()=>{
+    const downloading=page.waitForEvent('download');
+    await page.locator('#exportWav').click();
+    const download=await downloading;
+    return {name:download.suggestedFilename(),wav:await fs.readFile(await download.path())};
+  };
+  const saved=await exportWav();
+  expect(saved.name).toMatch(/-g3-200hz-short-44100sr-/);
+  expect((saved.wav.length-44)/4).toBe(3773475);
+  await page.evaluate(()=>{
+    crypto.getRandomValues=words=>{
+      if(words.length!==1)throw new Error('Short must retain its original seed format');
+      words[0]=0x0393ded7;return words;
+    };
+  });
+  await page.locator('#playNow').click();
+  await expect(page.locator('#replayStatus')).toContainText('Playing seed 0393ded7');
+  await page.locator('#stop').click();
+  const ordinary=await exportWav();
+  expect(ordinary.name).toMatch(/-g33-200hz-short-44100sr-/);
+  expectMatchingWavs(saved.wav,ordinary.wav,'0393ded7 archived recipe versus ordinary Short');
+  console.log('0393ded7 browser WAV SHA-256',require('node:crypto').createHash('sha256').update(saved.wav).digest('hex'));
+  expect(errors).toEqual([]);
+});
+
 for (const [construction, melody, performance] of [[1,'08b0195e','037586a8'],[0,'4850166b','697bb2c6'],[0,'ee4d8944','ee4d8944']]) {
   test(`ordinary Play draws and replays the complete seed ${construction}${melody}${performance}`,async({page})=>{
     const seed=String(construction)+melody+performance;
