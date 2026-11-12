@@ -19,6 +19,17 @@ for (const page of ['player.html', 'studies/index.html']) {
 }
 const manifest = JSON.parse(read('studies/g29/manifest.json'));
 const studies = read('studies/index.html');
+const currentStudies = JSON.parse(read('studies/nov12-ordinary-seeds/manifest.json')).recordings;
+const earlierStudies = [...JSON.parse(read('studies/nov11/manifest.json')).recordings, ...manifest.recordings];
+const listedStudies = [...currentStudies, ...earlierStudies];
+const selectorEntries = [...studies.matchAll(/<option value="([^"]+)" data-replay="([^"]+)"/g)]
+  .map(match => [match[1], match[2]]);
+assert.deepEqual(selectorEntries, listedStudies.map(row => [row.seed, row.replayFilename]),
+  'Study selector must list every current and earlier saved performance in manifest order');
+assert.equal(new Set(selectorEntries.map(row => row[0])).size, listedStudies.length, 'Study seeds must be unique');
+const inventory = `${listedStudies.length} saved Long performances: ${currentStudies.length} current studies and ${earlierStudies.length} earlier studies`;
+for (const file of ['README.md', 'studies/README.md', 'studies/index.html'])
+  assert.ok(read(file).includes(inventory), `${file}: documented study counts must match the manifests`);
 assert.equal(manifest.recordings.length, 16);
 for (const row of manifest.recordings) {
   assert.ok(studies.includes(`value="${row.seed}" data-replay="${row.replayFilename}"`));
@@ -32,3 +43,4 @@ for (const name of ['Open-g29-Sixteen-New-Studies.html', 'Open-Filtered-Spectral
 }
 for (const name of ['player.js', 'wav-worker.js', 'studies/studies.js']) new vm.Script(read(name), {filename: name});
 console.log('Both listening pages use one player; study data, redirects and assets are intact.');
+

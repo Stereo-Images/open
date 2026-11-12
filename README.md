@@ -12,8 +12,6 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 *Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Its uniqueness lies in the unpredictability of a first encounter: you discover the music as it happens. Pressing Play draws a fresh seed; Replay returns to the performance you have just discovered. A performance can be revisited, shared, or saved without changing how the next new performance unfolds.
 
-Every newly generated performance can also arise independently through another random Play at the same root tone and length. Its seed and settings preserve the choices needed to return to it. Chance rediscovery of a particular performance is extremely rare; sharing its complete replay link makes that return direct. New performances follow the same musical rules, without a catalog of favored recordings or a musical-quality score selecting the results.
-
 ### Open EP
 
 The planned *Open* EP pairs **Short Study** and **Long Study**, two selected recordings made with this instrument. Each captures one performance from the same musical possibilities available to every listener using Open.
@@ -73,6 +71,8 @@ Your last length and root tone are remembered locally. On mobile, keep the playe
 
 Open **Revisit** below the playback buttons to load an earlier performance, share a replay link, or export a WAV.
 
+Every newly generated performance can also arise independently through another random Play at the same root tone and length. Its seed and settings preserve the choices needed to return to it. Chance rediscovery of a particular performance is extremely rare; sharing its complete replay link makes that return direct. New performances follow the same musical rules, without a catalog of favored recordings or a musical-quality score selecting the results.
+
 1. **Load & play:** Paste a complete seed (seventeen hexadecimal characters for new Long performances, eight for older records and Short), an Open export filename (with or without `.wav`, including `.mp3` or `.flac` conversions), or a replay link, then press Load & play. A seed or older filename uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and presents **Play this performance**; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. After playback starts, Play creates a new performance and Replay returns to the most recent one.
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
@@ -83,7 +83,7 @@ The seventeen-character Long seed carries three choices: the melody construction
 
 Short keeps its eight-character seeds. The preserved [0393ded7 Short study](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=3&rate=44100) still uses `0393ded7` at 200 Hz, Short and 44.1 kHz; its notes, timing and sound settings are unchanged. Earlier complete export filenames and replay links remain valid.
 
-The twenty-four Long listening studies have complete seeds that ordinary Play can draw. Their notes, timing, FM voices and organ events are unchanged; the complete seed now includes every choice needed for independent generation. The [seed mapping and replay links](studies/nov12-ordinary-seeds/manifest.json) identify those same performances.
+The [Long Studies page](https://stereo-images.github.io/open/studies/) lists **56 saved Long performances: 24 current studies and 32 earlier studies**. The current twenty-four have complete seeds that ordinary Play can draw. Their notes, timing, FM voices and organ events are unchanged; the complete seed now includes every choice needed for independent generation. The [seed mapping and replay links](studies/nov12-ordinary-seeds/manifest.json) identify those same performances. Earlier studies retain their saved replay settings; the [collection inventory](studies/README.md) distinguishes the three batches.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 

@@ -79,8 +79,8 @@
         <div class="revisit-content">
           <label for="replayInput">Seed, filename or replay link</label>
           <input id="replayInput" type="text" autocomplete="off" autocapitalize="off"
-            spellcheck="false" aria-describedby="replayHelp" placeholder="e.g. d1a0b62b" />
-          <p id="replayHelp" class="revisit-help">Filenames work with or without .wav. For a seed or older filename, set the original root tone and length above. Play always creates a new performance.</p>
+            spellcheck="false" aria-describedby="replayHelp" placeholder="8- or 17-character seed" />
+          <p id="replayHelp" class="revisit-help">Short seeds have 8 characters; new Long seeds have 17. For a seed or older filename, set the original root tone and length above. Complete filenames and replay links restore the saved settings. Filenames work with or without .wav.</p>
           <button type="button" id="replayRun" class="btn">Load &amp; play</button>
           <div class="revisit-actions">
             <button type="button" id="copyReplay" class="btn" disabled>Copy replay link</button>
@@ -108,4 +108,5 @@
   <script src="player.js?v=1.0&amp;rev=sharing"></script>
 </body>
 </html>
+
 

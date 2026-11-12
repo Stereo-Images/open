@@ -1,6 +1,8 @@
 const { test, expect } = require('@playwright/test');
 const fs = require('node:fs/promises');
 const path = require('node:path');
+const listedStudyCount = ['nov12-ordinary-seeds', 'nov11', 'g29']
+  .reduce((total, collection) => total + require(`../../studies/${collection}/manifest.json`).recordings.length, 0);
 
 function expectMatchingWavs(first, second, label) {
   expect(second.length).toBe(first.length);
@@ -201,24 +203,25 @@ test('the Long-study link opens the shared player without autoplay', async ({ pa
   await page.locator('#revisit summary').click();
   await page.getByRole('link', { name: 'Explore Long studies' }).click();
   await expect(page).toHaveURL('/studies/');
-  await expect(page.locator('#batchSeed option')).toHaveCount(32);
+  await expect(page.locator('#batchSeed option')).toHaveCount(listedStudyCount);
   expect(await page.evaluate(() => audioProbe.contexts.length)).toBe(0);
   await expect(page.locator('#playNow')).toBeVisible();
 });
 
-test('the new related study replays and shares its inherited opening settings', async ({ page }) => {
+test('the current related study replays and shares its complete seed settings', async ({ page }) => {
   await page.addInitScript(() => Object.defineProperty(navigator, 'clipboard', {
     value: {writeText: async () => { throw new Error('clipboard denied'); }}
   }));
   await page.goto('/studies/');
-  await page.locator('#batchSeed').selectOption('5e350109');
+  await page.locator('#batchSeed').selectOption('108b0195e037586a8');
   await page.locator('#playStudy').click();
-  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 5e350109');
+  await expect(page.locator('#replayStatus')).toContainText('Replaying seed 108b0195e037586a8');
   await expect(page.locator('#tone')).toHaveValue('121');
   await page.locator('#stop').click();
   await page.locator('#copyReplay').click();
   const replay = new URL(await page.locator('#replayLink').inputValue());
-  expect(replay.searchParams.get('engine')).toBe('32');
+  expect(replay.searchParams.get('seed')).toBe('108b0195e037586a8');
+  expect(replay.searchParams.get('engine')).toBe('38');
   expect(replay.searchParams.get('length')).toBe('long');
   expect(replay.searchParams.get('rate')).toBe('44100');
 });
@@ -318,7 +321,7 @@ test('previous study URLs preserve shared performances when redirecting', async 
   await expect(page.locator('#replayStatus')).toContainText('Replaying seed 03b38656');
   await page.goto(old);
   await expect(page).toHaveURL('/studies/index.html');
-  await expect(page.locator('#batchSeed option')).toHaveCount(32);
+  await expect(page.locator('#batchSeed option')).toHaveCount(listedStudyCount);
 });
 
 test('replay links survive the launcher and the primary button plays the shared performance', async ({ page }) => {
