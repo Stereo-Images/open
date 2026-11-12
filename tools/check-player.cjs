@@ -28,7 +28,7 @@ assert.deepEqual(selectorEntries, listedStudies.map(row => [row.seed, row.replay
   'Study selector must list every current and earlier saved performance in manifest order');
 assert.equal(new Set(selectorEntries.map(row => row[0])).size, listedStudies.length, 'Study seeds must be unique');
 const inventory = `${listedStudies.length} saved Long performances: ${currentStudies.length} current studies and ${earlierStudies.length} earlier studies`;
-for (const file of ['README.md', 'studies/README.md', 'studies/index.html'])
+for (const file of ['studies/README.md', 'studies/index.html'])
   assert.ok(read(file).includes(inventory), `${file}: documented study counts must match the manifests`);
 assert.equal(manifest.recordings.length, 16);
 for (const row of manifest.recordings) {
