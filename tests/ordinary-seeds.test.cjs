@@ -39,7 +39,21 @@ test('the exact 0393ded7 g3 Short Study remains identical in its saved replay an
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('ordinary Play can draw each of the 24 exact saved performances without a replay or seed registry',async()=>{
+test('all 24 saved complete seeds retain their exact performances, including under the new replay engine',()=>{
+  const h=harness();
+  for(const row of manifest.recordings) {
+    const before=h.api.createPerformance(parseInt(row.previousSeed,16),121,'long',row.previousEngine);
+    for(const engine of ['38','39']) {
+      const score=h.api.createPerformance(row.seed,121,'long',engine);
+      assert.deepEqual(renderInput(score),renderInput(before),row.seed);
+      const portable=JSON.stringify(score.groups,(_,v)=>typeof v==='number'?Number(v.toFixed(8)):v);
+      assert.equal(crypto.createHash('sha256').update(portable).digest('hex'),row.portableGroupSha256);
+    }
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('ordinary Play draws complete current-form seeds with no parent performance or seed registry',async()=>{
   for(const row of manifest.recordings) {
     const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');
     h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
@@ -51,11 +65,15 @@ test('ordinary Play can draw each of the 24 exact saved performances without a r
     await h.api.startNewPerformance();
     const score=h.api.state().snapshot;
     assert.equal(h.api.state().isPlaying,true,row.seed);assert.equal(draws,1);
-    assert.equal(score.seed,row.seed);assert.equal(score.engine,'38');
+    const expectedSeed=row.seed[0]==='1'?'2'+row.seed.slice(1):row.seed;
+    assert.equal(score.seed,expectedSeed);assert.equal(score.engine,'39');
+    assert.deepEqual(renderInput(score),renderInput(h.api.createPerformance(expectedSeed,121,'long','39')));
+    assert.deepEqual(plain(h.api.createPerformance(expectedSeed,121,'long').groups),plain(score.groups));
     const before=h.api.createPerformance(parseInt(row.previousSeed,16),121,'long',row.previousEngine);
-    assert.deepEqual(renderInput(score),renderInput(before),row.previousSeed);
-    const portable=JSON.stringify(score.groups,(_,v)=>typeof v==='number'?Number(v.toFixed(8)):v);
-    assert.equal(crypto.createHash('sha256').update(portable).digest('hex'),row.portableGroupSha256);
+    assert.deepEqual(plain(score.study.sourceTheme),plain(before.study.sourceTheme));
+    assert.equal(score.density,before.density);
+    if(row.seed[0]==='0')assert.deepEqual(renderInput(score),renderInput(before),row.previousSeed);
+    else assert.equal(score.study.form,'theme-organ-mirror');
     h.sandbox.__OPEN_PLAYER_KILL__();
   }
 });
@@ -80,7 +98,7 @@ test('complete Long seeds round-trip without losing high bits, and legacy record
   assert.equal(h.api.parseReplayInput('4850166b').engine,'35');
   const high='0fffffffffffffffe', low='0ffffffffffffffff';
   assert.notEqual(h.api.parseReplayInput(high).seed,h.api.parseReplayInput(low).seed);
-  for(const bad of ['2ffffffffffffffff','000000000000000000','000000000000000g0'])assert.throws(()=>h.api.parseReplayInput(bad));
+  for(const bad of ['3ffffffffffffffff','000000000000000000','000000000000000g0'])assert.throws(()=>h.api.parseReplayInput(bad));
   assert.throws(()=>h.api.parseReplayInput(manifest.recordings[0].replayLink.replace('engine=38','engine=35')));
   assert.throws(()=>h.api.parseReplayInput(manifest.recordings[0].replayLink.replace('length=long','length=short')));
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -88,11 +106,14 @@ test('complete Long seeds round-trip without losing high bits, and legacy record
 
 test('new draws retry duration-incompatible phrases without filtering musical quality or changing a replay',async()=>{
   const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
-  const slow=seedFor(1,0x08b0195e,0x8ee63dc6),next=manifest.recordings[1];let draws=0;
-  assert.throws(()=>h.api.createPerformance(slow,121,'long','38'),e=>e.code==='LONG_FORM_DURATION');
+  const slow=seedFor(2,0x08b0195e,0x8ee63dc6),next=manifest.recordings[1],nextSeed='2'+next.seed.slice(1);let draws=0;
+  assert.throws(()=>h.api.createPerformance(slow,121,'long','39'),e=>e.code==='LONG_FORM_DURATION');
   h.sandbox.crypto.getRandomValues=words=>{words.set(draws++===0?[1,0x08b0195e,0x8ee63dc6]:[1,0x08b0195e,parseInt(next.previousSeed,16)]);return words;};
-  await h.api.startNewPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,next.seed);
-  await h.api.replayLastPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,next.seed);
+  await h.api.startNewPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,nextSeed);
+  await h.api.replayLastPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,nextSeed);
+  h.elements.get('replayInput').value=slow;await h.api.replayFromUI();
+  assert.equal(draws,2,'An incompatible replay must not draw a replacement');
+  assert.match(h.elements.get('replayStatus').textContent,/faster seed/);
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
@@ -100,8 +121,8 @@ test('ordinary phrase construction accepts unrelated melody seeds and respects r
   const h=harness();let accepted=0, durationRejected=0;const constructions=new Set(),themes=new Set();
   let n=0x4d595df4;const next=()=>n=(Math.imul(n,1664525)+1013904223)>>>0;
   for(const root of [110,121,165,200])for(let i=0;i<12;i++) {
-    const kind=i%2,melody=next(),performance=next(),seed=seedFor(kind,melody,performance);let s;
-    try{s=h.api.createPerformance(seed,root,'long','38');}catch(e){assert.equal(e.code,'LONG_FORM_DURATION');durationRejected++;continue;}
+    const kind=(i%2)*2,melody=next(),performance=next(),seed=seedFor(kind,melody,performance);let s;
+    try{s=h.api.createPerformance(seed,root,'long','39');}catch(e){assert.equal(e.code,'LONG_FORM_DURATION');durationRejected++;continue;}
     accepted++;constructions.add(s.study.sourceTheme.length);themes.add(JSON.stringify(s.study.sourceTheme));
     assert.equal(s.study.sourceReference.melodySeed,word(melody));assert.equal(s.audioSeed,performance);
     assert.equal(s.study.sourceTheme.length,kind===0?11:28);assert.ok(s.exportDuration>=600&&s.exportDuration<=1800);
