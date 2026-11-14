@@ -117,7 +117,7 @@ test('the exact 0393ded7 saved Short Study and ordinary Short Play export the sa
   expect(errors).toEqual([]);
 });
 
-for (const [construction, melody, performance] of [[1,'08b0195e','037586a8'],[0,'4850166b','697bb2c6'],[0,'ee4d8944','ee4d8944']]) {
+for (const [construction, melody, performance] of [[2,'08b0195e','037586a8'],[0,'4850166b','697bb2c6'],[0,'ee4d8944','ee4d8944']]) {
   test(`ordinary Play draws and replays the complete seed ${construction}${melody}${performance}`,async({page})=>{
     const seed=String(construction)+melody+performance;
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -125,7 +125,7 @@ for (const [construction, melody, performance] of [[1,'08b0195e','037586a8'],[0,
     await page.locator('#songDuration').selectOption('long');
     await page.evaluate(({construction,melody,performance})=>{
       document.getElementById('tone').value='121';
-      crypto.getRandomValues=words=>{words.set([construction,parseInt(melody,16),parseInt(performance,16)]);return words;};
+      crypto.getRandomValues=words=>{words.set([construction/2,parseInt(melody,16),parseInt(performance,16)]);return words;};
       Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async()=>{throw new Error('clipboard denied');}}});
     },{construction,melody,performance});
     await page.locator('#playNow').click();
@@ -135,7 +135,7 @@ for (const [construction, melody, performance] of [[1,'08b0195e','037586a8'],[0,
     await page.locator('#copyReplay').click();
     const link=await page.locator('#replayLink').inputValue();
     expect(new URL(link).searchParams.get('seed')).toBe(seed);
-    expect(new URL(link).searchParams.get('engine')).toBe('38');
+    expect(new URL(link).searchParams.get('engine')).toBe('39');
     await page.locator('#replayInput').fill(seed);
     await page.locator('#replayRun').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','true');
@@ -171,7 +171,7 @@ test('new performances retain the current engine in replay links for each length
   });
   await page.goto('/player.html');
   await expect(page.locator('#songDuration option')).toHaveCount(2);
-  for (const [length, engine] of [['long', '38'], ['short', '33']]) {
+  for (const [length, engine] of [['long', '39'], ['short', '33']]) {
     await page.locator('#songDuration').selectOption(length);
     await page.locator('#playNow').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');

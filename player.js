@@ -97,7 +97,9 @@
   const REFERENCE_THEME_PAIR_ENGINE = "36";
   const SPARSE_THEME_PAIR_ENGINE = "37";
   const ORDINARY_THEME_ENGINE = "38";
-  const THEME_PAIR_ENGINES = new Set([THEME_PAIR_ENGINE, REFERENCE_THEME_PAIR_ENGINE, SPARSE_THEME_PAIR_ENGINE, ORDINARY_THEME_ENGINE]);
+  const SEPARATED_MIRROR_ENGINE = "39";
+  const ORDINARY_THEME_ENGINES = new Set([ORDINARY_THEME_ENGINE, SEPARATED_MIRROR_ENGINE]);
+  const THEME_PAIR_ENGINES = new Set([THEME_PAIR_ENGINE, REFERENCE_THEME_PAIR_ENGINE, SPARSE_THEME_PAIR_ENGINE, ...ORDINARY_THEME_ENGINES]);
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
   const G21_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true});
@@ -128,20 +130,22 @@
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
   function defaultEngine(duration) {
-    return duration === "long" ? ORDINARY_THEME_ENGINE : SLOW_BEATING_ENGINE;
+    return duration === "long" ? SEPARATED_MIRROR_ENGINE : SLOW_BEATING_ENGINE;
   }
 
   function seedHex(seed) { return typeof seed === "string" ? seed.toLowerCase() : seed.toString(16).padStart(8, "0"); }
 
-  // One text seed carries the construction bit and two complete 32-bit words.
-  // Keep it as text: converting 65 bits to Number would discard information.
+  // One text seed carries the form marker and two complete 32-bit words.
+  // 0: compact immediate mirror; 1: saved walking immediate mirror;
+  // 2: walking theme with an organ interlude before its mirror.
+  // Keep it as text: converting the complete seed to Number loses information.
   function decodeLongSeed(seed) {
     const text = seedHex(seed);
     if (/^[0-9a-f]{8}$/.test(text)) {
       const word = parseInt(text, 16);
       return {construction:0, melodySeed:word, performanceSeed:word};
     }
-    if (!/^[01][0-9a-f]{16}$/.test(text)) throw new Error("Invalid Long seed");
+    if (!/^[012][0-9a-f]{16}$/.test(text)) throw new Error("Invalid Long seed");
     return {construction:Number(text[0]), melodySeed:parseInt(text.slice(1,9),16),
       performanceSeed:parseInt(text.slice(9),16)};
   }
@@ -150,7 +154,7 @@
     const words = new Uint32Array(duration === "long" ? 3 : 1);
     if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(words);
     else for (let i=0;i<words.length;i++) words[i]=Math.floor(Math.random()*0x100000000);
-    return duration === "long" ? `${words[0]&1}${seedHex(words[1])}${seedHex(words[2])}` : words[0];
+    return duration === "long" ? `${(words[0]&1)*2}${seedHex(words[1])}${seedHex(words[2])}` : words[0];
   }
 
   function validateReplay(record) {
@@ -159,10 +163,11 @@
     if (record.baseEngine != null && (record.engine !== SLOW_BEATING_ENGINE
         || record.baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(record.baseEngine)))
       throw new Error("The saved performance's original recipe is invalid. Copy the complete replay link or filename.");
-    const extendedSeed = /^[01][0-9a-f]{16}$/i.test(record.seed || "");
+    const extendedSeed = /^[012][0-9a-f]{16}$/i.test(record.seed || "");
     if (!/^[0-9a-f]{8}$/i.test(record.seed || "") && !extendedSeed)
       throw new Error("Enter a complete eight- or seventeen-character seed.");
-    if (extendedSeed && (record.baseEngine ?? record.engine) !== ORDINARY_THEME_ENGINE)
+    if (extendedSeed && (!ORDINARY_THEME_ENGINES.has(record.baseEngine ?? record.engine)
+        || (record.seed[0] === "2" && (record.baseEngine ?? record.engine) !== SEPARATED_MIRROR_ENGINE)))
       throw new Error("This Long seed requires its complete current replay settings.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
     if (!Number.isInteger(tone) || tone < 110 || tone > 200)
@@ -196,17 +201,18 @@
     }
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
-    const file = input.match(/^open-run-([01][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
+    const file = input.match(/^open-run-([012][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
     if (file) return validateReplay({ seed: file[1], engine: file[2], baseEngine: file[3], tone: file[4],
       duration: file[5].toLowerCase(), sampleRate: file[6] });
     const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
     const seed = legacy ? legacy[1] : input;
-    const extended = /^[01][0-9a-f]{16}$/i.test(seed);
+    const extended = /^[012][0-9a-f]{16}$/i.test(seed);
     if (!/^[0-9a-f]{8}$/i.test(seed) && !extended)
       throw new Error("Paste a complete seed, an Open WAV filename, or a replay link.");
-    // Older open-run names use engine 1 by convention. Bare seeds explore the
-    // current engine; complete filenames and links always retain their version.
-    return { ...validateReplay({ seed, engine: legacy ? "1" : extended ? ORDINARY_THEME_ENGINE
+    // Older open-run names use engine 1 by convention. Complete seed markers
+    // preserve the form, even without the engine stored in a filename or link.
+    return { ...validateReplay({ seed, engine: legacy ? "1" : extended
+        ? seed[0] === "2" ? SEPARATED_MIRROR_ENGINE : ORDINARY_THEME_ENGINE
         : $("songDuration")?.value === "long" ? THEME_PAIR_ENGINE : SLOW_BEATING_ENGINE,
       tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
       partial: true, legacy: !!legacy };
@@ -2238,6 +2244,7 @@
     const clone = value => JSON.parse(JSON.stringify(value));
     const suspendedHarmony = compositionOptions.suspendedHarmony === true;
     const completePairs = compositionOptions.completeThemePairs === true;
+    const separatedMirror = completePairs && compositionOptions.separateMirror === true;
     const raw = createStruckStudyGenerator(seed, baseFreq, Infinity, true, G22_OPTIONS);
     const originalTheme = (compositionOptions.sourceTheme?.pitches ?? raw.study.theme).slice();
     const forwardSlots = originalTheme.map((_, i) => i);
@@ -2276,14 +2283,26 @@
       // waiting through the nearly inaudible end of its exponential decay.
       const hold = compositionOptions.bellTailHandoff
         ? Math.max(4, Math.min(12, bells.at(-1).duration*.35)) : bells.at(-1).duration;
-      const span = offsets.at(-1)+hold, finalTailExtension = directSpan-span;
-      // Center quiet accompaniment inside a pass, retaining one chord's gain.
+      let span = offsets.at(-1)+hold;
+      const finalTailExtension = directSpan-span;
+      let forwardSpan = null;
+      if (separatedMirror) {
+        const turningBell = bells[originalTheme.length-1];
+        const forwardHold = compositionOptions.bellTailHandoff
+          ? Math.max(4, Math.min(12, turningBell.duration*.35)) : turningBell.duration;
+        forwardSpan = turningBell.time+forwardHold;
+        // Replace only the turning interval with a handoff and organ passage.
+        // The return retains every internal gap and corresponding strike recipe.
+        span = forwardSpan+span-bells[originalTheme.length].time;
+      }
+      // Retain the quiet accompaniment's voice count and gain. In the separated
+      // form it sits inside the forward statement, away from the organ passage.
       const background = source.flatMap(g=>g.notes).filter(n=>n.kind==='bass')
-        .map(n=>({...clone(n),time:(span-n.duration)/2}));
-      halves.push({bells,background,span,gaps:reflectedGaps,finalTailExtension});
-      const counts=countsFor(h);
+        .map(n=>({...clone(n),time:((forwardSpan??span)-n.duration)/2}));
+      halves.push({bells,background,span,gaps:reflectedGaps,finalTailExtension,forwardSpan});
+      const counts=countsFor(separatedMirror?2*h:h);
       const end=startTime+(completePairs?1:2)*halves.reduce((sum,p)=>sum+p.span,0)
-        +statementDuration*counts.reduce((a,b)=>a+b,0)+sectionGap*(completePairs?2*(h-1):4*h-2)
+        +statementDuration*counts.reduce((a,b)=>a+b,0)+sectionGap*(separatedMirror?2*(2*h-1):completePairs?2*(h-1):4*h-2)
         +halves[completePairs?h-1:0].finalTailExtension;
       if(h>=(completePairs?(compositionOptions.minimumPairCount??2):(compositionOptions.minimumHalfCount??3))&&
         end+tail>=(compositionOptions.minimumDurationSeconds??600)&&end+tail<=maximumDuration)
@@ -2303,10 +2322,25 @@
       :[...Array(h).keys(),...Array(h).keys()].map((i,j)=>j<h?i:h-1-i);
     const groups=[],entries=[],passes=[];
     let cursor=startTime;
+    const appendInterlude = () => {
+      cursor+=sectionGap;
+      const swells=chosen.counts[entries.length],end=cursor+swells*statementDuration;
+      const entry={index:entries.length+1,start:cursor,end,returnTime:end+sectionGap,
+        swells,pairedIndex:chosen.counts.length-entries.length};
+      entries.push(entry);
+      cursor=end+sectionGap;
+      return entry;
+    };
     for(let cycle=0;cycle<passCount;cycle++){
       const palette=paletteOrder[cycle],pass=halves[palette],start=cursor;
+      let mirrorShift=0,turningInterlude=null;
       for(let slot=0;slot<pass.bells.length;slot++){
-        const bell={...clone(pass.bells[slot]),time:start+pass.bells[slot].time};
+        if(separatedMirror&&slot===originalTheme.length){
+          cursor=start+pass.forwardSpan;
+          turningInterlude=appendInterlude();
+          mirrorShift=cursor-(start+pass.bells[slot].time);
+        }
+        const bell={...clone(pass.bells[slot]),time:start+pass.bells[slot].time+mirrorShift};
         const ending=cycle===passCount-1&&slot===pass.bells.length-1;
         groups.push({time:bell.time,notes:[bell],ending,
           ...(ending?{endingKind:'mirrored-theme-end'}:{}),
@@ -2318,17 +2352,17 @@
         groups.push({time:Math.min(...notes.map(n=>n.time)),notes,ending:false,
           background:{cycle,palette,centered:true}});
       }
-      const span = pass.span+(cycle===passCount-1?pass.finalTailExtension:0);
-      cursor+=span;passes.push({cycle,palette,start,end:cursor,span,
+      const span = pass.span+(cycle===passCount-1?pass.finalTailExtension:0)
+        +(turningInterlude?turningInterlude.end-turningInterlude.start+2*sectionGap:0);
+      cursor=start+span;passes.push({cycle,palette,start,end:cursor,span,
         ...(completePairs?{forwardEnd:start+pass.bells[originalTheme.length-1].time,
-          mirrorStart:start+pass.bells[originalTheme.length].time,forwardStrikeCount:originalTheme.length}:{}),
-        ...(compositionOptions.bellTailHandoff?{bellDirectEnd:start+pass.span+pass.finalTailExtension}: {})});
+          mirrorStart:start+pass.bells[originalTheme.length].time+mirrorShift,forwardStrikeCount:originalTheme.length}:{}),
+        ...(turningInterlude?{turningInterlude:turningInterlude.index}:{}),
+        ...(compositionOptions.bellTailHandoff?{bellDirectEnd:separatedMirror
+          ?start+span+(cycle===passCount-1?0:pass.finalTailExtension)
+          :start+pass.span+pass.finalTailExtension}: {})});
       if(cycle===passCount-1)continue;
-      cursor+=sectionGap;
-      const swells=chosen.counts[cycle],end=cursor+swells*statementDuration;
-      entries.push({index:cycle+1,start:cursor,end,returnTime:end+sectionGap,
-        swells,pairedIndex:passCount-1-cycle});
-      cursor=end+sectionGap;
+      appendInterlude();
     }
     // g24 supplies the quiet Principal registration, chorus and energy budget.
     const organSource=createChorusedOrganGenerator(seed,baseFreq,1800),organTemplates=[];
@@ -2481,16 +2515,17 @@
     groups.sort((a,b)=>a.time-b.time);let position=0;
     return {
       density:raw.density,arcLen:0,arcClimaxAt:-1,
-      study:Object.freeze({form:completePairs?'theme-mirror-pairs':'nested-mirror',scale:compositionOptions.sourceTheme?.reference?.construction==='walk-28'?[0,2,4,5,7,9,11]:[0,2,4,5,7,9],theme,sourceTheme:originalTheme,
+      study:Object.freeze({form:separatedMirror?'theme-organ-mirror':completePairs?'theme-mirror-pairs':'nested-mirror',scale:compositionOptions.sourceTheme?.reference?.construction==='walk-28'?[0,2,4,5,7,9,11]:[0,2,4,5,7,9],theme,sourceTheme:originalTheme,
         pitchPolicy:completePairs?'complete-theme-then-retrograde':'exact-mirrored-theme',endingPolicy:'complete-mirror',
         ...(completePairs?{sourceReference:compositionOptions.sourceTheme?.reference??null}:{}),
         mirror:{slotOrder:slots,paletteOrder,passCount,halfCount:h,passes,start:startTime,end:cursor,
           ...(completePairs?{pairCount:passCount,forwardStrikeCount:originalTheme.length,
             strikesPerPair:slots.length,repeatTurningNote:true,globalPaletteMirror:false}:{}),
+          ...(separatedMirror?{turningInterval:'organ-interlude'}:{}),
           midpoint:(startTime+cursor)/2,sectionGapSeconds:sectionGap,eventSymmetry:!compositionOptions.bellTailHandoff,reverseAudio:false,
           ...(compositionOptions.bellTailHandoff?{handoff:'bell-tail-overlap',orderSymmetry:true}: {})},
         droneArch:{...clone(organSource.study.droneArch),pattern:chosen.counts,form:'single-mirrored-arch',interludes:entries,
-          ...(completePairs?{placement:'after-every-complete-theme-mirror-pair',minimumInterludes:1,
+          ...(completePairs?{placement:separatedMirror?'between-theme-and-mirror-and-between-pairs':'after-every-complete-theme-mirror-pair',minimumInterludes:separatedMirror?3:1,
             targetDurationSeconds:duration,sourceTargetDuration:duration,
             addedDuration:entries.reduce((sum,e)=>sum+e.end-e.start+2*sectionGap,0)}:{}),
           evolution:groups.filter(g=>g.interlude).map(g=>g.interlude.evolution),
@@ -2994,7 +3029,7 @@
 
   function createThemePairGenerator(seed, baseFreq, duration, engine, seedRecipe = null) {
     let sourceTheme;
-    if (engine === ORDINARY_THEME_ENGINE) {
+    if (ORDINARY_THEME_ENGINES.has(engine)) {
       const pitches=createOrdinaryTheme(seedRecipe,baseFreq);
       sourceTheme={pitches,reference:{construction:seedRecipe.construction===0?'compact-11':'walk-28',
         melodySeed:seedHex(seedRecipe.melodySeed),performanceSeed:seedHex(seedRecipe.performanceSeed),
@@ -3021,7 +3056,7 @@
         bellCount:parent.study.theme.length,timingSeed:seedHex(seed)}};
     }
     return createSpectralOrganGenerator(seed, baseFreq, duration, true,
-      {completeThemePairs:true,...(sourceTheme?{sourceTheme}:{})});
+      {completeThemePairs:true,separateMirror:seedRecipe?.construction===2,...(sourceTheme?{sourceTheme}:{})});
   }
 
   function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput), baseEngine = null) {
@@ -3042,7 +3077,9 @@
         || THEME_PAIR_ENGINES.has(engine)) && durationInput !== "long")
       throw new Error(`Engine ${engine} requires Long duration`);
     const replaySeed = seed;
-    const seedRecipe = engine === ORDINARY_THEME_ENGINE ? decodeLongSeed(seed) : null;
+    const seedRecipe = ORDINARY_THEME_ENGINES.has(engine) ? decodeLongSeed(seed) : null;
+    if(seedRecipe?.construction===2&&engine!==SEPARATED_MIRROR_ENGINE)
+      throw new Error("This Long seed requires its complete current replay settings.");
     if(seedRecipe) seed = seedRecipe.performanceSeed;
     const duration = resolveDuration(seed, durationInput);
     // Engine 18 changes Long's pitch repetition and phrase-boundary ending.
@@ -3655,7 +3692,7 @@
         if(!replay) seed=drawPerformanceSeed(duration);
         try { performance=createPerformance(seed,tone,duration,engine,baseEngine);break; }
         catch(error) {
-          if(replay||engine!==ORDINARY_THEME_ENGINE||error.code!=='LONG_FORM_DURATION'||attempt===31)throw error;
+          if(replay||!ORDINARY_THEME_ENGINES.has(engine)||error.code!=='LONG_FORM_DURATION'||attempt===31)throw error;
         }
       }
       buildMixBus(performance.audioSeed ?? seed);
@@ -3691,7 +3728,7 @@
     } catch (error) {
       if (request === startRequest) {
         stopAllManual(true);
-        replayStatus("Playback could not start. Try again.");
+        replayStatus(error.code === 'LONG_FORM_DURATION' ? error.message : "Playback could not start. Try again.");
       }
     }
   }

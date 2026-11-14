@@ -29,7 +29,9 @@ The final track notes will identify the complete seed that generated each perfor
 
 Short keeps its evolving walk in one six-note major collection. Long automatically chooses between two melody constructions: a compact eleven-note theme and a twenty-eight-note walk. Each construction can generate many different melodies, held in the root's major collection with melodic tritone jumps corrected. The seed selects the melody independently of its performance settings, so the same melody can unfold at different tempos and with different bell colors. Nominal tempo is between 3 and 15 BPM, with at least four seconds between melody strikes.
 
-Each Long section states its complete theme, then returns through every strike in reverse order with the same corresponding FM recipe and reflected timing. The turning note is struck again on the next seeded beat. An organ interlude follows the complete pair. Each subsequent pair establishes a fresh FM palette. Organ interludes expand and contract around the middle of the piece; their contextual chords and inversions account for notes still ringing. Occasional widely spaced suspended chords favor sus2 over sus4; some remain unresolved, while others let one organ voice settle into a major or minor third. Suspensions occur only in the interludes. Decay-aware handoffs preserve the natural forward decay of every sound.
+The eleven-note form follows **theme → mirror → organ**. The twenty-eight-note form follows **theme → organ → mirror → organ**, giving the longer melody space before its return. In both forms, the mirror plays every strike in reverse order with the same corresponding FM recipe and reversed intervals between strikes. The eleven-note turning note repeats on the next seeded beat; the twenty-eight-note turning note returns after the organ. Each new forward theme establishes a fresh FM palette, which its mirror retains. The final mirror ends with its natural tail, without another organ interlude.
+
+Organ interludes expand and contract around the middle of the piece; their contextual chords and inversions account for notes still ringing. Occasional widely spaced suspended chords favor sus2 over sus4; some remain unresolved, while others let one organ voice settle into a major or minor third. Suspensions occur only in the interludes. Decay-aware handoffs preserve the natural forward decay of every sound.
 
 The interludes use fuller Principal organ ranks with a filter contour, wide slow three-band stereo chorus, restrained feedback and a twelve-second convolution room. Direct organ and chorus end two seconds before the returning bell; the room tail may continue. Quiet FM accompaniment under the melody retains its earlier sound. Long completes its final melody with normal decay; Short seeks a qualified ending around its target.
 
@@ -77,7 +79,7 @@ Every newly generated performance can also arise independently through another r
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 
-Short performances use 8-character seeds; Long performances use 17-character seeds. To replay a performance, enter its seed with the same root tone and length, or use its complete replay link or original export filename to restore all saved settings automatically.
+Short performances use 8-character seeds; Long performances use 17-character seeds. To replay a performance, enter its seed with the same root tone and length, or use its complete replay link or original export filename to restore all saved settings automatically. Saved seeds retain their original musical form.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 
@@ -106,7 +108,7 @@ npm run test:browser
 
 Native browser checks use Playwright Chromium, Firefox and WebKit; see the [development notes](tests/README.md) for installation, scripted WAV rendering and regression checks.
 
-The [seed-generation notes](docs/ordinary-seeds.md) describe the complete Long seed format, duration constraints and verification that the saved studies are reachable through ordinary Play. The [theme and mirror notes](docs/theme-mirror-pairs.md) document the musical form.
+The [seed-generation notes](docs/ordinary-seeds.md) describe the complete Long seed format, ordinary generation, duration constraints and preservation of saved studies. The [theme and mirror notes](docs/theme-mirror-pairs.md) document the musical form.
 
 ---
 

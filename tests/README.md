@@ -17,6 +17,8 @@ npm run test:study
 
 The Node suite checks shared-link playback, saved-setting migration, natural endings, Stop/Play races, recording, export failure recovery, node cleanup, WAV headers and encoding, stereo drift, live/offline scheduling, immutable performance data and all sixteen saved Long scores. Intentional failure tests print simulated export errors; the final test summary determines success.
 
+The complete-seed tests additionally preserve the 24 later studies against their frozen event hashes, exercise ordinary generation and replay for both current forms, and verify the 28-note theme → organ → mirror structure. Corresponding FM recipes, reversed inter-onset gaps, organ handoffs, fresh palettes, natural endings and duration limits are checked across the eight walking studies at four root tones. Saved immediate-mirror seeds and the exact `0393ded7` Short Study retain separate regression coverage.
+
 `test:study` checks mirrored melodies, contextual organ harmony, gains, timing, ending behavior and deterministic replay across all sixteen studies, plus organ chorus/room wiring and cleanup. Archived-score comparisons allow at most eight machine epsilons of relative roundoff across JavaScript runtimes; structure and integer choices remain exact. Same-runtime comparisons remain strict.
 
 To compare every retained replay behavior against the release before consolidation, and the original pre-planner performance, run:

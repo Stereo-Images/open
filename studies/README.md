@@ -10,7 +10,7 @@ The page lists **56 saved Long performances: 24 current studies and 32 earlier s
 | Earlier opening-preserved studies | 16 | Eight retaining the opening of `08b0195e` with its corrected note, and eight independent performances | [Manifest](nov11/manifest.json) |
 | Original organ studies | 16 | Eight using the melodic motif of `0b086950`, and eight independent performances | [Manifest](g29/manifest.json) and [scores](g29/scores) |
 
-The current 24 studies use seventeen-character seeds and can also arise through ordinary random Play at their saved settings. Earlier recordings remain available with their original replay settings. Keep the manifests and archived scores unchanged when editing the interface; `npm run check:player` verifies the selector against all three manifests and checks the documented total.
+The current 24 studies use seventeen-character seeds and retain their saved theme–mirror form. Their sixteen compact studies remain possible through ordinary Play; new 28-note performances now place an organ passage before the mirror and use a distinct seed marker. All saved studies remain available with their original replay settings. Keep the manifests and archived scores unchanged when editing the interface; `npm run check:player` verifies the selector against all three manifests and checks the documented total.
 
 The page loads the root `player.js`, `style.css` and `wav-worker.js`. `studies.js` only connects the selector and Short Study button to the shared player. Existing current-study URLs redirect here or to the main player, preserving replay settings.
 
