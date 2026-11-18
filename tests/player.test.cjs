@@ -153,6 +153,7 @@ test('new filenames with or without .wav and links restore the score, dial, and 
   assert.equal(h.elements.get('exportWav').disabled, false);
   assert.match(h.downloads[0], /^open-run-03b38656-[a-z0-9]+-g33-200hz-short-48000sr-\d+\.wav$/);
   for (const value of [h.downloads[0], h.downloads[0].replace('.wav', ' (1).wav'),
+    h.downloads[0].replace('.wav', ' (1).M4A'),
     h.downloads[0].replace('.wav', ''), h.downloads[0].replace('.wav', ' (1)'), h.api.replayLink(original)]) {
     const restored = dialHarness();
     restored.elements.get('replayInput').value = value;
@@ -242,6 +243,7 @@ test('legacy filenames and boundary seeds use explicit current controls', async 
   for (const [input, seed] of [
     ['open-run-d1a0b62b-muyo9xsw-1791411784126.wav', 0xd1a0b62b],
     ['open-run-d1a0b62b-muyo9xsw-1791411784126 (2).wav', 0xd1a0b62b],
+    ['open-run-d1a0b62b-muyo9xsw-1791411784126.m4a', 0xd1a0b62b],
     ['open-run-d1a0b62b-muyo9xsw-1791411784126', 0xd1a0b62b],
     ['open-run-d1a0b62b-muyo9xsw-1791411784126 (2)', 0xd1a0b62b],
     ['00000000', 0], [' FFFFFFFF ', 0xffffffff]

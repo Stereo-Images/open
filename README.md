@@ -14,16 +14,16 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 ### Open EP
 
-The planned *Open* EP pairs **Short Study** and **Long Study**, two selected recordings made with this instrument. Each captures one performance from the same musical possibilities available to every listener using Open.
+The planned *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Press Play to discover your own performance, or use the replay link below to hear the source of Short Study.
 
 *Release details and listening links will be added here.*
 
-| Track | Listen | Seed | Replay |
+| Track | Seed | Player settings | Replay |
 | --- | --- | --- | --- |
-| Short Study | To be added | To be confirmed | To be added |
-| Long Study | To be added | To be confirmed | To be added |
+| Short Study | `0393ded7` | Short · 200 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=33&rate=44100) |
+| Long Study | Selection pending | Long | Pending selection |
 
-The final track notes will identify the complete seed that generated each performance, together with its root tone, length, WAV sample rate, and complete replay link or original export filename. These details preserve the source performance before any mastering applied to the EP.
+The Short Study replay runs about 1 minute 26 seconds including its decay. Its 200 Hz root setting gives the low accompaniment a 100 Hz bass. The link restores the performance before mastering.
 
 ### Musical Structure & Harmony
 
@@ -75,18 +75,19 @@ Open **Revisit** below the playback buttons to load a saved performance, share a
 
 Every newly generated performance can also arise independently through another random Play at the same root tone and length. Its seed and settings preserve the choices needed to return to it. Chance rediscovery of a particular performance is extremely rare; sharing its complete replay link makes that return direct. New performances follow the same musical rules, without a catalog of favored recordings or a musical-quality score selecting the results.
 
-1. **Load & play:** Paste a seed, an Open export filename (with or without `.wav`, including `.mp3` or `.flac` conversions), or a replay link, then press Load & play. A seed uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and presents **Play this performance**; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. After playback starts, Play creates a new performance and Replay returns to the most recent one.
+1. **Load & play:** Paste a seed, an `open-run-` export filename, or a replay link, then press Load & play. The original filename works with or without its extension, including after conversion to `.m4a`, `.mp3`, or `.flac`. A seed uses the root tone and length currently selected above. Complete export filenames and replay links restore the saved settings automatically, including the root tone dial position. Opening a replay link prepares the controls and presents **Play this performance**; it never starts audio automatically. Once loaded and playing, this becomes the performance returned to by the main Replay button. After playback starts, Play creates a new performance and Replay returns to the most recent one.
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 
-Short performances use 8-character seeds; Long performances use 17-character seeds. To replay a performance, enter its seed with the same root tone and length, or use its complete replay link or original export filename to restore all saved settings automatically. Saved seeds retain their original musical form.
+New Short performances use 8-character seeds. For a new Long performance, choose **Long** and press **Play**. A seed beginning with `0` identifies an 11-note theme and one beginning with `2` identifies a 28-note theme. Both forms can occur on ordinary Play. Keep all 17 characters, including a leading zero. Earlier Long seeds beginning with `1` replay their original 28-note form with the immediate mirror.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 
 ### Output & Saving
-Save the audio for listening and keep its original filename or replay link to preserve the settings. Live recording remains a desktop keyboard feature; WAV export is also available in Revisit.
 
-* **Live Recording:** Press **`Shift + R`** to capture the current mix in real time; press it again to save. The browser selects the recording format, saved as `.webm`, `.ogg`, or `.m4a`. Recording also finishes automatically after a natural ending and its remaining audio tail.
+Save the audio for listening and keep its original filename or replay link to preserve the settings. Live recording uses a desktop keyboard and requires browser recording support. If the player reports that recording is unavailable, choose **Export WAV** in Revisit to save the full performance.
+
+* **Live Recording:** Press **`Shift + R`** to capture the current mix in real time and press it again to save. The browser selects the recording format, saved as `.webm`, `.ogg`, or `.m4a`. Recording also finishes automatically after a natural ending and its remaining audio tail. Keep the replay link alongside an `open-live-` recording to preserve its seed and settings.
 * **Export WAV:** Press **`Shift + E`** or choose **Export WAV** in Revisit to save the current or most recent performance from its beginning as a lossless, 16-bit PCM `.wav` file. The WAV uses the same planned notes, FM variations, stereo movement, resonators, reverb, and natural ending as live playback. You can export while listening or after Stop; stopping early does not shorten the planned performance. Repeated exports preserve it until the next Play, Replay, or page close. Keep the original filename: it stores the seed and complete replay settings.
 * **Timing:** Export reproduces the intended performance and its complete natural ending and reverb tail, excluding browser stalls and manual Stop fades. To start a new performance, press Play again.
 * **Rendering:** WAV rendering runs independently through `OfflineAudioContext`, with encoding in a worker. Revisit and the browser tab title show preparation, rendering, encoding, and completion or failure. Longer runs take time to render; pressing Shift + E again while busy does not queue another export. The shortcut also works while the length menu or root tone dial has focus, and is ignored while typing in the replay field. New runs use the sample rate captured from the live audio context (commonly 44.1 or 48 kHz); a complete replay link or filename restores its recorded WAV sample rate. Export does not interrupt playback. Small rendering differences across browsers or devices are possible; the performance is shared, rather than a recording of the device output.
@@ -103,10 +104,9 @@ npm ci --ignore-scripts
 npm run check:player
 npm test
 npm run test:study
-npm run test:browser
 ```
 
-Native browser checks use Playwright Chromium, Firefox and WebKit; see the [development notes](tests/README.md) for installation, scripted WAV rendering and regression checks.
+For native browser checks, CI runs Chromium and Firefox on Linux and WebKit on macOS. The [development notes](tests/README.md) give the commands for each platform and the optional `npm run test:audio` check for rendering WAVs in Node.
 
 The [seed-generation notes](docs/ordinary-seeds.md) describe the complete Long seed format, ordinary generation, duration constraints and preservation of saved studies. The [theme and mirror notes](docs/theme-mirror-pairs.md) document the musical form.
 

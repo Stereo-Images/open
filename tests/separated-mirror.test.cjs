@@ -74,7 +74,7 @@ test('new form seeds retain all bits through bare seed, filename, link, export a
     h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
     const settings={seed,tone:121,duration:'long',engine:'39',sampleRate:44100};
     const filename=`open-run-${seed}-study-g39-121hz-long-44100sr-1794600000000.wav`;
-    for(const input of [filename,h.api.replayLink(settings)])
+    for(const input of [filename,filename.replace('.wav','.m4a'),h.api.replayLink(settings)])
       assert.deepEqual(plain(h.api.parseReplayInput(input)),settings);
     const bare=h.api.parseReplayInput(seed.toUpperCase());
     assert.equal(bare.seed,seed);

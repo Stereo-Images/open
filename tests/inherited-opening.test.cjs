@@ -31,9 +31,9 @@ test('Related Long studies retain the entire original opening and complete a saf
   }
 });
 
-test('Retained versions preserve the previous release plans',()=>{
+test('Retained versions preserve the previous release plans',t=>{
   const baseline=process.env.OPEN_RELEASE_BASELINE;
-  if(!baseline)return;
+  if(!baseline)return t.skip('Set OPEN_RELEASE_BASELINE for the previous release comparison');
   const old=harness(fs.readFileSync(path.resolve(baseline),'utf8')).api;
   const current=harness().api;
   for(const seed of [0x08b0195e,0x0393ded7,0x12345678])for(const mode of ['short','long']){
