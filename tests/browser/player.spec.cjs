@@ -64,13 +64,47 @@ test('a blocked pop-up opens the player in the current tab', async ({ page }) =>
   await expect(page.locator('#playNow')).toBeVisible();
 });
 
-test('an allowed pop-up preserves the separate player window', async ({ page }) => {
+test('reopening the desktop player preserves playback and the last performance', async ({ page }) => {
   await page.goto('/index.html');
   const opened = page.waitForEvent('popup');
   await page.locator('#launchPlayer').click();
   const player = await opened;
   await expect(player.locator('#playNow')).toBeVisible();
   await expect(page).toHaveURL(/\/index\.html$/);
+
+  await player.locator('#playNow').click();
+  await expect(player.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+  const status = await player.locator('#replayStatus').textContent();
+  // Returning from a fresh landing page should also find the same player.
+  await page.reload();
+  await page.locator('#launchPlayer').click();
+  await player.waitForLoadState('load');
+  await expect(player.locator('#replayStatus')).toHaveText(status);
+  await expect(player.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+
+  await player.locator('#stop').click();
+  await page.locator('#launchPlayer').click();
+  await player.waitForLoadState('load');
+  await expect(player.locator('#replayLast')).toBeEnabled();
+  await expect(player.locator('#exportWav')).toBeEnabled();
+  expect(page.context().pages()).toHaveLength(2);
+
+  await page.goto('/index.html?' + replayQuery);
+  await page.locator('#launchPlayer').click();
+  await expect(player).toHaveURL('/player.html?' + replayQuery);
+  await expect(player.getByRole('button', { name: 'Play this performance' })).toBeVisible();
+
+  await player.getByRole('button', { name: 'Start a new performance' }).click();
+  await expect(player.locator('#replayStatus')).toHaveText(/^Playing seed /);
+  const newStatus = await player.locator('#replayStatus').textContent();
+  await page.goto('/index.html?utm_source=release');
+  await page.locator('#launchPlayer').click();
+  await expect(player.locator('#replayStatus')).toHaveText(newStatus);
+  await expect(player.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');
+
+  await page.goto('/index.html?' + replayQuery);
+  await page.locator('#launchPlayer').click();
+  await expect(player.getByRole('button', { name: 'Play this performance' })).toBeVisible();
   await player.close();
 });
 

@@ -780,6 +780,7 @@
       stopRecording();
       return;
     }
+    if (!isPlaying && !isEndingNaturally) return;
 
     // Each recording owns its asynchronous callbacks, chunks, and MIME type.
     const recordedChunks = [];

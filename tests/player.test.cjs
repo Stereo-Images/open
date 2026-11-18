@@ -641,8 +641,8 @@ test('a complete Long performance releases every voice and its shared reverb', a
   assert.equal(h.api.state().snapshot, snapshot);
 });
 
-test('natural cleanup waits for the longest voice, reverb, and audio clock; recording finishes', () => {
-  const h = harness(); h.api.setup(); const { audioContext: ctx, bus } = h.api.state();
+test('natural cleanup waits for the longest voice, reverb, and audio clock; recording finishes', async () => {
+  const h = harness(); await h.api.startFromUI(); const { audioContext: ctx, bus } = h.api.state();
   h.api.scheduleNote(ctx, bus.masterGain, bus.reverbSend, 110, 0, 60, 0.4);
   const drone = h.api.planDrone(110, 0, 32, 0.4, 'maj', true, () => 0.5, () => 0.5);
   h.api.renderGroup(ctx, bus.masterGain, bus.reverbSend, { notes: drone }, 0);
@@ -673,6 +673,22 @@ test('recordings own their chunks and MIME type across delayed stop callbacks', 
   h.api.toggleRecording(); second.finish('second');
   assert.equal(await h.blobs[0].text(), 'first'); assert.equal(await h.blobs[1].text(), 'second');
   assert.match(h.downloads[0], /\.m4a$/); assert.match(h.downloads[1], /\.webm$/);
+});
+
+test('the recording shortcut works during a natural tail and ignores a manual Stop fade', async () => {
+  const h = harness();
+  h.sandbox.document.dispatch('DOMContentLoaded');
+  await h.api.startFromUI();
+  h.api.beginNaturalEnd();
+  const shortcut = () => h.sandbox.document.dispatch('keydown', {
+    key: 'R', shiftKey: true, target: h.elements.get('stop'), preventDefault() {}
+  });
+  shortcut();
+  assert.equal(h.api.state().isRecording, true);
+  h.api.stopAllManual(false);
+  shortcut();
+  assert.equal(h.api.state().isRecording, false);
+  assert.equal(h.recordings.length, 1);
 });
 
 test('recording start failure does not leave a false recording state', async () => {
