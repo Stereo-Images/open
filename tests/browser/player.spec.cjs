@@ -95,6 +95,7 @@ test('reopening the desktop player preserves playback and the last performance',
   await expect(player.getByRole('button', { name: 'Play this performance' })).toBeVisible();
 
   await player.getByRole('button', { name: 'Start a new performance' }).click();
+  await expect(player.locator('#replayStatus')).toHaveText(/^Playing seed /);
   const newStatus = await player.locator('#replayStatus').textContent();
   await page.goto('/index.html?utm_source=release');
   await page.locator('#launchPlayer').click();
