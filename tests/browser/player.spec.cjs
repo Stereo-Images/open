@@ -402,6 +402,19 @@ test('invalid replay links stay silent and the Revisit panel fits a narrow viewp
   await expect(page.locator('#replayStatus')).toContainText('a seed or older filename may omit the original settings');
 });
 
+test('mobile playback survives focus changes within the page and stops on window blur', async ({ page }) => {
+  await page.addInitScript(() => Object.defineProperty(navigator, 'userAgent', { value: 'iPhone' }));
+  await page.goto('/player.html');
+  const play = page.locator('#playNow');
+  await play.click();
+  await expect(play).toHaveAttribute('aria-pressed', 'true');
+  await play.focus();
+  await page.locator('#revisit summary').focus();
+  await expect(play).toHaveAttribute('aria-pressed', 'true');
+  await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+  await expect(play).toHaveAttribute('aria-pressed', 'false');
+});
+
 test('clipboard denial exposes a selectable replay link after Stop', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(navigator, 'clipboard', { configurable: true,

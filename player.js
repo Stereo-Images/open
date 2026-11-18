@@ -201,10 +201,11 @@
     }
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
-    const file = input.match(/^open-run-([012][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
+    const filename = input.replace(/\.(?:wav|mp3|flac|m4a)$/i, "");
+    const file = filename.match(/^open-run-([012][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?$/i);
     if (file) return validateReplay({ seed: file[1], engine: file[2], baseEngine: file[3], tone: file[4],
       duration: file[5].toLowerCase(), sampleRate: file[6] });
-    const legacy = input.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?(?:\.(?:wav|mp3|flac))?$/i);
+    const legacy = filename.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?$/i);
     const seed = legacy ? legacy[1] : input;
     const extended = /^[012][0-9a-f]{16}$/i.test(seed);
     if (!/^[0-9a-f]{8}$/i.test(seed) && !extended)
@@ -3666,6 +3667,7 @@
   async function startPerformance(replay = null) {
     if (disposed) return;
     let request = ++startRequest;
+    let performance;
     try {
       ensureAudioContext();
       const ctx = audioContext;
@@ -3673,10 +3675,6 @@
       if (request !== startRequest || audioContext !== ctx) return;
       if (ctx.state !== "running") throw new Error("Audio context is not running");
 
-      stopAllManual(true);
-      request = startRequest;
-
-      isEndingNaturally = false;
       let seed = replay?.seed;
       let tone = replay ? replay.tone : Number($("tone")?.value ?? 110);
       if (!Number.isFinite(tone)) tone = 110;
@@ -3684,7 +3682,6 @@
       const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
       const engine = replay?.engine ?? defaultEngine(duration);
       const baseEngine = replay?.baseEngine;
-      let performance;
       // Structural rejection only: a very slow 28-note phrase may not fit two
       // complete pairs in 30 minutes. Every accepted seed uses this same path.
       // Replays never redraw, and no quality or fit score is consulted.
@@ -3695,6 +3692,9 @@
           if(replay||!ORDINARY_THEME_ENGINES.has(engine)||error.code!=='LONG_FORM_DURATION'||attempt===31)throw error;
         }
       }
+      // An unplayable seed should leave the current music and recording running.
+      stopAllManual(true);
+      request = startRequest;
       buildMixBus(performance.audioSeed ?? seed);
       setSeed(performance.audioSeed ?? seed);
       // Created once per run; exports keep this ID even after Stop or a new Play.
@@ -3727,7 +3727,7 @@
       scheduler();
     } catch (error) {
       if (request === startRequest) {
-        stopAllManual(true);
+        if (performance) stopAllManual(true);
         replayStatus(error.code === 'LONG_FORM_DURATION' ? error.message : "Playback could not start. Try again.");
       }
     }
@@ -3979,7 +3979,7 @@
 
     listen(document, "visibilitychange", handleVisibilityChange);
     listen(window, "pagehide", handleVisibilityChange, { capture: true });
-    listen(window, "blur", handleVisibilityChange, { capture: true });
+    listen(window, "blur", handleVisibilityChange);
     if (document.addEventListener) listen(document, "freeze", handleVisibilityChange, { capture: true });
 
     listen(window, "pageshow", (e) => {

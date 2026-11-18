@@ -111,9 +111,15 @@ test('new draws retry duration-incompatible phrases without filtering musical qu
   h.sandbox.crypto.getRandomValues=words=>{words.set(draws++===0?[1,0x08b0195e,0x8ee63dc6]:[1,0x08b0195e,parseInt(next.previousSeed,16)]);return words;};
   await h.api.startNewPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,nextSeed);
   await h.api.replayLastPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,nextSeed);
+  h.api.toggleRecording();
+  const playing=h.api.state();
   h.elements.get('replayInput').value=slow;await h.api.replayFromUI();
   assert.equal(draws,2,'An incompatible replay must not draw a replacement');
   assert.match(h.elements.get('replayStatus').textContent,/faster seed/);
+  assert.equal(h.api.state().isPlaying,true);
+  assert.equal(h.api.state().isRecording,true);
+  assert.equal(h.api.state().bus,playing.bus);
+  assert.equal(h.api.state().snapshot,playing.snapshot);
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 

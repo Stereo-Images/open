@@ -25,6 +25,9 @@ async function render({sourceFile=path.join(root,'player.js'),seed,engine='29',b
   let cursor=0,boundary=30;
   const add=t=>{while(cursor<score.groups.length&&score.groups[cursor].time<t)schedule(score.groups[cursor++]);};
   add(boundary+1.5);
+  // Short probes can have all their notes scheduled by the first chunk.
+  // Let the native context finish their tail in one pass.
+  if(cursor===score.groups.length)return ctx.startRendering();
   // This native backend requires all suspension requests before rendering.
   const pauses=[];
   // A pause rounds to a render quantum. Never request one at the final

@@ -13,7 +13,7 @@ npm test
 npm run test:study
 ```
 
-`check:player` checks that both listening pages use the same player, the sixteen approved studies have scores and replay settings, and the old current-study URLs preserve replay parameters through redirects.
+`check:player` checks that both listening pages use the same player, the selector matches all 56 saved Long performances across the three manifests, the original sixteen have archived scores, and the old study URLs preserve replay parameters through redirects.
 
 The Node suite checks shared-link playback, saved-setting migration, natural endings, Stop/Play races, recording, export failure recovery, node cleanup, WAV headers and encoding, stereo drift, live/offline scheduling, immutable performance data and all sixteen saved Long scores. Intentional failure tests print simulated export errors; the final test summary determines success.
 
@@ -26,22 +26,32 @@ To compare every retained replay behavior against the release before consolidati
 ```sh
 git show ec968f765c16837b29324fa6437cb012d39f1918:player.js > /tmp/open-release-baseline.js
 git show 8a2d9c747ce1e31f48753169240c1393a422d028:player.js > /tmp/open-original-baseline.js
-OPEN_BASELINE=/tmp/open-original-baseline.js npm test
-OPEN_RELEASE_BASELINE=/tmp/open-release-baseline.js npm run test:study
 git show da8aded3b9c871a8473d74fc4ed08ad1a00098fc:player.js > /tmp/open-fm-baseline.js
-OPEN_FM_BASELINE=/tmp/open-fm-baseline.js node --test tests/fm.test.cjs
+OPEN_BASELINE=/tmp/open-original-baseline.js \
+  OPEN_FM_BASELINE=/tmp/open-fm-baseline.js \
+  OPEN_RELEASE_BASELINE=/tmp/open-release-baseline.js npm test
+OPEN_RELEASE_BASELINE=/tmp/open-release-baseline.js npm run test:study
 ```
 
-CI runs both baseline comparisons. The release comparison covers 216 saved-version Short/Long plans and four former Short defaults, explicitly pinned to their original recipe. Without the corresponding environment variables, only those optional historical comparisons are skipped. The selective FM tests also check that new Short and Long plans preserve every non-FM field, reproduce the approved reference recipe, and retain deterministic replay. See [the timbre rule](../docs/slow-beating-fm.md) for its scope and audition limits.
+CI runs the historical comparisons using all three baseline files. The release comparison covers 216 saved-version Short/Long plans and four former Short defaults, explicitly pinned to their original recipe. Without the corresponding environment variables, only those optional historical comparisons are skipped. The selective FM tests also check that new Short and Long plans preserve every non-FM field, reproduce the approved reference recipe, and retain deterministic replay. See [the timbre rule](../docs/slow-beating-fm.md) for its scope and audition limits.
 
 ## Native browser checks
 
+On Linux, use Chromium and Firefox with a working audio output. CI uses a PulseAudio null sink.
+
 ```sh
-npx playwright install --with-deps chromium firefox webkit
-npm run test:browser
+npx playwright install --with-deps chromium firefox
+npm run test:browser -- --project=chromium --project=firefox
 ```
 
-The browser suite exercises the launcher, incoming shared-performance buttons, starting a new performance, old-URL redirects, study selection, canonical sharing links, WAV export from the nested studies page, keyboard/touch controls, recording, repeat exports and cleanup. No audio starts before a user gesture. CI runs Chromium/Firefox on Linux with a virtual audio output and WebKit on macOS.
+On macOS, run the WebKit checks. They exercise live recording through the browser’s `MediaRecorder` API. The headless Linux WebKit build can lack that API.
+
+```sh
+npx playwright install webkit
+npm run test:browser -- --project=webkit
+```
+
+The browser suite exercises the launcher, incoming shared-performance buttons, starting a new performance, old-URL redirects, study selection, canonical sharing links, WAV export from the nested studies page, keyboard/touch controls, recording, repeat exports and cleanup. No audio starts before a user gesture.
 
 Repeated native WAV comparisons allow at most two 16-bit PCM steps and RMS error below 0.01% of signal energy for DSP rounding. These checks do not assert identical samples across browsers or devices.
 

@@ -50,6 +50,7 @@ jobs:
         env:
           OPEN_BASELINE: ${{ runner.temp }}/open-baseline.js
           OPEN_FM_BASELINE: ${{ runner.temp }}/open-fm-baseline.js
+          OPEN_RELEASE_BASELINE: ${{ runner.temp }}/open-release-baseline.js
       - name: Install browsers
         run: npx playwright install --with-deps --only-shell ${{ matrix.browsers }}
       - name: Provide a virtual audio output for Linux browsers
