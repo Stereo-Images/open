@@ -8,7 +8,7 @@ What resonates? [*Open*](https://stereo-images.github.io/open/) answers that que
 
 *Open* renders low, slow bell tones anchored to familiar harmony, with organ interludes in Long performances. Yet the bell tones themselves are inharmonic—the music resolves from moment to moment, but never within the moment itself.
 
-The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing. 
+The sounds do not ask for your full attention. Rather, they sit alongside whatever else is happening: the light in your room, the noise outside, or the work you are doing.
 
 *Open* is meant to run quietly in the background: no logins, no accounts. Only your last root tone and length are remembered locally. Its uniqueness lies in the unpredictability of a first encounter: you discover the music as it happens. Pressing Play draws a fresh seed; Replay returns to the performance you have just discovered. A performance can be revisited, shared, or saved without changing how the next new performance unfolds.
 
@@ -23,7 +23,7 @@ The *Open* EP pairs **Short Study** and **Long Study** as a companion to the [we
 | Short Study | `0393ded7` | Short · 200 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=33&rate=44100) |
 | Long Study | `008b0195e08b0195e` | Long · 121 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=008b0195e08b0195e&tone=121&length=long&engine=39&rate=44100) |
 
-The Short Study source runs about 1 1/2 minutes including its decay. Its 200 Hz root setting gives the low accompaniment a 100 Hz bass. The Long Study source uses the 11-note form and runs about 13 1/2 minutes.
+The Short Study source runs about a minute and a half including its decay. Its 200 Hz root setting gives the low accompaniment a 100 Hz bass. The Long Study source uses the eleven-note form and runs about thirteen and a half minutes.
 
 The replay links restore the source performances before mastering and any release edits.
 
@@ -51,8 +51,8 @@ The interludes use fuller Principal organ ranks with a filter contour, wide slow
 * **Delayed Entry:** The scheduler begins slightly before the first audible event, avoiding an abrupt “start button” feeling.
 * **Acoustics:**
     * **Impulse Response:** The bells retain their 10-second convolution response, with a decay-curve exponent of 2.8. Long organ interludes also use a dedicated 12-second room after the spectral chorus.
-    * **Pre-Delay (15ms):** Reverb arrives close to the dry strike while preserving the 10ms bell attack.
-    * **Filter (4200Hz):** The reverb return is low-passed to remove digital harshness while keeping the upper harmonics.
+    * **Pre-Delay (15 ms):** Reverb arrives close to the dry strike while preserving the 10 ms bell attack.
+    * **Filter (4,200 Hz):** The reverb return is low-passed to remove digital harshness while keeping the upper harmonics.
 
 ### Usage
 A desktop browser is recommended for listening, with keyboard shortcuts for recording and WAV export.
@@ -81,7 +81,7 @@ Every newly generated performance can also arise independently through another r
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 
-New Short performances use 8-character seeds. For a new Long performance, choose **Long** and press **Play**. A seed beginning with `0` identifies an 11-note theme and one beginning with `2` identifies a 28-note theme. Both forms can occur on ordinary Play. Keep all 17 characters, including a leading zero. Earlier Long seeds beginning with `1` replay their original 28-note form with the immediate mirror.
+New Short performances use 8-character seeds. For a new Long performance, choose **Long** and press **Play**. A seed beginning with `0` identifies an eleven-note theme and one beginning with `2` identifies a twenty-eight-note theme. Both forms can occur on ordinary Play. Keep all 17 characters, including a leading zero. Earlier Long seeds beginning with `1` replay their original twenty-eight-note form with the immediate mirror.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 
