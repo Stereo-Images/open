@@ -14,16 +14,18 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 ### Open EP
 
-The planned *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Press Play to discover your own performance, or use the replay link below to hear the source of Short Study.
+The planned *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Both source performances can be generated and replayed in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
 
 *Release details and listening links will be added here.*
 
 | Track | Seed | Player settings | Replay |
 | --- | --- | --- | --- |
 | Short Study | `0393ded7` | Short · 200 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=33&rate=44100) |
-| Long Study | Selection pending | Long | Pending selection |
+| Long Study | `008b0195e08b0195e` | Long · 121 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=008b0195e08b0195e&tone=121&length=long&engine=39&rate=44100) |
 
-The Short Study replay runs about 1 minute 26 seconds including its decay. Its 200 Hz root setting gives the low accompaniment a 100 Hz bass. The link restores the performance before mastering.
+The Short Study source runs about 1 minute 26 seconds including its decay; the EP edit is 1 minute 20 seconds. Its 200 Hz root setting gives the low accompaniment a 100 Hz bass. The Long Study source uses the eleven-note form and runs about 13 minutes 25 seconds.
+
+The replay links restore the source performances before mastering and any release edits.
 
 ### Musical Structure & Harmony
 
