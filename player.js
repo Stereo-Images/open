@@ -215,7 +215,8 @@
     return { ...validateReplay({ seed, engine: legacy ? "1" : extended
         ? seed[0] === "2" ? SEPARATED_MIRROR_ENGINE : ORDINARY_THEME_ENGINE
         : $("songDuration")?.value === "long" ? THEME_PAIR_ENGINE : SLOW_BEATING_ENGINE,
-      tone: $("tone")?.value ?? "110", duration: $("songDuration")?.value ?? "short" }),
+      tone: $("tone")?.value ?? "110",
+      duration: extended ? "long" : $("songDuration")?.value ?? "short" }),
       partial: true, legacy: !!legacy };
   }
 

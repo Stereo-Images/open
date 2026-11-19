@@ -170,9 +170,12 @@ for (const [construction, melody, performance] of [[2,'08b0195e','037586a8'],[0,
     const link=await page.locator('#replayLink').inputValue();
     expect(new URL(link).searchParams.get('seed')).toBe(seed);
     expect(new URL(link).searchParams.get('engine')).toBe('39');
+    await page.locator('#songDuration').selectOption('short');
     await page.locator('#replayInput').fill(seed);
     await page.locator('#replayRun').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed','true');
+    await expect(page.locator('#songDuration')).toHaveValue('long');
+    await expect(page.locator('#tone')).toHaveValue('121');
     await expect(page.locator('#replayStatus')).toContainText(seed);
     expect(errors).toEqual([]);
   });

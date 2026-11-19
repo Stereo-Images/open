@@ -68,6 +68,38 @@ test('28-note pairs place organ between the theme and its exact musical retrogra
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
+test('bare 17-character seeds select Long while retaining the root tone and invalid replay protection', async () => {
+  for (const seed of ['04850166b697bb2c6', '108b0195e037586a8', '208b0195e037586a8']) {
+    const h = harness();
+    h.sandbox.document.dispatch('DOMContentLoaded');
+    h.elements.get('tone').value = '121';
+    h.elements.get('songDuration').value = 'short';
+    await h.api.startFromUI();
+    const previous = h.api.state().snapshot;
+    h.elements.get('replayInput').value = seed.toUpperCase();
+    await h.api.replayFromUI();
+    const current = h.api.state().snapshot;
+    assert.notEqual(current, previous);
+    assert.equal(current.seed, seed);
+    assert.equal(current.duration, 'long');
+    assert.equal(current.tone, 121);
+    assert.equal(h.elements.get('songDuration').value, 'long');
+    assert.equal(h.api.state().isPlaying, true);
+
+    h.elements.get('replayInput').value =
+      h.api.replayLink({...current, duration: 'short'});
+    await h.api.replayFromUI();
+    assert.match(h.elements.get('replayStatus').textContent, /requires Long/);
+    assert.equal(h.api.state().snapshot, current);
+    assert.equal(h.api.state().isPlaying, true);
+
+    h.api.stopAllManual(true);
+    h.elements.get('songDuration').value = 'short';
+    assert.equal(h.api.parseReplayInput('0393ded7').duration, 'short');
+    h.sandbox.__OPEN_PLAYER_KILL__();
+  }
+});
+
 test('new form seeds retain all bits through bare seed, filename, link, export and replay',async()=>{
   for(const seed of ['208b0195e037586a8','04850166b697bb2c6','2fffffffffffffffe']) {
     const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');
