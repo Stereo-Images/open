@@ -14,7 +14,7 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 ### Open EP
 
-The planned *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Both source performances can be generated and replayed in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
+The *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Both source performances can be generated and replayed in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
 
 *Release details and listening links will be added here.*
 
