@@ -151,10 +151,13 @@
   }
 
   function drawPerformanceSeed(duration) {
-    const words = new Uint32Array(duration === "long" ? 3 : 1);
+    // Ordinary Long performances use compact eleven-note themes only.
+    // Both independent 32-bit words remain unrestricted, so saved compact
+    // seeds are still reachable on Play. Marker 1/2 replays are unchanged.
+    const words = new Uint32Array(duration === "long" ? 2 : 1);
     if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(words);
     else for (let i=0;i<words.length;i++) words[i]=Math.floor(Math.random()*0x100000000);
-    return duration === "long" ? `${(words[0]&1)*2}${seedHex(words[1])}${seedHex(words[2])}` : words[0];
+    return duration === "long" ? `0${seedHex(words[0])}${seedHex(words[1])}` : words[0];
   }
 
   function validateReplay(record) {
@@ -3684,9 +3687,9 @@
       const duration = replay ? replay.duration : $("songDuration")?.value ?? "short";
       const engine = replay?.engine ?? defaultEngine(duration);
       const baseEngine = replay?.baseEngine;
-      // Structural rejection only: a very slow 28-note phrase may not fit two
-      // complete pairs in 30 minutes. Every accepted seed uses this same path.
-      // Replays never redraw, and no quality or fit score is consulted.
+      // Structural rejection only (retained for compatible saved recipes).
+      // Ordinary Long draws use the eleven-note form. Replays never redraw,
+      // and no quality or fit score is consulted.
       for(let attempt=0;attempt<32;attempt++) {
         if(!replay) seed=drawPerformanceSeed(duration);
         try { performance=createPerformance(seed,tone,duration,engine,baseEngine);break; }
