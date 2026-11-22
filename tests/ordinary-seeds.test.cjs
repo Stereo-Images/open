@@ -53,29 +53,65 @@ test('all 24 saved complete seeds retain their exact performances, including und
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('ordinary Play draws complete current-form seeds with no parent performance or seed registry',async()=>{
-  for(const row of manifest.recordings) {
+test('ordinary Long Play draws only compact eleven-note themes and preserves saved compact performances',async()=>{
+  for(const row of manifest.recordings.filter(row=>row.seed[0]==='0')) {
     const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');
     h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
-    let draws=0;
-    h.sandbox.crypto.getRandomValues=words=>{
-      assert.equal(words.length,3);draws++;
-      words.set([Number(row.seed[0]),parseInt(row.seed.slice(1,9),16),parseInt(row.seed.slice(9),16)]);return words;
+    let draws=0;h.sandbox.crypto.getRandomValues=words=>{
+      assert.equal(words.length,2);draws++;
+      words.set([parseInt(row.seed.slice(1,9),16),parseInt(row.seed.slice(9),16)]);
+      return words;
     };
     await h.api.startNewPerformance();
     const score=h.api.state().snapshot;
     assert.equal(h.api.state().isPlaying,true,row.seed);assert.equal(draws,1);
-    const expectedSeed=row.seed[0]==='1'?'2'+row.seed.slice(1):row.seed;
-    assert.equal(score.seed,expectedSeed);assert.equal(score.engine,'39');
-    assert.deepEqual(renderInput(score),renderInput(h.api.createPerformance(expectedSeed,121,'long','39')));
-    assert.deepEqual(plain(h.api.createPerformance(expectedSeed,121,'long').groups),plain(score.groups));
+    assert.equal(score.seed,row.seed);assert.equal(score.engine,'39');
+    assert.equal(score.study.sourceTheme.length,11);
+    assert.equal(score.study.form,'theme-mirror-pairs');
+    assert.deepEqual(renderInput(score),renderInput(h.api.createPerformance(row.seed,121,'long','39')));
     const before=h.api.createPerformance(parseInt(row.previousSeed,16),121,'long',row.previousEngine);
-    assert.deepEqual(plain(score.study.sourceTheme),plain(before.study.sourceTheme));
-    assert.equal(score.density,before.density);
-    if(row.seed[0]==='0')assert.deepEqual(renderInput(score),renderInput(before),row.previousSeed);
-    else assert.equal(score.study.form,'theme-organ-mirror');
+    assert.deepEqual(renderInput(score),renderInput(before),row.previousSeed);
     h.sandbox.__OPEN_PLAYER_KILL__();
   }
+});
+
+test('all eight November 21 compact batch seeds remain reachable through ordinary g39 Play',async()=>{
+  const performanceWords=['bd58cab9','ea052f22','92f674dc','aff38550',
+    '0569bc17','5b42aeb6','3db9492e','685ff5ef'];
+  const h=harness();
+  const selected=h.api.createPerformance('008b0195e08b0195e',121,'long','39');
+  for(const word of performanceWords) {
+    const seed='008b0195e'+word;
+    const replay=h.api.createPerformance(seed,121,'long','39');
+    assert.deepEqual(plain(replay.study.sourceTheme),plain(selected.study.sourceTheme),seed);
+    assert.equal(replay.study.sourceTheme.length,11,seed);
+    assert.equal(replay.study.mirror.pairCount,6,seed);
+    const live=harness();live.sandbox.document.dispatch('DOMContentLoaded');
+    live.elements.get('tone').value='121';live.elements.get('songDuration').value='long';
+    let draws=0;live.sandbox.crypto.getRandomValues=words=>{
+      assert.equal(words.length,2);draws++;words.set([0x08b0195e,parseInt(word,16)]);return words;
+    };
+    await live.api.startNewPerformance();
+    assert.equal(draws,1,seed);
+    assert.equal(live.api.state().snapshot.seed,seed);
+    assert.deepEqual(renderInput(live.api.state().snapshot),renderInput(replay),seed);
+    live.sandbox.__OPEN_PLAYER_KILL__();
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
+});
+
+test('saved twenty-eight-note seeds remain available for exact replay but not new random draws',async()=>{
+  const h=harness();
+  for(const row of manifest.recordings.filter(row=>row.seed[0]!=='0')) {
+    const old=h.api.createPerformance(row.seed,121,'long','38');
+    const current=h.api.createPerformance(row.seed,121,'long','39');
+    assert.equal(old.study.sourceTheme.length,28);
+    assert.deepEqual(renderInput(current),renderInput(old),row.seed);
+    const separated=h.api.createPerformance('2'+row.seed.slice(1),121,'long','39');
+    assert.equal(separated.study.sourceTheme.length,28);
+    assert.equal(separated.study.form,'theme-organ-mirror');
+  }
+  h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
 test('complete Long seeds round-trip without losing high bits, and legacy records keep their meaning',async()=>{
@@ -104,17 +140,22 @@ test('complete Long seeds round-trip without losing high bits, and legacy record
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('new draws retry duration-incompatible phrases without filtering musical quality or changing a replay',async()=>{
-  const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
-  const slow=seedFor(2,0x08b0195e,0x8ee63dc6),next=manifest.recordings[1],nextSeed='2'+next.seed.slice(1);let draws=0;
+test('an incompatible saved twenty-eight-note replay cannot interrupt current playback',async()=>{
+  const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');
+  h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
+  const slow=seedFor(2,0x08b0195e,0x8ee63dc6);
   assert.throws(()=>h.api.createPerformance(slow,121,'long','39'),e=>e.code==='LONG_FORM_DURATION');
-  h.sandbox.crypto.getRandomValues=words=>{words.set(draws++===0?[1,0x08b0195e,0x8ee63dc6]:[1,0x08b0195e,parseInt(next.previousSeed,16)]);return words;};
-  await h.api.startNewPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,nextSeed);
-  await h.api.replayLastPerformance();assert.equal(draws,2);assert.equal(h.api.state().snapshot.seed,nextSeed);
+  let draws=0;
+  h.sandbox.crypto.getRandomValues=words=>{
+    assert.equal(words.length,2);draws++;words.set([0x08b0195e,0x92f674dc]);return words;
+  };
+  await h.api.startNewPerformance();
+  assert.equal(draws,1);
+  assert.equal(h.api.state().snapshot.seed,'008b0195e92f674dc');
   h.api.toggleRecording();
   const playing=h.api.state();
   h.elements.get('replayInput').value=slow;await h.api.replayFromUI();
-  assert.equal(draws,2,'An incompatible replay must not draw a replacement');
+  assert.equal(draws,1,'An incompatible replay must not draw a replacement');
   assert.match(h.elements.get('replayStatus').textContent,/faster seed/);
   assert.equal(h.api.state().isPlaying,true);
   assert.equal(h.api.state().isRecording,true);

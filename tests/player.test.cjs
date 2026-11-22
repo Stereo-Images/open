@@ -305,7 +305,8 @@ test('shared URLs wait for a gesture and the primary button plays the saved perf
   assert.equal(h.api.state().snapshot.seed, 0xd1a0b62b);
   assert.equal(h.api.state().snapshot.sampleRate, 48000);
   await h.api.startFromUI();
-  assert.equal(h.api.state().snapshot.seed, '00000303900003039');
+  assert.match(h.api.state().snapshot.seed, /^0[0-9a-f]{16}$/);
+  assert.equal(h.api.state().snapshot.study.sourceTheme.length, 11);
   assert.equal(h.api.state().snapshot.sampleRate, 44100);
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
