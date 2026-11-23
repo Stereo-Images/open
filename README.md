@@ -14,7 +14,7 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 ### Open EP
 
-The *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Both source performances can be generated and replayed in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
+The *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Both source performances remain replayable in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
 
 *Release details and listening links will be added here.*
 
@@ -31,7 +31,7 @@ The replay links restore the source performances before mastering and any releas
 
 Short keeps its evolving walk in one six-note major collection. New Long performances use independently generated eleven-note themes in the root's major collection. The seed selects the melody independently of its performance settings, so the same melody can unfold at different tempos and with different bell colors. Nominal tempo is between 3 and 15 BPM, with at least four seconds between melody strikes.
 
-Long follows **eleven-note theme → mirror → organ**. The mirror plays every strike in reverse order with the same corresponding FM recipe and reversed intervals between strikes. The turning note repeats on the next seeded beat. Each new forward theme establishes a fresh FM palette, which its mirror retains. The final mirror ends with its natural tail, without another organ interlude. Earlier twenty-eight-note performances remain replayable in their original form.
+Long follows **eleven-note theme → mirror → organ**. The mirror plays every strike in reverse order with the same corresponding FM recipe and reversed intervals between strikes. The turning note repeats on the next seeded beat. Across the whole piece, the bell palettes also mirror: for six iterations, A → B → C → C → B → A. The first half establishes the palettes; the second half returns through them, with the final strike recovering the opening pitch and FM recipe. Timing, dynamics, stereo movement and accompaniment continue as planned. The final mirror ends with its natural tail, without another organ interlude. Earlier performances remain replayable in their original form.
 
 Organ interludes expand and contract around the middle of the piece; their contextual chords and inversions account for notes still ringing. Occasional widely spaced suspended chords favor sus2 over sus4; some remain unresolved, while others let one organ voice settle into a major or minor third. Suspensions occur only in the interludes. Decay-aware handoffs preserve the natural forward decay of every sound.
 
@@ -81,7 +81,7 @@ Every newly generated performance can also arise independently through another r
 2. **Copy replay link:** After playing or replaying, copy a link to that performance. It includes the seed and all settings needed to revisit it. If clipboard access is unavailable, a selected link appears for manual copying. Copy and export always refer to the current or most recent performance, even if you change the controls after stopping.
 3. **Export again:** Use Export WAV in Revisit, or **`Shift + E`**, to render the performance from its beginning. You can stop listening immediately and still export its complete planned ending. A saved replay link or new WAV filename lets you return after closing the page.
 
-New Short performances use 8-character seeds. For a new Long performance, choose **Long** and press **Play**. Every new Long performance has a 17-character seed beginning with `0` and a newly generated eleven-note theme. Keep all 17 characters, including the leading zero. Earlier Long seeds beginning with `1` or `2` retain their original twenty-eight-note form for replay, but never occur during ordinary Play.
+New Short performances use 8-character seeds. For a new Long performance, choose **Long** and press **Play**. Every new Long performance has a 17-character seed beginning with `5` and a newly generated eleven-note theme. Keep all 17 characters. Earlier Long seeds beginning with `0`, `1` or `2` retain their original form for replay; new Play uses the larger FM mirror.
 
 The saved sample rate is retained for WAV rendering; live playback uses the device's audio rate. Browser or device differences can affect the rendered samples, and mastering or other processing applied outside Open is not part of replay. Save the audio itself to preserve a particular recording.
 

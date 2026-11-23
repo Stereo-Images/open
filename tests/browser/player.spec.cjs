@@ -151,7 +151,7 @@ test('the exact 0393ded7 saved Short Study and ordinary Short Play export the sa
   expect(errors).toEqual([]);
 });
 
-for (const [construction, melody, performance] of [[0,'08b0195e','92f674dc'],[0,'4850166b','697bb2c6'],[0,'ee4d8944','ee4d8944']]) {
+for (const [construction, melody, performance] of [[5,'08b0195e','3db9492e'],[5,'4850166b','697bb2c6'],[5,'ee4d8944','ee4d8944']]) {
   test(`ordinary Play draws and replays the complete seed ${construction}${melody}${performance}`,async({page})=>{
     const seed=String(construction)+melody+performance;
     const errors=[];page.on('pageerror',e=>errors.push(e.message));
@@ -169,7 +169,7 @@ for (const [construction, melody, performance] of [[0,'08b0195e','92f674dc'],[0,
     await page.locator('#copyReplay').click();
     const link=await page.locator('#replayLink').inputValue();
     expect(new URL(link).searchParams.get('seed')).toBe(seed);
-    expect(new URL(link).searchParams.get('engine')).toBe('39');
+    expect(new URL(link).searchParams.get('engine')).toBe('41');
     await page.locator('#songDuration').selectOption('short');
     await page.locator('#replayInput').fill(seed);
     await page.locator('#replayRun').click();
@@ -220,7 +220,7 @@ test('new performances retain the current engine in replay links for each length
   });
   await page.goto('/player.html');
   await expect(page.locator('#songDuration option')).toHaveCount(2);
-  for (const [length, engine] of [['long', '39'], ['short', '33']]) {
+  for (const [length, engine] of [['long', '41'], ['short', '33']]) {
     await page.locator('#songDuration').selectOption(length);
     await page.locator('#playNow').click();
     await expect(page.locator('#playNow')).toHaveAttribute('aria-pressed', 'true');

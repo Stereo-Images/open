@@ -53,7 +53,7 @@ test('all 24 saved complete seeds retain their exact performances, including und
   h.sandbox.__OPEN_PLAYER_KILL__();
 });
 
-test('ordinary Long Play draws only compact eleven-note themes and preserves saved compact performances',async()=>{
+test('ordinary Long Play draws only compact eleven-note themes with the whole-piece FM arch',async()=>{
   for(const row of manifest.recordings.filter(row=>row.seed[0]==='0')) {
     const h=harness();h.sandbox.document.dispatch('DOMContentLoaded');
     h.elements.get('tone').value='121';h.elements.get('songDuration').value='long';
@@ -65,17 +65,19 @@ test('ordinary Long Play draws only compact eleven-note themes and preserves sav
     await h.api.startNewPerformance();
     const score=h.api.state().snapshot;
     assert.equal(h.api.state().isPlaying,true,row.seed);assert.equal(draws,1);
-    assert.equal(score.seed,row.seed);assert.equal(score.engine,'39');
+    const currentSeed='5'+row.seed.slice(1);
+    assert.equal(score.seed,currentSeed);assert.equal(score.engine,'41');
     assert.equal(score.study.sourceTheme.length,11);
     assert.equal(score.study.form,'theme-mirror-pairs');
-    assert.deepEqual(renderInput(score),renderInput(h.api.createPerformance(row.seed,121,'long','39')));
+    assert.deepEqual(renderInput(score),renderInput(h.api.createPerformance(currentSeed,121,'long','41')));
     const before=h.api.createPerformance(parseInt(row.previousSeed,16),121,'long',row.previousEngine);
-    assert.deepEqual(renderInput(score),renderInput(before),row.previousSeed);
+    assert.deepEqual(plain(score.study.sourceTheme),plain(before.study.sourceTheme));
+    assert.equal(score.exportDuration,before.exportDuration);
     h.sandbox.__OPEN_PLAYER_KILL__();
   }
 });
 
-test('all eight November 21 compact batch seeds remain reachable through ordinary g39 Play',async()=>{
+test('all eight November 21 melody/performance combinations generate their FM-mirrored versions through ordinary Play',async()=>{
   const performanceWords=['bd58cab9','ea052f22','92f674dc','aff38550',
     '0569bc17','5b42aeb6','3db9492e','685ff5ef'];
   const h=harness();
@@ -93,8 +95,10 @@ test('all eight November 21 compact batch seeds remain reachable through ordinar
     };
     await live.api.startNewPerformance();
     assert.equal(draws,1,seed);
-    assert.equal(live.api.state().snapshot.seed,seed);
-    assert.deepEqual(renderInput(live.api.state().snapshot),renderInput(replay),seed);
+    const currentSeed='5'+seed.slice(1);
+    assert.equal(live.api.state().snapshot.seed,currentSeed);
+    assert.deepEqual(renderInput(live.api.state().snapshot),
+      renderInput(h.api.createPerformance(currentSeed,121,'long','41')),seed);
     live.sandbox.__OPEN_PLAYER_KILL__();
   }
   h.sandbox.__OPEN_PLAYER_KILL__();
@@ -151,7 +155,7 @@ test('an incompatible saved twenty-eight-note replay cannot interrupt current pl
   };
   await h.api.startNewPerformance();
   assert.equal(draws,1);
-  assert.equal(h.api.state().snapshot.seed,'008b0195e92f674dc');
+  assert.equal(h.api.state().snapshot.seed,'508b0195e92f674dc');
   h.api.toggleRecording();
   const playing=h.api.state();
   h.elements.get('replayInput').value=slow;await h.api.replayFromUI();

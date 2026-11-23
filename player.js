@@ -98,7 +98,8 @@
   const SPARSE_THEME_PAIR_ENGINE = "37";
   const ORDINARY_THEME_ENGINE = "38";
   const SEPARATED_MIRROR_ENGINE = "39";
-  const ORDINARY_THEME_ENGINES = new Set([ORDINARY_THEME_ENGINE, SEPARATED_MIRROR_ENGINE]);
+  const GLOBAL_FM_MIRROR_ENGINE = "41";
+  const ORDINARY_THEME_ENGINES = new Set([ORDINARY_THEME_ENGINE, SEPARATED_MIRROR_ENGINE, GLOBAL_FM_MIRROR_ENGINE]);
   const THEME_PAIR_ENGINES = new Set([THEME_PAIR_ENGINE, REFERENCE_THEME_PAIR_ENGINE, SPARSE_THEME_PAIR_ENGINE, ...ORDINARY_THEME_ENGINES]);
   const G22_OPTIONS = Object.freeze({wideTempo: true, maxBpm: 15, separatedInterludes: true,
     perPassInterludes: true, fixedInterludeHarmony: true, preserveBackgroundDrones: true});
@@ -129,8 +130,11 @@
 
   // New performances hold one collection for every duration. Versioned replays
   // select their original engine, independently of the current length control.
-  function defaultEngine(duration) {
-    return duration === "long" ? SEPARATED_MIRROR_ENGINE : SLOW_BEATING_ENGINE;
+  function defaultEngine(duration, seed = null) {
+    return duration === "long"
+      ? seed == null || /^5[0-9a-f]{16}$/i.test(seedHex(seed))
+        ? GLOBAL_FM_MIRROR_ENGINE : SEPARATED_MIRROR_ENGINE
+      : SLOW_BEATING_ENGINE;
   }
 
   function seedHex(seed) { return typeof seed === "string" ? seed.toLowerCase() : seed.toString(16).padStart(8, "0"); }
@@ -152,12 +156,12 @@
 
   function drawPerformanceSeed(duration) {
     // Ordinary Long performances use compact eleven-note themes only.
-    // Both independent 32-bit words remain unrestricted, so saved compact
-    // seeds are still reachable on Play. Marker 1/2 replays are unchanged.
+    // Both independent 32-bit words remain unrestricted. Marker 5 selects
+    // the whole-piece FM arch; saved markers 0/1/2 keep their original form.
     const words = new Uint32Array(duration === "long" ? 2 : 1);
     if (globalThis.crypto?.getRandomValues) globalThis.crypto.getRandomValues(words);
     else for (let i=0;i<words.length;i++) words[i]=Math.floor(Math.random()*0x100000000);
-    return duration === "long" ? `0${seedHex(words[0])}${seedHex(words[1])}` : words[0];
+    return duration === "long" ? `5${seedHex(words[0])}${seedHex(words[1])}` : words[0];
   }
 
   function validateReplay(record) {
@@ -166,11 +170,12 @@
     if (record.baseEngine != null && (record.engine !== SLOW_BEATING_ENGINE
         || record.baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(record.baseEngine)))
       throw new Error("The saved performance's original recipe is invalid. Copy the complete replay link or filename.");
-    const extendedSeed = /^[012][0-9a-f]{16}$/i.test(record.seed || "");
+    const extendedSeed = /^[0125][0-9a-f]{16}$/i.test(record.seed || "");
     if (!/^[0-9a-f]{8}$/i.test(record.seed || "") && !extendedSeed)
       throw new Error("Enter a complete eight- or seventeen-character seed.");
     if (extendedSeed && (!ORDINARY_THEME_ENGINES.has(record.baseEngine ?? record.engine)
-        || (record.seed[0] === "2" && (record.baseEngine ?? record.engine) !== SEPARATED_MIRROR_ENGINE)))
+        || (record.seed[0] === "2" && (record.baseEngine ?? record.engine) !== SEPARATED_MIRROR_ENGINE)
+        || ((record.seed[0] === "5") !== ((record.baseEngine ?? record.engine) === GLOBAL_FM_MIRROR_ENGINE))))
       throw new Error("This Long seed requires its complete current replay settings.");
     const tone = Number(record.tone), sampleRate = Number(record.sampleRate);
     if (!Number.isInteger(tone) || tone < 110 || tone > 200)
@@ -205,18 +210,19 @@
     // A new export is its own compact replay record. Accept names with or
     // without .wav and browser download suffixes; keep seed/settings strict.
     const filename = input.replace(/\.(?:wav|mp3|flac|m4a)$/i, "");
-    const file = filename.match(/^open-run-([012][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?$/i);
+    const file = filename.match(/^open-run-([0125][0-9a-f]{16}|[0-9a-f]{8})-[0-9a-z]+-g([0-9]+)(?:-b([0-9]+))?-([0-9]+)hz-(short|long|infinite)-([0-9]+)sr-[0-9]+(?: ?\([0-9]+\))?$/i);
     if (file) return validateReplay({ seed: file[1], engine: file[2], baseEngine: file[3], tone: file[4],
       duration: file[5].toLowerCase(), sampleRate: file[6] });
     const legacy = filename.match(/^open-run-([0-9a-f]{8})-[0-9a-z]+-[0-9]+(?: ?\([0-9]+\))?$/i);
     const seed = legacy ? legacy[1] : input;
-    const extended = /^[012][0-9a-f]{16}$/i.test(seed);
+    const extended = /^[0125][0-9a-f]{16}$/i.test(seed);
     if (!/^[0-9a-f]{8}$/i.test(seed) && !extended)
       throw new Error("Paste a complete seed, an Open WAV filename, or a replay link.");
     // Older open-run names use engine 1 by convention. Complete seed markers
     // preserve the form, even without the engine stored in a filename or link.
     return { ...validateReplay({ seed, engine: legacy ? "1" : extended
-        ? seed[0] === "2" ? SEPARATED_MIRROR_ENGINE : ORDINARY_THEME_ENGINE
+        ? seed[0] === "5" ? GLOBAL_FM_MIRROR_ENGINE
+          : seed[0] === "2" ? SEPARATED_MIRROR_ENGINE : ORDINARY_THEME_ENGINE
         : $("songDuration")?.value === "long" ? THEME_PAIR_ENGINE : SLOW_BEATING_ENGINE,
       tone: $("tone")?.value ?? "110",
       duration: extended ? "long" : $("songDuration")?.value ?? "short" }),
@@ -3065,11 +3071,48 @@
       {completeThemePairs:true,separateMirror:seedRecipe?.construction===2,...(sourceTheme?{sourceTheme}:{})});
   }
 
-  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput), baseEngine = null) {
+  // Mirror only the bell synthesis recipes across complete theme/mirror pairs.
+  // The underlying score retains all original timing, dynamics, panning,
+  // accompaniment and organ choices, including the whole first half.
+  function mirrorBellPalettes(original, seed) {
+    const mirror = original.study.mirror;
+    const paletteOrder = Array.from({length: mirror.pairCount}, (_, cycle) =>
+      Math.min(cycle, mirror.pairCount - 1 - cycle));
+    const recipes = new Map(original.groups.filter(group => group.study)
+      .map(group => [`${group.study.cycle}:${group.study.slot}`, group.notes[0]]));
+    const groups = original.groups.map(group => {
+      if (!group.study) return group;
+      const {cycle, slot} = group.study, palette = paletteOrder[cycle];
+      if (palette === cycle) return group;
+      const recipe = recipes.get(`${palette}:${slot}`);
+      return Object.freeze({...group,
+        study: Object.freeze({...group.study, palette}),
+        notes: Object.freeze(group.notes.map(note => Object.freeze({...note,
+          voices: recipe.voices, totalAmp: recipe.totalAmp}))) });
+    });
+    return Object.freeze({...original, seed, groups: Object.freeze(groups),
+      study: Object.freeze({...original.study,
+        mirror: Object.freeze({...mirror, globalPaletteMirror: true,
+          paletteOrder: Object.freeze(paletteOrder),
+          passes: Object.freeze(mirror.passes.map(pass => Object.freeze({...pass,
+            palette: paletteOrder[pass.cycle]}))),
+          paletteMirrorScope: 'bell-voices-only',
+          paletteTurnCycle: Math.ceil(mirror.pairCount / 2)})})});
+  }
+
+  function createPerformance(seed, tone, durationInput, engine = defaultEngine(durationInput, seed), baseEngine = null) {
     if (!SUPPORTED_ENGINES.has(engine)) throw new Error("Unsupported musical engine");
     if (baseEngine != null && (engine !== SLOW_BEATING_ENGINE
         || baseEngine === SLOW_BEATING_ENGINE || !SUPPORTED_ENGINES.has(baseEngine)))
       throw new Error("Unsupported original performance recipe");
+    if (engine === GLOBAL_FM_MIRROR_ENGINE) {
+      if (durationInput !== "long") throw new Error(`Engine ${engine} requires Long duration`);
+      const code = seedHex(seed);
+      if (!/^5[0-9a-f]{16}$/.test(code))
+        throw new Error("This FM-mirrored Long performance requires its complete marker-5 seed.");
+      return mirrorBellPalettes(createPerformance(`0${code.slice(1)}`, tone, durationInput,
+        SEPARATED_MIRROR_ENGINE), code);
+    }
     if (engine === SLOW_BEATING_ENGINE) {
       // Rebuild the original score first. An explicit base preserves an older
       // performance's entire form; it is never replanned with today's defaults.
