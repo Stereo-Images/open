@@ -10,7 +10,7 @@ The 28-note theme → organ → mirror → organ form remains available for repl
 
 Each mirror plays the complete forward statement in reverse order. Corresponding strikes use identical pitch, carrier offsets, FM ratios, initial and terminal indices, amplitudes, duration and planned panning. The intervals between successive mirror strikes reverse the forward statement's intervals; the performance seed controls the tempo throughout. Natural attacks and decays run forward.
 
-In the new compact form, the final forward note repeats on the next seeded beat. In archived walking-form replays, an organ passage replaces that turning interval; the return begins on the same final pitch with its existing FM recipe. The next forward statement establishes a fresh FM palette. The final mirror ends with its full tail, without another organ interlude.
+In the new compact form, the final forward note repeats on the next seeded beat. In archived walking-form replays, an organ passage replaces that turning interval; the return begins on the same final pitch with its existing FM recipe. New marker-5 performances also reflect the bell palettes across the complete sequence of pairs. Six pairs use A–B–C–C–B–A; seven use A–B–C–D–C–B–A. Earlier marker-0 performances retain a fresh FM palette in every forward statement. The final mirror ends with its full tail, without another organ interlude.
 
 Organ interludes retain their expanding/contracting arch, contextual harmony, filtered Principal sound, wide slow spectral chorus and reverb. A separated pair contributes two interludes except at the ending, so two pairs have an organ swell pattern of 1–3–1; three pairs have 1–2–3–2–1. Chords are selected against the actual surrounding and lingering notes. Direct organ and chorus finish two seconds before the returning bell; only the room tail continues. Quiet FM accompaniment keeps its recipes and voice count and is centered inside the forward statement in the separated form, away from the added organ passage.
 
@@ -22,7 +22,8 @@ Organ interludes retain their expanding/contracting arch, contextual harmony, fi
 | `g36` | All 28 bell pitches in the original `08b0195e` g3 recording through source time 2:00, retaining the approved perfect-fourth substitution at strike 23. |
 | `g37` | The complete original 11-note theme of `4850166b`, before its earlier palindrome construction. |
 | `g38` | A complete 17-character seed selects an 11- or 28-note theme, followed by its immediate mirror. |
-| `g39` | Ordinary Play generates only marker `0`: independently generated eleven-note themes and immediate mirrors. Marker `2` remains supported for 28-note archived replay with an organ passage before the mirror. Markers `0` and `1` retain their exact g38 replay behavior. |
+| `g39` | Preserved replay of marker `0` eleven-note themes and marker `2` separated 28-note mirrors. Markers `0` and `1` retain their exact g38 replay behavior. |
+| `g41` | Ordinary Play generates marker `5`: eleven-note theme/mirror pairs with a whole-piece bell FM palette mirror. |
 
 The source selection inherits pitches only. Each child seed supplies its tempo, strike recipes and room. Consequently, the 28-note phrase selected through source time 2:00 occupies a different elapsed duration in each new recording. The phrase becomes the recurring theme in every pair, rather than a one-time prefix.
 
@@ -31,3 +32,9 @@ Each pair has 56 strikes for `g36`, or 22 for `g35` and `g37`. At least two comp
 The approved E FM rule is applied after pitch assignment. This preserves exact corresponding forward/reverse recipes. New Short performances and complete earlier replay records are unchanged, including `0393ded7` g3, g33-b32 and g33-b34. The public interface has no new controls. Existing complete seeds also retain their form when entered alone with the same root and length. All 24 archived studies keep their exact saved performances; see [ordinary-seeds.md](ordinary-seeds.md) for the mapping and the current random-generation space.
 
 New ordinary Long performances use the complete seed format described in [ordinary-seeds.md](ordinary-seeds.md). Melody construction and performance rules apply to every seed without a reference-specific branch. The eight saved 28-note studies keep their immediate mirrors, and existing separated-form 28-note seeds remain replayable. New ordinary Long performances always use eleven-note themes.
+
+## Whole-piece FM mirror
+
+The larger mirror reuses each corresponding first-half bell’s complete voice array: carrier frequencies, modulation ratios, initial and terminal indices, relative voice amplitudes, voice count and normalization. It preserves the destination strike’s pitch, onset, duration, overall gain and panning. All organ and quiet accompaniment events remain identical to the underlying marker-0 score. The central pair is retained once for an odd count, and the central palette is retained on both sides for an even count. Every pair keeps its immediate note mirror and reversed inter-onset gaps. This is symmetry of bell recipes across iterations, not reversal of sampled audio or a reflection of every onset about elapsed-time midpoint.
+
+At 121 Hz, `508b0195e3db9492e` retains the complete first half of `008b0195e3db9492e`. It has six pairs, 132 bell strikes, palettes A–B–C–C–B–A and an 800.9150781135365-second export. The first changed bell is at 430.18858872536475 seconds, after the central organ interlude. Its first and final strikes share pitch and all FM voice parameters. The original `008b0195e3db9492e` remains exact on replay.
