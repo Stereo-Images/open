@@ -14,18 +14,20 @@ The sounds do not ask for your full attention. Rather, they sit alongside whatev
 
 ### Open EP
 
-The *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/). Both source performances remain replayable in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
+The *Open* EP pairs **Short Study** and **Long Study** as a companion to the [web instrument](https://stereo-images.github.io/open/), with a total running time of about 14 minutes 38 seconds. Both source performances remain replayable in the current app. Press Play to discover your own performance, or use the replay links below to revisit these two.
 
 *Release details and listening links will be added here.*
 
-| Track | Seed | Player settings | Replay |
-| --- | --- | --- | --- |
-| Short Study | `0393ded7` | Short · 200 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=33&rate=44100) |
-| Long Study | `008b0195e08b0195e` | Long · 121 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=008b0195e08b0195e&tone=121&length=long&engine=39&rate=44100) |
+| Track | EP duration | Seed | Source settings | Replay |
+| --- | --- | --- | --- | --- |
+| Short Study | 1:20 | `0393ded7` | Short · 200 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=0393ded7&tone=200&length=short&engine=33&rate=44100) |
+| Long Study | 13:18 | `508b0195e3db9492e` | Long · 121 Hz root · 44.1 kHz WAV | [Play the source performance](https://stereo-images.github.io/open/player.html?seed=508b0195e3db9492e&tone=121&length=long&engine=41&rate=44100) |
 
-The Short Study source runs about a minute and a half. Its 200 Hz root setting gives the low accompaniment a 100 Hz bass. The Long Study source uses the eleven-note form and runs about thirteen and a half minutes.
+The EP's **Long Study** is mastered from `open-run-508b0195e3db9492e-study-g41-121hz-long-44100sr-1795473723859.wav`.
 
-The replay links restore the source performances before mastering and any release edits.
+The Short Study source uses a 200 Hz root setting, giving its low accompaniment a 100 Hz bass. The Long Study source uses the eleven-note form at a 121 Hz root setting.
+
+The durations above describe the EP masters, rounded to the nearest second. The replay links restore the source performances before mastering and edits to the opening and ending silence.
 
 ### Musical Structure & Harmony
 
