@@ -77,7 +77,7 @@ test('ordinary Long Play draws only compact eleven-note themes with the whole-pi
   }
 });
 
-test('all eight November 21 melody/performance combinations generate their FM-mirrored versions through ordinary Play',async()=>{
+test('all eight compact reference variants of melody 08b0195e generate their FM-mirrored versions through ordinary Play',async()=>{
   const performanceWords=['bd58cab9','ea052f22','92f674dc','aff38550',
     '0569bc17','5b42aeb6','3db9492e','685ff5ef'];
   const h=harness();

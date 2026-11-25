@@ -17,7 +17,9 @@ npm run test:study
 
 The Node suite checks shared-link playback, saved-setting migration, natural endings, Stop/Play races, recording, export failure recovery, node cleanup, WAV headers and encoding, stereo drift, live/offline scheduling, immutable performance data and all sixteen saved Long scores. Intentional failure tests print simulated export errors; the final test summary determines success.
 
-The complete-seed tests additionally preserve the 24 later studies against their frozen event hashes, exercise compact eleven-note ordinary generation and replay (including FM-mirrored counterparts of the eight November 21 Batch 9 seeds), and verify archived 28-note theme → organ → mirror replay. Corresponding FM recipes, reversed inter-onset gaps, organ handoffs, fresh palettes, natural endings and duration limits are checked across the eight walking studies at four root tones. Saved immediate-mirror seeds and the exact `0393ded7` Short Study retain separate regression coverage.
+The complete-seed tests additionally preserve the 24 later studies against their frozen event hashes, exercise compact eleven-note ordinary generation and replay (including the eight [compact reference performances](../docs/ordinary-seeds.md#compact-reference-performances)), and verify archived 28-note theme → organ → mirror replay. Corresponding FM recipes, reversed inter-onset gaps, organ handoffs, fresh palettes throughout the archived walking form, natural endings and duration limits are checked across the eight walking studies at four root tones. Saved immediate-mirror seeds and the exact `0393ded7` Short Study retain separate regression coverage.
+
+[`fm-arch.test.cjs`](fm-arch.test.cjs) checks first-half preservation, nested local/global recipe symmetry, odd and even pair counts across unrelated seeds at four roots, unchanged onset/dynamics/panning/accompaniment, and exact ordinary-Play/replay/export agreement for the [EP's Long Study source](../README.md#open-ep): `508b0195e3db9492e`, at 121 Hz with replay recipe `g41`. New bell palettes occur only in the first half of the pair sequence and any single central pair; the second half reuses the earlier palettes in reverse order.
 
 `test:study` checks mirrored melodies, contextual organ harmony, gains, timing, ending behavior and deterministic replay across all sixteen studies, plus organ chorus/room wiring and cleanup. Archived-score comparisons allow at most eight machine epsilons of relative roundoff across JavaScript runtimes; structure and integer choices remain exact. Same-runtime comparisons remain strict.
 
@@ -75,6 +77,3 @@ Internal replay identifiers remain in links, filenames and score data so existin
 Short and Long are the only duration modes. Stored Infinite preferences reset to Short; Infinite replay requests are rejected. Internal unbounded generator calls assemble finite melodies and do not provide an Infinite playback mode.
 
 The approved [manifest and scores](../studies/g29) remain in the main branch. Earlier players, analyses, workbooks and development scripts are preserved on the [archive branch](https://github.com/Stereo-Images/open/tree/archive/g29-development/studies/g29).
-
-
-`fm-arch.test.cjs` checks first-half preservation, nested local/global recipe symmetry, odd and even pair counts across unrelated seeds at four roots, unchanged onset/dynamics/panning/accompaniment, and exact ordinary-Play/replay/export agreement for the selected November 23 audition.
